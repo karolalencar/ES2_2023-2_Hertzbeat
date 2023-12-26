@@ -1,0 +1,78 @@
+{
+  "title": {
+    "message": "HertzBeat",
+    "description": "The title in the navbar"
+  },
+  "item.label.main": {
+    "message": "首页",
+    "description": "Navbar item with label main"
+  },
+  "item.label.document": {
+    "message": "文档中心",
+    "description": "Navbar item with label document"
+  },
+  "item.label.blog": {
+    "message": "博客",
+    "description": "Navbar item with label blog"
+  },
+  "item.label.discuss": {
+    "message": "讨论交流",
+    "description": "Navbar item with label discuss"
+  },
+  "item.label.contributing": {
+    "message": "贡献者指南",
+    "description": "Navbar item with label contributing"
+  },
+  "item.label.kanban": {
+    "message": "项目看板",
+    "description": "Navbar item with label kanban"
+  },
+  "item.label.login": {
+    "message": "登录/注册",
+    "description": "Navbar item with label login"
+  },
+  "item.label.design": {
+    "message": "设计文档",
+    "description": "Navbar item with label design"
+  },
+  "item.label.sponsor": {
+    "message": "赞助我们",
+    "description": "Navbar item with label sponsor"
+  },
+  "item.label.resource": {
+    "message": "相关资源",
+    "description": "Navbar item with label resource"
+  },
+  "item.label.about": {
+    "message": "关于",
+    "description": "Navbar item with label about"
+  },
+  "item.label.developer": {
+    "message": "开发者们",
+    "description": "Navbar item with label developer"
+  },
+  "item.label.enterprise": {
+    "message": "企业版",
+    "description": "Navbar item with label enterprise"
+  },
+  "item.label.开源之夏": {
+    "message": "开源之夏",
+    "description": "Navbar item with label 开源之夏"
+  },
+  "item.label.华为云开源活动": {
+    "message": "华为云开源活动",
+    "description": "Navbar item with label 华为云开源活动"
+  },
+  "item.label.Docs": {
+    "message": "文档中心",
+    "description": "Navbar item with label Docs"
+  },
+  "item.label.Others": {
+    "message": "其它信息",
+    "description": "Navbar item with label Others"
+  },
+  "item.label.contributors": {
+    "message": "开发者们",
+    "description": "Navbar item with label contributors"
+  }
+}
