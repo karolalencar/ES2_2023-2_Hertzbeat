@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SslCertificateCollectImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.http</a> &gt; <span class="el_source">SslCertificateCollectImpl.java</span></div><h1>SslCertificateCollectImpl.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.collector.collect.http;
+
+import org.dromara.hertzbeat.collector.collect.AbstractCollect;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.common.constants.CollectorConstants;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.job.protocol.HttpProtocol;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+import org.dromara.hertzbeat.common.util.IpDomainUtil;
+import lombok.extern.slf4j.Slf4j;
+
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLException;
+import javax.net.ssl.SSLPeerUnverifiedException;
+import java.io.IOException;
+import java.io.InterruptedIOException;
+import java.net.ConnectException;
+import java.net.URL;
+import java.net.UnknownHostException;
+import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
+import java.util.Date;
+
+import static org.dromara.hertzbeat.common.constants.SignConstants.RIGHT_DASH;
+
+
+/**
+ * ssl Certificate
+ * @author tomsun28
+ */
+<span class="nc" id="L50">@Slf4j</span>
+public class SslCertificateCollectImpl extends AbstractCollect {
+
+    private static final String NAME_SUBJECT = &quot;subject&quot;;
+    private static final String NAME_EXPIRED = &quot;expired&quot;;
+    private static final String NAME_START_TIME = &quot;start_time&quot;;
+    private static final String NAME_START_TIMESTAMP = &quot;start_timestamp&quot;;
+    private static final String NAME_END_TIME = &quot;end_time&quot;;
+    private static final String NAME_END_TIMESTAMP = &quot;end_timestamp&quot;;
+
+<span class="nc" id="L60">    public SslCertificateCollectImpl() {}</span>
+
+    @Override
+    public void collect(CollectRep.MetricsData.Builder builder,
+                        long monitorId, String app, Metrics metrics) {
+<span class="nc" id="L65">        long startTime = System.currentTimeMillis();</span>
+        try {
+<span class="nc" id="L67">            validateParams(metrics);</span>
+<span class="nc" id="L68">        } catch (Exception e) {</span>
+<span class="nc" id="L69">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L70">            builder.setMsg(e.getMessage());</span>
+<span class="nc" id="L71">            return;</span>
+<span class="nc" id="L72">        }</span>
+<span class="nc" id="L73">        HttpProtocol httpProtocol = metrics.getHttp();</span>
+<span class="nc" id="L74">        HttpsURLConnection urlConnection = null;</span>
+        try {
+<span class="nc" id="L76">            String uri = &quot;&quot;;</span>
+<span class="nc bnc" id="L77" title="All 2 branches missed.">            if (IpDomainUtil.isHasSchema(httpProtocol.getHost())) {</span>
+<span class="nc" id="L78">                uri = httpProtocol.getHost() + &quot;:&quot; + httpProtocol.getPort();</span>
+            } else {
+<span class="nc" id="L80">                uri = &quot;https://&quot; + httpProtocol.getHost() + &quot;:&quot; + httpProtocol.getPort();</span>
+            }
+<span class="nc" id="L82">            urlConnection = (HttpsURLConnection)new URL(uri).openConnection();</span>
+<span class="nc" id="L83">            urlConnection.connect();</span>
+<span class="nc" id="L84">            Certificate[] certificates = urlConnection.getServerCertificates();</span>
+<span class="nc bnc" id="L85" title="All 4 branches missed.">            if (certificates == null || certificates.length == 0) {</span>
+<span class="nc" id="L86">                builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L87">                builder.setMsg(&quot;Ssl certificate does not exist.&quot;);</span>
+<span class="nc" id="L88">                return;</span>
+            }
+
+<span class="nc" id="L91">            long responseTime  = System.currentTimeMillis() - startTime;</span>
+<span class="nc bnc" id="L92" title="All 2 branches missed.">            for (Certificate certificate : urlConnection.getServerCertificates()) {</span>
+<span class="nc" id="L93">                X509Certificate x509Certificate = (X509Certificate) certificate;</span>
+<span class="nc" id="L94">                Date now = new Date();</span>
+<span class="nc" id="L95">                Date deadline = x509Certificate.getNotAfter();</span>
+<span class="nc bnc" id="L96" title="All 4 branches missed.">                boolean expired = deadline != null &amp;&amp; now.after(deadline);</span>
+<span class="nc" id="L97">                CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">                for (String alias : metrics.getAliasFields()) {</span>
+<span class="nc bnc" id="L99" title="All 2 branches missed.">                    if (CollectorConstants.RESPONSE_TIME.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L100">                        valueRowBuilder.addColumns(Long.toString(responseTime));</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">                    } else if (NAME_SUBJECT.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L102">                        valueRowBuilder.addColumns(x509Certificate.getSubjectDN().getName());</span>
+<span class="nc bnc" id="L103" title="All 2 branches missed.">                    } else if (NAME_EXPIRED.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L104">                        valueRowBuilder.addColumns(Boolean.toString(expired));</span>
+<span class="nc bnc" id="L105" title="All 2 branches missed.">                    } else if (NAME_START_TIME.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L106">                        valueRowBuilder.addColumns(x509Certificate.getNotBefore().toLocaleString());</span>
+<span class="nc bnc" id="L107" title="All 2 branches missed.">                    } else if (NAME_START_TIMESTAMP.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L108">                        valueRowBuilder.addColumns(String.valueOf(x509Certificate.getNotBefore().getTime()));</span>
+<span class="nc bnc" id="L109" title="All 2 branches missed.">                    } else if (NAME_END_TIME.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L110">                        valueRowBuilder.addColumns(x509Certificate.getNotAfter().toLocaleString());</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">                    } else if (NAME_END_TIMESTAMP.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L112">                        valueRowBuilder.addColumns(String.valueOf(x509Certificate.getNotAfter().getTime()));</span>
+                    } else {
+<span class="nc" id="L114">                        valueRowBuilder.addColumns(CommonConstants.NULL_VALUE);</span>
+                    }
+<span class="nc" id="L116">                }</span>
+<span class="nc" id="L117">                builder.addValues(valueRowBuilder.build());</span>
+            }
+<span class="nc" id="L119">        } catch (SSLPeerUnverifiedException e1) {</span>
+<span class="nc" id="L120">            String errorMsg = &quot;Ssl certificate does not exist.&quot;;</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">            if (e1.getMessage() != null) {</span>
+<span class="nc" id="L122">                errorMsg = e1.getMessage();</span>
+<span class="nc" id="L123">                log.error(errorMsg);</span>
+            }
+<span class="nc" id="L125">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L126">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L127">        } catch (UnknownHostException e2) {</span>
+<span class="nc" id="L128">            String errorMsg = CommonUtil.getMessageFromThrowable(e2);</span>
+<span class="nc" id="L129">            log.info(errorMsg);</span>
+<span class="nc" id="L130">            builder.setCode(CollectRep.Code.UN_REACHABLE);</span>
+<span class="nc" id="L131">            builder.setMsg(&quot;unknown host:&quot; + errorMsg);</span>
+<span class="nc" id="L132">        } catch (InterruptedIOException | ConnectException | SSLException e3) {</span>
+<span class="nc" id="L133">            String errorMsg = CommonUtil.getMessageFromThrowable(e3);</span>
+<span class="nc" id="L134">            log.info(errorMsg);</span>
+<span class="nc" id="L135">            builder.setCode(CollectRep.Code.UN_CONNECTABLE);</span>
+<span class="nc" id="L136">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L137">        } catch (IOException e4) {</span>
+<span class="nc" id="L138">            String errorMsg = CommonUtil.getMessageFromThrowable(e4);</span>
+<span class="nc" id="L139">            log.info(errorMsg);</span>
+<span class="nc" id="L140">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L141">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L142">        } catch (Exception e) {</span>
+<span class="nc" id="L143">            String errorMsg = CommonUtil.getMessageFromThrowable(e);</span>
+<span class="nc" id="L144">            log.error(errorMsg, e);</span>
+<span class="nc" id="L145">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L146">            builder.setMsg(errorMsg);</span>
+        } finally {
+<span class="nc bnc" id="L148" title="All 2 branches missed.">            if (urlConnection != null) {</span>
+<span class="nc" id="L149">                urlConnection.disconnect();</span>
+            }
+        }
+<span class="nc" id="L152">    }</span>
+
+    @Override
+    public String supportProtocol() {
+<span class="nc" id="L156">        return DispatchConstants.PROTOCOL_SSL_CERT;</span>
+    }
+
+    private void validateParams(Metrics metrics) throws Exception {
+<span class="nc bnc" id="L160" title="All 4 branches missed.">        if (metrics == null || metrics.getHttp() == null) {</span>
+<span class="nc" id="L161">            throw new Exception(&quot;Http/Https collect must has http params&quot;);</span>
+        }
+<span class="nc" id="L163">        HttpProtocol httpProtocol = metrics.getHttp();</span>
+<span class="nc bnc" id="L164" title="All 2 branches missed.">        if (httpProtocol.getUrl() == null</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">                || &quot;&quot;.equals(httpProtocol.getUrl())</span>
+<span class="nc bnc" id="L166" title="All 2 branches missed.">                || !httpProtocol.getUrl().startsWith(RIGHT_DASH)) {</span>
+<span class="nc bnc" id="L167" title="All 2 branches missed.">            httpProtocol.setUrl(httpProtocol.getUrl() == null ? RIGHT_DASH : RIGHT_DASH + httpProtocol.getUrl().trim());</span>
+        }
+<span class="nc" id="L169">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

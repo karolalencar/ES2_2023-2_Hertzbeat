@@ -1,0 +1,518 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>HistoryVictoriaMetricsDataStorage.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-warehouse</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.warehouse.store</a> &gt; <span class="el_source">HistoryVictoriaMetricsDataStorage.java</span></div><h1>HistoryVictoriaMetricsDataStorage.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.warehouse.store;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.lang3.math.NumberUtils;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.dto.Value;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+import org.dromara.hertzbeat.common.util.JsonUtil;
+import org.dromara.hertzbeat.common.util.TimePeriodUtil;
+import org.dromara.hertzbeat.warehouse.config.WarehouseProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Primary;
+import org.springframework.http.*;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.ZonedDateTime;
+import java.time.temporal.TemporalAmount;
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * tdengine data storage
+ * @author tom
+ */
+@Primary
+@Component
+@ConditionalOnProperty(prefix = &quot;warehouse.store.victoria-metrics&quot;,
+        name = &quot;enabled&quot;, havingValue = &quot;true&quot;)
+<span class="nc" id="L62">@Slf4j</span>
+public class HistoryVictoriaMetricsDataStorage extends AbstractHistoryDataStorage {
+
+    private static final String IMPORT_PATH = &quot;/api/v1/import&quot;;
+    /**
+     * &lt;a href=&quot;https://docs.victoriametrics.com/Single-server-VictoriaMetrics.html#how-to-export-data-in-json-line-format&quot;&gt;
+     *     https://docs.victoriametrics.com/Single-server-VictoriaMetrics.html#how-to-export-data-in-json-line-format
+     * &lt;/a&gt;
+     */
+    private static final String EXPORT_PATH = &quot;/api/v1/export&quot;;
+    private static final String QUERY_RANGE_PATH = &quot;/api/v1/query_range&quot;;
+    private static final String STATUS_PATH = &quot;/api/v1/status/tsdb&quot;;
+    private static final String STATUS = &quot;status&quot;;
+    private static final String STATUS_SUCCESS = &quot;success&quot;;
+    private static final String LABEL_KEY_NAME = &quot;__name__&quot;;
+    private static final String LABEL_KEY_JOB = &quot;job&quot;;
+    private static final String LABEL_KEY_INSTANCE = &quot;instance&quot;;
+    private static final String SPILT = &quot;_&quot;;
+    private static final String BASIC = &quot;Basic&quot;;
+    private static final String MONITOR_METRICS_KEY = &quot;__metrics__&quot;;
+    private static final String MONITOR_METRIC_KEY = &quot;__metric__&quot;;
+    
+    private final WarehouseProperties.StoreProperties.VictoriaMetricsProperties victoriaMetricsProp;
+    
+    private final RestTemplate restTemplate;
+
+<span class="nc" id="L88">    public HistoryVictoriaMetricsDataStorage(WarehouseProperties properties, RestTemplate restTemplate) {</span>
+<span class="nc bnc" id="L89" title="All 6 branches missed.">        if (properties == null || properties.getStore() == null || properties.getStore().getVictoriaMetrics() == null) {</span>
+<span class="nc" id="L90">            log.error(&quot;init error, please config Warehouse victoriaMetrics props in application.yml&quot;);</span>
+<span class="nc" id="L91">            throw new IllegalArgumentException(&quot;please config Warehouse victoriaMetrics props&quot;);</span>
+        }
+<span class="nc" id="L93">        this.restTemplate = restTemplate;</span>
+<span class="nc" id="L94">        victoriaMetricsProp = properties.getStore().getVictoriaMetrics();</span>
+<span class="nc" id="L95">        serverAvailable = initVictoriaMetricsDatasource();</span>
+<span class="nc" id="L96">    }</span>
+
+    private boolean initVictoriaMetricsDatasource() {
+        // check server status
+        try {
+<span class="nc" id="L101">            String result = restTemplate.getForObject(victoriaMetricsProp.getUrl() + STATUS_PATH, String.class);</span>
+
+<span class="nc" id="L103">            JsonNode jsonNode = JsonUtil.fromJson(result);</span>
+<span class="nc bnc" id="L104" title="All 4 branches missed.">            if (jsonNode != null &amp;&amp; STATUS_SUCCESS.equalsIgnoreCase(jsonNode.get(STATUS).asText())) {</span>
+<span class="nc" id="L105">                return true;</span>
+            }
+<span class="nc" id="L107">            log.error(&quot;check victoria metrics server status not success: {}.&quot;, result);</span>
+<span class="nc" id="L108">        } catch (Exception e) {</span>
+<span class="nc" id="L109">            log.error(&quot;check victoria metrics server status error: {}.&quot;, e.getMessage(), e);</span>
+<span class="nc" id="L110">        }</span>
+<span class="nc" id="L111">        log.warn(&quot;\n\t------------------WARN WARN WARN------------------\n&quot; +</span>
+                &quot;\t---------------Init VictoriaMetrics Failed---------------\n&quot; +
+                &quot;\t--------------Please Config VictoriaMetrics--------------\n&quot; +
+                &quot;\t---------Or Can Not Use Metric History Now---------\n&quot;);
+<span class="nc" id="L115">        return false;</span>
+    }
+
+    @Override
+    public void saveData(CollectRep.MetricsData metricsData) {
+<span class="nc bnc" id="L120" title="All 4 branches missed.">        if (!isServerAvailable() || metricsData.getCode() != CollectRep.Code.SUCCESS) {</span>
+<span class="nc" id="L121">            return;</span>
+        }
+<span class="nc bnc" id="L123" title="All 2 branches missed.">        if (metricsData.getValuesList().isEmpty()) {</span>
+<span class="nc" id="L124">            log.info(&quot;[warehouse victoria-metrics] flush metrics data {} is null, ignore.&quot;, metricsData.getId());</span>
+<span class="nc" id="L125">            return;</span>
+        }
+<span class="nc" id="L127">        Map&lt;String, String&gt; defaultLabels = new HashMap&lt;&gt;(8);</span>
+<span class="nc" id="L128">        defaultLabels.put(MONITOR_METRICS_KEY, metricsData.getMetrics());</span>
+<span class="nc" id="L129">        boolean isPrometheusAuto = false;</span>
+<span class="nc bnc" id="L130" title="All 2 branches missed.">        if (metricsData.getApp().startsWith(CommonConstants.PROMETHEUS_APP_PREFIX)) {</span>
+<span class="nc" id="L131">            isPrometheusAuto = true;</span>
+<span class="nc" id="L132">            defaultLabels.put(LABEL_KEY_JOB, metricsData.getApp()</span>
+<span class="nc" id="L133">                    .substring(CommonConstants.PROMETHEUS_APP_PREFIX.length()));   </span>
+        } else {
+<span class="nc" id="L135">            defaultLabels.put(LABEL_KEY_JOB, metricsData.getApp());</span>
+        }
+<span class="nc" id="L137">        defaultLabels.put(LABEL_KEY_INSTANCE, String.valueOf(metricsData.getId()));</span>
+        
+<span class="nc" id="L139">        List&lt;CollectRep.Field&gt; fields = metricsData.getFieldsList();</span>
+<span class="nc" id="L140">        Long[] timestamp = new Long[]{metricsData.getTime()};</span>
+<span class="nc" id="L141">        Map&lt;String, Double&gt; fieldsValue = new HashMap&lt;&gt;(fields.size());</span>
+<span class="nc" id="L142">        Map&lt;String, String&gt; labels = new HashMap&lt;&gt;(fields.size());</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">        for (CollectRep.ValueRow valueRow : metricsData.getValuesList()) {</span>
+<span class="nc" id="L144">            fieldsValue.clear();</span>
+<span class="nc" id="L145">            labels.clear();</span>
+<span class="nc bnc" id="L146" title="All 2 branches missed.">            for (int index = 0; index &lt; fields.size(); index++) {</span>
+<span class="nc" id="L147">                CollectRep.Field field = fields.get(index);</span>
+<span class="nc" id="L148">                String value = valueRow.getColumns(index);</span>
+<span class="nc bnc" id="L149" title="All 4 branches missed.">                if (field.getType() == CommonConstants.TYPE_NUMBER &amp;&amp; !field.getLabel()) {</span>
+                    // number metrics data
+<span class="nc bnc" id="L151" title="All 2 branches missed.">                    if (!CommonConstants.NULL_VALUE.equals(value)) {</span>
+<span class="nc" id="L152">                        fieldsValue.put(field.getName(), CommonUtil.parseStrDouble(value));</span>
+                    }
+                }
+                // label
+<span class="nc bnc" id="L156" title="All 4 branches missed.">                if (field.getLabel() &amp;&amp; !CommonConstants.NULL_VALUE.equals(value)) {</span>
+<span class="nc" id="L157">                    labels.put(field.getName(), value);</span>
+                }
+            }
+<span class="nc bnc" id="L160" title="All 2 branches missed.">            for (Map.Entry&lt;String, Double&gt; entry : fieldsValue.entrySet()) {</span>
+<span class="nc bnc" id="L161" title="All 4 branches missed.">                if (entry.getKey() != null &amp;&amp; entry.getValue() != null) {</span>
+                    try {
+<span class="nc" id="L163">                        labels.putAll(defaultLabels);</span>
+<span class="nc bnc" id="L164" title="All 2 branches missed.">                        String labelName = isPrometheusAuto ? metricsData.getMetrics() </span>
+<span class="nc" id="L165">                                : metricsData.getMetrics() + SPILT + entry.getKey();</span>
+<span class="nc" id="L166">                        labels.put(LABEL_KEY_NAME, labelName);</span>
+<span class="nc" id="L167">                        labels.put(MONITOR_METRIC_KEY, entry.getKey());</span>
+<span class="nc" id="L168">                        VictoriaMetricsContent content = VictoriaMetricsContent.builder()</span>
+<span class="nc" id="L169">                                .metric(labels)</span>
+<span class="nc" id="L170">                                .values(new Double[]{entry.getValue()})</span>
+<span class="nc" id="L171">                                .timestamps(timestamp)</span>
+<span class="nc" id="L172">                                .build();</span>
+<span class="nc" id="L173">                        HttpHeaders headers = new HttpHeaders();</span>
+<span class="nc" id="L174">                        headers.setContentType(MediaType.APPLICATION_JSON);</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">                        if (StringUtils.hasText(victoriaMetricsProp.getUsername())</span>
+<span class="nc bnc" id="L176" title="All 2 branches missed.">                                &amp;&amp; StringUtils.hasText(victoriaMetricsProp.getPassword())) {</span>
+<span class="nc" id="L177">                            String authStr = victoriaMetricsProp.getUsername() + &quot;:&quot; + victoriaMetricsProp.getPassword();</span>
+<span class="nc" id="L178">                            String encodedAuth = new String(Base64.encodeBase64(authStr.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8);</span>
+<span class="nc" id="L179">                            headers.add(HttpHeaders.AUTHORIZATION,  BASIC + &quot; &quot; + encodedAuth);</span>
+                        }
+<span class="nc" id="L181">                        HttpEntity&lt;VictoriaMetricsContent&gt; httpEntity = new HttpEntity&lt;&gt;(content, headers);</span>
+<span class="nc" id="L182">                        ResponseEntity&lt;String&gt; responseEntity = restTemplate.postForEntity(victoriaMetricsProp.getUrl() + IMPORT_PATH,</span>
+                                httpEntity, String.class);
+<span class="nc bnc" id="L184" title="All 2 branches missed.">                        if (responseEntity.getStatusCode().is2xxSuccessful()) {</span>
+<span class="nc" id="L185">                            log.debug(&quot;insert metrics data to victoria-metrics success. {}&quot;, content);</span>
+                        } else {
+<span class="nc" id="L187">                            log.error(&quot;insert metrics data to victoria-metrics failed. {}&quot;, content);</span>
+                        }
+<span class="nc" id="L189">                    } catch (Exception e) {</span>
+<span class="nc" id="L190">                        log.error(&quot;flush metrics data to victoria-metrics error: {}.&quot;, e.getMessage(), e);</span>
+<span class="nc" id="L191">                    }</span>
+                    
+                }
+<span class="nc" id="L194">            }</span>
+<span class="nc" id="L195">        }</span>
+<span class="nc" id="L196">    }</span>
+    
+    @Override
+<span class="nc" id="L199">    public void destroy() {}</span>
+    
+    @Override
+    public Map&lt;String, List&lt;Value&gt;&gt; getHistoryMetricData(Long monitorId, String app, String metrics, String metric, String label, String history) {
+<span class="nc" id="L203">        String labelName = metrics + SPILT + metric;</span>
+<span class="nc bnc" id="L204" title="All 2 branches missed.">        if (CommonConstants.PROMETHEUS.equals(app)) {</span>
+<span class="nc" id="L205">            labelName = metrics;</span>
+        }
+<span class="nc" id="L207">        String timeSeriesSelector = LABEL_KEY_NAME + &quot;=\&quot;&quot; + labelName + &quot;\&quot;&quot; + </span>
+                &quot;,&quot; + LABEL_KEY_INSTANCE + &quot;=\&quot;&quot; + monitorId + &quot;\&quot;&quot; +
+                &quot;,&quot; + MONITOR_METRIC_KEY + &quot;=\&quot;&quot; + metric + &quot;\&quot;&quot;;
+<span class="nc" id="L210">        Map&lt;String, List&lt;Value&gt;&gt; instanceValuesMap = new HashMap&lt;&gt;(8);</span>
+        try {
+<span class="nc" id="L212">            HttpHeaders headers = new HttpHeaders();</span>
+<span class="nc" id="L213">            headers.setContentType(MediaType.APPLICATION_JSON);</span>
+<span class="nc" id="L214">            headers.setAccept(List.of(MediaType.APPLICATION_JSON));</span>
+<span class="nc bnc" id="L215" title="All 2 branches missed.">            if (StringUtils.hasText(victoriaMetricsProp.getUsername())</span>
+<span class="nc bnc" id="L216" title="All 2 branches missed.">                    &amp;&amp; StringUtils.hasText(victoriaMetricsProp.getPassword())) {</span>
+<span class="nc" id="L217">                String authStr = victoriaMetricsProp.getUsername() + &quot;:&quot; + victoriaMetricsProp.getPassword();</span>
+<span class="nc" id="L218">                String encodedAuth = new String(Base64.encodeBase64(authStr.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8);</span>
+<span class="nc" id="L219">                headers.add(HttpHeaders.AUTHORIZATION,  BASIC + &quot; &quot; + encodedAuth);</span>
+            }
+<span class="nc" id="L221">            HttpEntity&lt;Void&gt; httpEntity = new HttpEntity&lt;&gt;(headers);</span>
+<span class="nc" id="L222">            URI uri = UriComponentsBuilder.fromHttpUrl(victoriaMetricsProp.getUrl() + EXPORT_PATH)</span>
+<span class="nc" id="L223">                    .queryParam(URLEncoder.encode(&quot;match[]&quot;, StandardCharsets.UTF_8), URLEncoder.encode(&quot;{&quot; + timeSeriesSelector + &quot;}&quot;, StandardCharsets.UTF_8))</span>
+<span class="nc" id="L224">                    .build(true).toUri();</span>
+<span class="nc" id="L225">            ResponseEntity&lt;String&gt; responseEntity = restTemplate.exchange(uri,</span>
+                    HttpMethod.GET, httpEntity, String.class);
+<span class="nc bnc" id="L227" title="All 2 branches missed.">            if (responseEntity.getStatusCode().is2xxSuccessful()) {</span>
+<span class="nc" id="L228">                log.debug(&quot;query metrics data from victoria-metrics success. {}&quot;, uri);</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">                if (StringUtils.hasText(responseEntity.getBody())) {</span>
+<span class="nc" id="L230">                    String[] contentJsonArr = responseEntity.getBody().split(&quot;\n&quot;);</span>
+<span class="nc" id="L231">                    List&lt;VictoriaMetricsContent&gt; contents = Arrays.stream(contentJsonArr).map(</span>
+<span class="nc" id="L232">                            item -&gt;  JsonUtil.fromJson(item, VictoriaMetricsContent.class)</span>
+<span class="nc" id="L233">                    ).collect(Collectors.toList());</span>
+<span class="nc bnc" id="L234" title="All 2 branches missed.">                    for (VictoriaMetricsContent content : contents) {</span>
+<span class="nc" id="L235">                        Map&lt;String, String&gt; labels = content.getMetric();</span>
+<span class="nc" id="L236">                        labels.remove(LABEL_KEY_NAME);</span>
+<span class="nc" id="L237">                        labels.remove(LABEL_KEY_JOB);</span>
+<span class="nc" id="L238">                        labels.remove(LABEL_KEY_INSTANCE);</span>
+<span class="nc" id="L239">                        labels.remove(MONITOR_METRICS_KEY);</span>
+<span class="nc" id="L240">                        labels.remove(MONITOR_METRIC_KEY);</span>
+<span class="nc" id="L241">                        String labelStr = JsonUtil.toJson(labels);</span>
+<span class="nc bnc" id="L242" title="All 4 branches missed.">                        if (content.getValues() != null &amp;&amp; content.getTimestamps() != null) {</span>
+<span class="nc" id="L243">                            List&lt;Value&gt; valueList = instanceValuesMap.computeIfAbsent(labelStr, k -&gt; new LinkedList&lt;&gt;());</span>
+<span class="nc bnc" id="L244" title="All 2 branches missed.">                            if (content.getValues().length != content.getTimestamps().length) {</span>
+<span class="nc" id="L245">                                log.error(&quot;content.getValues().length != content.getTimestamps().length&quot;);</span>
+<span class="nc" id="L246">                                continue;</span>
+                            }
+<span class="nc" id="L248">                            Double[] values = content.getValues();</span>
+<span class="nc" id="L249">                            Long[] timestamps = content.getTimestamps();</span>
+<span class="nc bnc" id="L250" title="All 2 branches missed.">                            for (int index = 0; index &lt; content.getValues().length; index++) {</span>
+<span class="nc" id="L251">                                String strValue = BigDecimal.valueOf(values[index]).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+                                // read timestamp here is ms unit
+<span class="nc" id="L253">                                valueList.add(new Value(strValue, timestamps[index]));</span>
+                            }
+                        }
+<span class="nc" id="L256">                    }</span>
+<span class="nc" id="L257">                }</span>
+            } else {
+<span class="nc" id="L259">                log.error(&quot;query metrics data from victoria-metrics failed. {}&quot;, responseEntity);</span>
+            }
+<span class="nc" id="L261">        } catch (Exception e) {</span>
+<span class="nc" id="L262">            log.error(&quot;query metrics data from victoria-metrics error. {}.&quot;, e.getMessage(), e);</span>
+<span class="nc" id="L263">        }</span>
+<span class="nc" id="L264">        return instanceValuesMap;</span>
+    }
+
+    @Override
+    public Map&lt;String, List&lt;Value&gt;&gt; getHistoryIntervalMetricData(Long monitorId, String app, String metrics,
+                                                                 String metric, String label, String history) {
+<span class="nc bnc" id="L270" title="All 2 branches missed.">        if (!serverAvailable) {</span>
+<span class="nc" id="L271">            log.error(&quot;\n\t---------------VictoriaMetrics Init Failed---------------\n&quot; +</span>
+                    &quot;\t--------------Please Config VictoriaMetrics--------------\n&quot; +
+                    &quot;\t----------Can Not Use Metric History Now----------\n&quot;);
+<span class="nc" id="L274">            return Collections.emptyMap();</span>
+        }
+<span class="nc" id="L276">        long endTime = ZonedDateTime.now().toEpochSecond();</span>
+        long startTime;
+        try {
+<span class="nc bnc" id="L279" title="All 2 branches missed.">            if (NumberUtils.isParsable(history)) {</span>
+<span class="nc" id="L280">                startTime = NumberUtils.toLong(history);</span>
+<span class="nc" id="L281">                startTime = (ZonedDateTime.now().toEpochSecond() - startTime);</span>
+            } else {
+<span class="nc" id="L283">                TemporalAmount temporalAmount = TimePeriodUtil.parseTokenTime(history);</span>
+<span class="nc" id="L284">                ZonedDateTime dateTime = ZonedDateTime.now().minus(temporalAmount);</span>
+<span class="nc" id="L285">                startTime = dateTime.toEpochSecond();</span>
+            }
+<span class="nc" id="L287">        } catch (Exception e) {</span>
+<span class="nc" id="L288">            log.error(&quot;history time error: {}. use default: 6h&quot;, e.getMessage());</span>
+<span class="nc" id="L289">            ZonedDateTime dateTime = ZonedDateTime.now().minus(Duration.ofHours(6));</span>
+<span class="nc" id="L290">            startTime = dateTime.toEpochSecond();</span>
+<span class="nc" id="L291">        }</span>
+<span class="nc" id="L292">        String timeSeriesSelector = LABEL_KEY_NAME + &quot;=\&quot;&quot; + app + SPILT + metrics + SPILT + metric + &quot;\&quot;&quot; +</span>
+                &quot;,&quot; + LABEL_KEY_INSTANCE + &quot;=\&quot;&quot; + monitorId + &quot;\&quot;&quot;;
+<span class="nc" id="L294">        Map&lt;String, List&lt;Value&gt;&gt; instanceValuesMap = new HashMap&lt;&gt;(8);</span>
+        try {
+<span class="nc" id="L296">            HttpHeaders headers = new HttpHeaders();</span>
+<span class="nc" id="L297">            headers.setContentType(MediaType.APPLICATION_JSON);</span>
+<span class="nc" id="L298">            headers.setAccept(List.of(MediaType.APPLICATION_JSON));</span>
+<span class="nc bnc" id="L299" title="All 2 branches missed.">            if (StringUtils.hasText(victoriaMetricsProp.getUsername())</span>
+<span class="nc bnc" id="L300" title="All 2 branches missed.">                    &amp;&amp; StringUtils.hasText(victoriaMetricsProp.getPassword())) {</span>
+<span class="nc" id="L301">                String authStr = victoriaMetricsProp.getUsername() + &quot;:&quot; + victoriaMetricsProp.getPassword();</span>
+<span class="nc" id="L302">                String encodedAuth = new String(Base64.encodeBase64(authStr.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8);</span>
+<span class="nc" id="L303">                headers.add(HttpHeaders.AUTHORIZATION,  BASIC + &quot; &quot; + encodedAuth);</span>
+            }
+<span class="nc" id="L305">            HttpEntity&lt;Void&gt; httpEntity = new HttpEntity&lt;&gt;(headers);</span>
+<span class="nc" id="L306">            URI uri = UriComponentsBuilder.fromHttpUrl(victoriaMetricsProp.getUrl() + QUERY_RANGE_PATH)</span>
+<span class="nc" id="L307">                    .queryParam(URLEncoder.encode(&quot;query&quot;, StandardCharsets.UTF_8), URLEncoder.encode(&quot;{&quot; + timeSeriesSelector + &quot;}&quot;, StandardCharsets.UTF_8))</span>
+<span class="nc" id="L308">                    .queryParam(&quot;step&quot;, &quot;4h&quot;)</span>
+<span class="nc" id="L309">                    .queryParam(&quot;start&quot;, startTime)</span>
+<span class="nc" id="L310">                    .queryParam(&quot;end&quot;, endTime)</span>
+<span class="nc" id="L311">                    .build(true).toUri();</span>
+<span class="nc" id="L312">            ResponseEntity&lt;VictoriaMetricsQueryContent&gt; responseEntity = restTemplate.exchange(uri,</span>
+                    HttpMethod.GET, httpEntity, VictoriaMetricsQueryContent.class);
+<span class="nc bnc" id="L314" title="All 2 branches missed.">            if (responseEntity.getStatusCode().is2xxSuccessful()) {</span>
+<span class="nc" id="L315">                log.debug(&quot;query metrics data from victoria-metrics success. {}&quot;, uri);</span>
+<span class="nc bnc" id="L316" title="All 4 branches missed.">                if (responseEntity.getBody() != null &amp;&amp; responseEntity.getBody().getData() != null</span>
+<span class="nc bnc" id="L317" title="All 2 branches missed.">                        &amp;&amp; responseEntity.getBody().getData().getResult() != null) {</span>
+<span class="nc" id="L318">                    List&lt;VictoriaMetricsQueryContent.ContentData.Content&gt; contents = responseEntity.getBody().getData().getResult();</span>
+<span class="nc bnc" id="L319" title="All 2 branches missed.">                    for (VictoriaMetricsQueryContent.ContentData.Content content : contents) {</span>
+<span class="nc" id="L320">                        Map&lt;String, String&gt; labels = content.getMetric();</span>
+<span class="nc" id="L321">                        labels.remove(LABEL_KEY_NAME);</span>
+<span class="nc" id="L322">                        labels.remove(LABEL_KEY_JOB);</span>
+<span class="nc" id="L323">                        labels.remove(LABEL_KEY_INSTANCE);</span>
+<span class="nc" id="L324">                        labels.remove(MONITOR_METRICS_KEY);</span>
+<span class="nc" id="L325">                        labels.remove(MONITOR_METRIC_KEY);</span>
+<span class="nc" id="L326">                        String labelStr = JsonUtil.toJson(labels);</span>
+<span class="nc bnc" id="L327" title="All 4 branches missed.">                        if (content.getValues() != null &amp;&amp; !content.getValues().isEmpty()) {</span>
+<span class="nc" id="L328">                            List&lt;Value&gt; valueList = instanceValuesMap.computeIfAbsent(labelStr, k -&gt; new LinkedList&lt;&gt;());</span>
+<span class="nc bnc" id="L329" title="All 2 branches missed.">                            for (Object[] valueArr : content.getValues()) {</span>
+<span class="nc" id="L330">                                long timestamp = Long.parseLong(String.valueOf(valueArr[0]));</span>
+<span class="nc" id="L331">                                String value = String.valueOf(valueArr[1]);</span>
+                                // read timestamp here is s unit
+<span class="nc" id="L333">                                valueList.add(new Value(value, timestamp * 1000));   </span>
+<span class="nc" id="L334">                            }</span>
+                        }
+<span class="nc" id="L336">                    }</span>
+<span class="nc" id="L337">                }</span>
+            } else {
+<span class="nc" id="L339">                log.error(&quot;query metrics data from victoria-metrics failed. {}&quot;, responseEntity);</span>
+            }
+            // max
+<span class="nc" id="L342">            uri = UriComponentsBuilder.fromHttpUrl(victoriaMetricsProp.getUrl() + QUERY_RANGE_PATH)</span>
+<span class="nc" id="L343">                    .queryParam(URLEncoder.encode(&quot;query&quot;, StandardCharsets.UTF_8), URLEncoder.encode(&quot;max_over_time({&quot; + timeSeriesSelector + &quot;})&quot;, StandardCharsets.UTF_8))</span>
+<span class="nc" id="L344">                    .queryParam(&quot;step&quot;, &quot;4h&quot;)</span>
+<span class="nc" id="L345">                    .queryParam(&quot;start&quot;, startTime)</span>
+<span class="nc" id="L346">                    .queryParam(&quot;end&quot;, endTime)</span>
+<span class="nc" id="L347">                    .build(true).toUri();</span>
+<span class="nc" id="L348">            responseEntity = restTemplate.exchange(uri,</span>
+                    HttpMethod.GET, httpEntity, VictoriaMetricsQueryContent.class);
+<span class="nc bnc" id="L350" title="All 2 branches missed.">            if (responseEntity.getStatusCode().is2xxSuccessful()) {</span>
+<span class="nc bnc" id="L351" title="All 4 branches missed.">                if (responseEntity.getBody() != null &amp;&amp; responseEntity.getBody().getData() != null</span>
+<span class="nc bnc" id="L352" title="All 2 branches missed.">                        &amp;&amp; responseEntity.getBody().getData().getResult() != null) {</span>
+<span class="nc" id="L353">                    List&lt;VictoriaMetricsQueryContent.ContentData.Content&gt; contents = responseEntity.getBody().getData().getResult();</span>
+<span class="nc bnc" id="L354" title="All 2 branches missed.">                    for (VictoriaMetricsQueryContent.ContentData.Content content : contents) {</span>
+<span class="nc" id="L355">                        Map&lt;String, String&gt; labels = content.getMetric();</span>
+<span class="nc" id="L356">                        labels.remove(LABEL_KEY_NAME);</span>
+<span class="nc" id="L357">                        labels.remove(LABEL_KEY_JOB);</span>
+<span class="nc" id="L358">                        labels.remove(LABEL_KEY_INSTANCE);</span>
+<span class="nc" id="L359">                        labels.remove(MONITOR_METRICS_KEY);</span>
+<span class="nc" id="L360">                        labels.remove(MONITOR_METRIC_KEY);</span>
+<span class="nc" id="L361">                        String labelStr = JsonUtil.toJson(labels);</span>
+<span class="nc bnc" id="L362" title="All 4 branches missed.">                        if (content.getValues() != null &amp;&amp; !content.getValues().isEmpty()) {</span>
+<span class="nc" id="L363">                            List&lt;Value&gt; valueList = instanceValuesMap.computeIfAbsent(labelStr, k -&gt; new LinkedList&lt;&gt;());</span>
+<span class="nc bnc" id="L364" title="All 2 branches missed.">                            if (valueList.size() == content.getValues().size()) {</span>
+<span class="nc bnc" id="L365" title="All 2 branches missed.">                                for (int timestampIndex = 0; timestampIndex &lt; valueList.size(); timestampIndex++) {</span>
+<span class="nc" id="L366">                                    Value value = valueList.get(timestampIndex);</span>
+<span class="nc" id="L367">                                    Object[] valueArr = content.getValues().get(timestampIndex);</span>
+<span class="nc" id="L368">                                    value.setMax(String.valueOf(valueArr[1]));</span>
+                                }
+                            }
+                        }
+<span class="nc" id="L372">                    }</span>
+                }
+            }
+            // min
+<span class="nc" id="L376">            uri = UriComponentsBuilder.fromHttpUrl(victoriaMetricsProp.getUrl() + QUERY_RANGE_PATH)</span>
+<span class="nc" id="L377">                    .queryParam(URLEncoder.encode(&quot;query&quot;, StandardCharsets.UTF_8), URLEncoder.encode(&quot;min_over_time({&quot; + timeSeriesSelector + &quot;})&quot;, StandardCharsets.UTF_8))</span>
+<span class="nc" id="L378">                    .queryParam(&quot;step&quot;, &quot;4h&quot;)</span>
+<span class="nc" id="L379">                    .queryParam(&quot;start&quot;, startTime)</span>
+<span class="nc" id="L380">                    .queryParam(&quot;end&quot;, endTime)</span>
+<span class="nc" id="L381">                    .build(true).toUri();</span>
+<span class="nc" id="L382">            responseEntity = restTemplate.exchange(uri,</span>
+                    HttpMethod.GET, httpEntity, VictoriaMetricsQueryContent.class);
+<span class="nc bnc" id="L384" title="All 2 branches missed.">            if (responseEntity.getStatusCode().is2xxSuccessful()) {</span>
+<span class="nc bnc" id="L385" title="All 4 branches missed.">                if (responseEntity.getBody() != null &amp;&amp; responseEntity.getBody().getData() != null</span>
+<span class="nc bnc" id="L386" title="All 2 branches missed.">                        &amp;&amp; responseEntity.getBody().getData().getResult() != null) {</span>
+<span class="nc" id="L387">                    List&lt;VictoriaMetricsQueryContent.ContentData.Content&gt; contents = responseEntity.getBody().getData().getResult();</span>
+<span class="nc bnc" id="L388" title="All 2 branches missed.">                    for (VictoriaMetricsQueryContent.ContentData.Content content : contents) {</span>
+<span class="nc" id="L389">                        Map&lt;String, String&gt; labels = content.getMetric();</span>
+<span class="nc" id="L390">                        labels.remove(LABEL_KEY_NAME);</span>
+<span class="nc" id="L391">                        labels.remove(LABEL_KEY_JOB);</span>
+<span class="nc" id="L392">                        labels.remove(LABEL_KEY_INSTANCE);</span>
+<span class="nc" id="L393">                        labels.remove(MONITOR_METRICS_KEY);</span>
+<span class="nc" id="L394">                        labels.remove(MONITOR_METRIC_KEY);</span>
+<span class="nc" id="L395">                        String labelStr = JsonUtil.toJson(labels);</span>
+<span class="nc bnc" id="L396" title="All 4 branches missed.">                        if (content.getValues() != null &amp;&amp; !content.getValues().isEmpty()) {</span>
+<span class="nc" id="L397">                            List&lt;Value&gt; valueList = instanceValuesMap.computeIfAbsent(labelStr, k -&gt; new LinkedList&lt;&gt;());</span>
+<span class="nc bnc" id="L398" title="All 2 branches missed.">                            if (valueList.size() == content.getValues().size()) {</span>
+<span class="nc bnc" id="L399" title="All 2 branches missed.">                                for (int timestampIndex = 0; timestampIndex &lt; valueList.size(); timestampIndex++) {</span>
+<span class="nc" id="L400">                                    Value value = valueList.get(timestampIndex);</span>
+<span class="nc" id="L401">                                    Object[] valueArr = content.getValues().get(timestampIndex);</span>
+<span class="nc" id="L402">                                    value.setMin(String.valueOf(valueArr[1]));</span>
+                                }
+                            }
+                        }
+<span class="nc" id="L406">                    }</span>
+                }
+            }
+            // avg
+<span class="nc" id="L410">            uri = UriComponentsBuilder.fromHttpUrl(victoriaMetricsProp.getUrl() + QUERY_RANGE_PATH)</span>
+<span class="nc" id="L411">                    .queryParam(URLEncoder.encode(&quot;query&quot;, StandardCharsets.UTF_8), URLEncoder.encode(&quot;avg_over_time({&quot; + timeSeriesSelector + &quot;})&quot;, StandardCharsets.UTF_8))</span>
+<span class="nc" id="L412">                    .queryParam(&quot;step&quot;, &quot;4h&quot;)</span>
+<span class="nc" id="L413">                    .queryParam(&quot;start&quot;, startTime)</span>
+<span class="nc" id="L414">                    .queryParam(&quot;end&quot;, endTime)</span>
+<span class="nc" id="L415">                    .build(true).toUri();</span>
+<span class="nc" id="L416">            responseEntity = restTemplate.exchange(uri,</span>
+                    HttpMethod.GET, httpEntity, VictoriaMetricsQueryContent.class);
+<span class="nc bnc" id="L418" title="All 2 branches missed.">            if (responseEntity.getStatusCode().is2xxSuccessful()) {</span>
+<span class="nc bnc" id="L419" title="All 4 branches missed.">                if (responseEntity.getBody() != null &amp;&amp; responseEntity.getBody().getData() != null</span>
+<span class="nc bnc" id="L420" title="All 2 branches missed.">                        &amp;&amp; responseEntity.getBody().getData().getResult() != null) {</span>
+<span class="nc" id="L421">                    List&lt;VictoriaMetricsQueryContent.ContentData.Content&gt; contents = responseEntity.getBody().getData().getResult();</span>
+<span class="nc bnc" id="L422" title="All 2 branches missed.">                    for (VictoriaMetricsQueryContent.ContentData.Content content : contents) {</span>
+<span class="nc" id="L423">                        Map&lt;String, String&gt; labels = content.getMetric();</span>
+<span class="nc" id="L424">                        labels.remove(LABEL_KEY_NAME);</span>
+<span class="nc" id="L425">                        labels.remove(LABEL_KEY_JOB);</span>
+<span class="nc" id="L426">                        labels.remove(LABEL_KEY_INSTANCE);</span>
+<span class="nc" id="L427">                        labels.remove(MONITOR_METRICS_KEY);</span>
+<span class="nc" id="L428">                        labels.remove(MONITOR_METRIC_KEY);</span>
+<span class="nc" id="L429">                        String labelStr = JsonUtil.toJson(labels);</span>
+<span class="nc bnc" id="L430" title="All 4 branches missed.">                        if (content.getValues() != null &amp;&amp; !content.getValues().isEmpty()) {</span>
+<span class="nc" id="L431">                            List&lt;Value&gt; valueList = instanceValuesMap.computeIfAbsent(labelStr, k -&gt; new LinkedList&lt;&gt;());</span>
+<span class="nc bnc" id="L432" title="All 2 branches missed.">                            if (valueList.size() == content.getValues().size()) {</span>
+<span class="nc bnc" id="L433" title="All 2 branches missed.">                                for (int timestampIndex = 0; timestampIndex &lt; valueList.size(); timestampIndex++) {</span>
+<span class="nc" id="L434">                                    Value value = valueList.get(timestampIndex);</span>
+<span class="nc" id="L435">                                    Object[] valueArr = content.getValues().get(timestampIndex);</span>
+<span class="nc" id="L436">                                    value.setMean(String.valueOf(valueArr[1]));</span>
+                                }
+                            }
+                        }
+<span class="nc" id="L440">                    }</span>
+                }
+            }
+<span class="nc" id="L443">        } catch (Exception e) {</span>
+<span class="nc" id="L444">            log.error(&quot;query metrics data from victoria-metrics error. {}.&quot;, e.getMessage(), e);</span>
+<span class="nc" id="L445">        }</span>
+<span class="nc" id="L446">        return instanceValuesMap;</span>
+    }
+    
+<span class="nc bnc" id="L449" title="All 16 branches missed.">    @Data</span>
+<span class="nc" id="L450">    @Builder</span>
+<span class="nc" id="L451">    @AllArgsConstructor</span>
+<span class="nc" id="L452">    @NoArgsConstructor</span>
+    public static final class VictoriaMetricsContent {
+
+        /**
+         * metric contains metric name plus labels for a particular time series
+         */
+<span class="nc" id="L458">        private Map&lt;String, String&gt; metric;</span>
+
+        /**
+         * values contains raw sample values for the given time series
+         */
+<span class="nc" id="L463">        private Double[] values;</span>
+
+        /**
+         * timestamps contains raw sample UNIX timestamps in milliseconds for the given time series
+         * every timestamp is associated with the value at the corresponding position
+         */
+<span class="nc" id="L469">        private Long[] timestamps;</span>
+    }
+
+<span class="nc bnc" id="L472" title="All 20 branches missed.">    @Data</span>
+<span class="nc" id="L473">    @Builder</span>
+<span class="nc" id="L474">    @AllArgsConstructor</span>
+<span class="nc" id="L475">    @NoArgsConstructor</span>
+    public static final class VictoriaMetricsQueryContent {
+        
+<span class="nc" id="L478">        private String status;</span>
+        
+<span class="nc" id="L480">        private ContentData data;</span>
+        
+<span class="nc bnc" id="L482" title="All 20 branches missed.">        @Data</span>
+<span class="nc" id="L483">        @AllArgsConstructor</span>
+<span class="nc" id="L484">        @NoArgsConstructor</span>
+        public static final class ContentData {
+            
+<span class="nc" id="L487">            private String resultType;</span>
+            
+<span class="nc" id="L489">            private List&lt;Content&gt; result;</span>
+
+<span class="nc bnc" id="L491" title="All 22 branches missed.">            @Data</span>
+<span class="nc" id="L492">            @AllArgsConstructor</span>
+<span class="nc" id="L493">            @NoArgsConstructor</span>
+            public static final class Content {
+
+                /**
+                 * metric contains metric name plus labels for a particular time series
+                 */
+<span class="nc" id="L499">                private Map&lt;String, String&gt; metric;</span>
+
+                /**
+                 * values contains raw sample values for the given time series
+                 * value-timestamp
+                 * [1700993195,&quot;436960986&quot;]
+                 */
+<span class="nc" id="L506">                private Object[] value;</span>
+
+                /**
+                 * values contains raw sample values for the given time series
+                 * value-timestamp list
+                 * [[1700993195,&quot;436960986&quot;],[1700993195,&quot;436960986&quot;]...]
+                 */
+<span class="nc" id="L513">                private List&lt;Object[]&gt; values;</span>
+            }
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

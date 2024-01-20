@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CollectorServiceImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.service.impl</a> &gt; <span class="el_source">CollectorServiceImpl.java</span></div><h1>CollectorServiceImpl.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.manager.service.impl;
+
+import org.dromara.hertzbeat.common.entity.dto.CollectorSummary;
+import org.dromara.hertzbeat.common.entity.manager.Collector;
+import org.dromara.hertzbeat.common.entity.manager.CollectorMonitorBind;
+import org.dromara.hertzbeat.common.support.exception.CommonException;
+import org.dromara.hertzbeat.manager.dao.CollectorDao;
+import org.dromara.hertzbeat.manager.dao.CollectorMonitorBindDao;
+import org.dromara.hertzbeat.manager.scheduler.netty.ManageServer;
+import org.dromara.hertzbeat.manager.scheduler.AssignJobs;
+import org.dromara.hertzbeat.manager.scheduler.ConsistentHash;
+import org.dromara.hertzbeat.manager.service.CollectorService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.LinkedList;
+import java.util.List;
+
+/**
+ * collector service impl
+ * @author tom
+ */
+@Service
+@Transactional(rollbackFor = Exception.class)
+<span class="fc" id="L30">public class CollectorServiceImpl implements CollectorService {</span>
+    
+    @Autowired
+    private CollectorDao collectorDao;
+
+    @Autowired
+    private CollectorMonitorBindDao collectorMonitorBindDao;
+    
+    @Autowired
+    private ConsistentHash consistentHash;
+    
+    @Autowired(required = false)
+    private ManageServer manageServer;
+    
+    @Override
+    @Transactional(readOnly = true)
+    public Page&lt;CollectorSummary&gt; getCollectors(Specification&lt;Collector&gt; specification, PageRequest pageRequest) {
+<span class="nc" id="L47">        Page&lt;Collector&gt; collectors = collectorDao.findAll(specification, pageRequest);</span>
+<span class="nc" id="L48">        List&lt;CollectorSummary&gt; collectorSummaryList = new LinkedList&lt;&gt;();</span>
+<span class="nc bnc" id="L49" title="All 2 branches missed.">        for (Collector collector : collectors.getContent()) {</span>
+<span class="nc" id="L50">            CollectorSummary.CollectorSummaryBuilder summaryBuilder = CollectorSummary.builder().collector(collector);</span>
+<span class="nc" id="L51">            ConsistentHash.Node node = consistentHash.getNode(collector.getName());</span>
+<span class="nc bnc" id="L52" title="All 4 branches missed.">            if (node != null &amp;&amp; node.getAssignJobs() != null) {</span>
+<span class="nc" id="L53">                AssignJobs assignJobs = node.getAssignJobs();</span>
+<span class="nc" id="L54">                summaryBuilder.pinMonitorNum(assignJobs.getPinnedJobs().size());</span>
+<span class="nc" id="L55">                summaryBuilder.dispatchMonitorNum(assignJobs.getJobs().size());</span>
+            }
+<span class="nc" id="L57">            collectorSummaryList.add(summaryBuilder.build());</span>
+<span class="nc" id="L58">        }</span>
+<span class="nc" id="L59">        return new PageImpl&lt;&gt;(collectorSummaryList, pageRequest, collectors.getTotalElements());</span>
+    }
+    
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteRegisteredCollector(List&lt;String&gt; collectors) {
+<span class="nc bnc" id="L65" title="All 4 branches missed.">        if (collectors == null || collectors.isEmpty()) {</span>
+<span class="nc" id="L66">            return;</span>
+        }
+        // Determine whether there are fixed tasks on the collector
+<span class="nc" id="L69">        collectors.forEach(collector -&gt; {</span>
+<span class="nc" id="L70">            List&lt;CollectorMonitorBind&gt; binds = this.collectorMonitorBindDao.findCollectorMonitorBindsByCollector(collector);</span>
+<span class="nc bnc" id="L71" title="All 2 branches missed.">            if (!binds.isEmpty()) {</span>
+<span class="nc" id="L72">                throw new CommonException(&quot;The collector &quot; + collector + &quot; has pinned tasks that cannot be deleted.&quot;);</span>
+            }
+<span class="nc" id="L74">        });</span>
+<span class="nc" id="L75">        collectors.forEach(collector -&gt; {</span>
+<span class="nc" id="L76">            this.manageServer.closeChannel(collector);</span>
+<span class="nc" id="L77">            this.collectorDao.deleteCollectorByName(collector);</span>
+<span class="nc" id="L78">        });</span>
+<span class="nc" id="L79">    }</span>
+
+    @Override
+    public boolean hasCollector(String collector) {
+<span class="nc" id="L83">        return this.collectorDao.findCollectorByName(collector).isPresent();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

@@ -1,0 +1,12 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+hertzbeat-remoting,org.dromara.hertzbeat.remoting.netty,NettyRemotingClient,26,234,5,9,10,52,6,11,1,9
+hertzbeat-remoting,org.dromara.hertzbeat.remoting.netty,NettyRemotingClient.NettyClientHandler,6,17,0,0,2,5,1,3,1,3
+hertzbeat-remoting,org.dromara.hertzbeat.remoting.netty,NettyRemotingServer.new ChannelInitializer() {...},0,11,0,0,0,3,0,2,0,2
+hertzbeat-remoting,org.dromara.hertzbeat.remoting.netty,NettyRemotingAbstract,102,160,20,12,20,45,16,14,1,13
+hertzbeat-remoting,org.dromara.hertzbeat.remoting.netty,NettyRemotingClient.new ChannelInitializer() {...},0,11,0,0,0,3,0,2,0,2
+hertzbeat-remoting,org.dromara.hertzbeat.remoting.netty,NettyRemotingServer,66,248,4,4,17,53,8,8,4,8
+hertzbeat-remoting,org.dromara.hertzbeat.remoting.netty,NettyServerConfig,102,17,22,0,0,3,16,4,5,4
+hertzbeat-remoting,org.dromara.hertzbeat.remoting.netty,NettyClientConfig,101,23,18,0,0,4,14,6,5,6
+hertzbeat-remoting,org.dromara.hertzbeat.remoting.netty,NettyRemotingServer.NettyServerHandler,6,17,0,0,2,5,1,3,1,3
+hertzbeat-remoting,org.dromara.hertzbeat.remoting.netty,ResponseFuture,0,25,0,0,0,7,0,3,0,3
+hertzbeat-remoting,org.dromara.hertzbeat.remoting.event,NettyEventListener,2,0,0,0,2,0,2,0,2,0

@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AlertDefine.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.entity.alerter</a> &gt; <span class="el_source">AlertDefine.java</span></div><h1>AlertDefine.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.common.entity.alerter;
+
+import com.google.common.base.Objects;
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.dromara.hertzbeat.common.entity.manager.JsonTagListAttributeConverter;
+import org.dromara.hertzbeat.common.entity.manager.TagItem;
+import org.hibernate.validator.constraints.Length;
+import org.springframework.data.annotation.CreatedBy;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedBy;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import javax.persistence.*;
+import javax.validation.constraints.Max;
+import javax.validation.constraints.Min;
+import javax.validation.constraints.NotNull;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+import static io.swagger.v3.oas.annotations.media.Schema.AccessMode.READ_ONLY;
+import static io.swagger.v3.oas.annotations.media.Schema.AccessMode.READ_WRITE;
+
+
+/**
+ * Alarm Define Rule Entity
+ * @author tom
+ */
+@Entity
+@Table(name = &quot;hzb_alert_define&quot;)
+<span class="nc" id="L53">@Data</span>
+<span class="nc" id="L54">@Builder</span>
+<span class="nc" id="L55">@AllArgsConstructor</span>
+<span class="nc" id="L56">@NoArgsConstructor</span>
+@Schema(description = &quot;Alarm Threshold Entity | 告警阈值实体&quot;)
+@EntityListeners(AuditingEntityListener.class)
+public class AlertDefine {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Schema(title = &quot;Threshold Id&quot;, example = &quot;87584674384&quot;, accessMode = READ_ONLY)
+<span class="nc" id="L64">    private Long id;</span>
+
+    @Schema(title = &quot;Monitoring Type&quot;, example = &quot;linux&quot;, accessMode = READ_WRITE)
+    @Length(max = 100)
+    @NotNull
+<span class="nc" id="L69">    private String app;</span>
+
+    @Schema(title = &quot;Monitoring Metrics&quot;, example = &quot;cpu&quot;, accessMode = READ_WRITE)
+    @Length(max = 100)
+    @NotNull
+<span class="nc" id="L74">    private String metric;</span>
+
+    @Schema(title = &quot;Monitoring Metrics Field&quot;, example = &quot;usage&quot;, accessMode = READ_WRITE)
+    @Length(max = 100)
+<span class="nc" id="L78">    private String field;</span>
+
+    @Schema(title = &quot;Is Apply All Default | 是否是全局默认告警&quot;, example = &quot;false&quot;, accessMode = READ_WRITE)
+<span class="nc" id="L81">    private boolean preset;</span>
+
+    @Schema(title = &quot;Alarm Threshold Expr | 告警阈值触发条件表达式&quot;, example = &quot;usage&gt;90&quot;, accessMode = READ_WRITE)
+    @Length(max = 2048)
+    @Column(length = 2048)
+<span class="nc" id="L86">    private String expr;</span>
+
+    @Schema(title = &quot;Alarm Level 0:High-Emergency-Critical Alarm 1:Medium-Critical-Critical Alarm 2:Low-Warning-Warning&quot;,
+            example = &quot;1&quot;, accessMode = READ_WRITE)
+    @Min(0)
+    @Max(2)
+<span class="nc" id="L92">    private byte priority;</span>
+
+    @Schema(title = &quot;Alarm Trigger Times | 阈值触发次数,即达到次数要求后才触发告警&quot;, example = &quot;3&quot;, accessMode = READ_WRITE)
+    @Min(0)
+    @Max(10)
+<span class="nc" id="L97">    private Integer times;</span>
+    
+    @Schema(description = &quot;Tags(status:success,env:prod)&quot;, example = &quot;{name: key1, value: value1}&quot;,
+            accessMode = READ_WRITE)
+    @Convert(converter = JsonTagListAttributeConverter.class)
+    @Column(length = 2048)
+<span class="nc" id="L103">    private List&lt;TagItem&gt; tags;</span>
+
+<span class="nc" id="L105">    @Schema(title = &quot;Is Enable&quot;, example = &quot;true&quot;, accessMode = READ_WRITE)</span>
+<span class="nc" id="L106">    private boolean enable = true;</span>
+    
+<span class="nc" id="L108">    @Schema(title = &quot;Is Send Alarm Recover Notice | 是否发送告警恢复通知&quot;, example = &quot;false&quot;, accessMode = READ_WRITE)</span>
+    @Column(columnDefinition = &quot;boolean default false&quot;)
+<span class="nc" id="L110">    private boolean recoverNotice = false;</span>
+
+    @Schema(title = &quot;Alarm Template | 告警通知内容模版&quot;, example = &quot;linux {monitor_name}: {monitor_id} cpu usage high&quot;,
+            accessMode = READ_WRITE)
+    @Length(max = 2048)
+    @Column(length = 2048)
+<span class="nc" id="L116">    private String template;</span>
+
+    @Schema(title = &quot;The creator of this record&quot;, example = &quot;tom&quot;, accessMode = READ_ONLY)
+    @CreatedBy
+<span class="nc" id="L120">    private String creator;</span>
+
+    @Schema(title = &quot;The modifier of this record&quot;, example = &quot;tom&quot;, accessMode = READ_ONLY)
+    @LastModifiedBy
+<span class="nc" id="L124">    private String modifier;</span>
+
+    @Schema(title = &quot;Record create time&quot;, example = &quot;1612198922000&quot;, accessMode = READ_ONLY)
+    @CreatedDate
+<span class="nc" id="L128">    private LocalDateTime gmtCreate;</span>
+
+    @Schema(title = &quot;Record modify time&quot;, example = &quot;1612198444000&quot;, accessMode = READ_ONLY)
+    @LastModifiedDate
+<span class="nc" id="L132">    private LocalDateTime gmtUpdate;</span>
+
+    @Override
+    public boolean equals(Object o) {
+<span class="nc bnc" id="L136" title="All 2 branches missed.">        if (this == o) {</span>
+<span class="nc" id="L137">            return true;</span>
+        }
+<span class="nc bnc" id="L139" title="All 2 branches missed.">        if (!(o instanceof AlertDefine)) {</span>
+<span class="nc" id="L140">            return false;</span>
+        }
+<span class="nc" id="L142">        AlertDefine that = (AlertDefine) o;</span>
+<span class="nc bnc" id="L143" title="All 6 branches missed.">        return priority == that.priority &amp;&amp; Objects.equal(app, that.app) &amp;&amp; Objects.equal(metric, that.metric)</span>
+<span class="nc bnc" id="L144" title="All 4 branches missed.">                &amp;&amp; Objects.equal(field, that.field) &amp;&amp; Objects.equal(expr, that.expr)</span>
+<span class="nc bnc" id="L145" title="All 4 branches missed.">                &amp;&amp; Objects.equal(times, that.times) &amp;&amp; Objects.equal(template, that.template);</span>
+    }
+
+    @Override
+    public int hashCode() {
+<span class="nc" id="L150">        return Objects.hashCode(app, metric, field, expr, priority, times, template);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

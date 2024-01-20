@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>IntervalExpressionUtil.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.util</a> &gt; <span class="el_source">IntervalExpressionUtil.java</span></div><h1>IntervalExpressionUtil.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.common.util;
+
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * expression calculate for number range
+ * 数值区间表达式计算
+ * [a,b] = {a &lt;= x &lt;= b}
+ * [a,b) = {a &lt;= x &lt; b}
+ * [a,+∞) = {a &lt;= x}
+ * (-∞,b] = {x &lt;= b}
+ * (-∞,a]||[b,+∞) = {x &lt;= a || x &gt;= b}
+ * @author tomsun28
+ *
+ */
+<span class="nc" id="L33">@Slf4j</span>
+<span class="nc" id="L34">public class IntervalExpressionUtil {</span>
+
+    private static final String SPLIT_OR = &quot;\\|\\|&quot;;
+    private static final String SPLIT_AND = &quot;,&quot;;
+    private static final String SPLIT_EQU_LEFT = &quot;(&quot;;
+    private static final String SPLIT_EQU_RIGHT = &quot;)&quot;;
+    private static final String SPLIT_EQ_LEFT = &quot;[&quot;;
+    private static final String SPLIT_EQ_RIGHT = &quot;]&quot;;
+    private static final String NEGATIVE = &quot;-∞&quot;;
+    private static final String POSITIVE = &quot;+∞&quot;;
+
+    /**
+     * 校验数值是否在区间范围
+     * @param numberValue 数值
+     * @param expression 区间表达式
+     * @return true-是 false-否
+     */
+    public static boolean validNumberIntervalExpress(Double numberValue, String expression) {
+<span class="nc bnc" id="L52" title="All 4 branches missed.">        if (expression == null || &quot;&quot;.equals(expression)) {</span>
+<span class="nc" id="L53">            return true;</span>
+        }
+<span class="nc bnc" id="L55" title="All 2 branches missed.">        if (numberValue == null) {</span>
+<span class="nc" id="L56">            return false;</span>
+        }
+        try {
+<span class="nc" id="L59">            String[] expressions = expression.split(SPLIT_OR);</span>
+<span class="nc bnc" id="L60" title="All 2 branches missed.">            for (String expr : expressions) {</span>
+<span class="nc" id="L61">                String[] values = expr.substring(1, expr.length() - 1).split(SPLIT_AND);</span>
+<span class="nc bnc" id="L62" title="All 2 branches missed.">                if (values.length != 2) {</span>
+<span class="nc" id="L63">                    continue;</span>
+                }
+<span class="nc" id="L65">                Double[] doubleValues = new Double[2];</span>
+<span class="nc bnc" id="L66" title="All 2 branches missed.">                if (NEGATIVE.equals(values[0])) {</span>
+<span class="nc" id="L67">                    doubleValues[0] = Double.MIN_VALUE;</span>
+                } else {
+<span class="nc" id="L69">                    doubleValues[0] = Double.parseDouble(values[0]);</span>
+                }
+<span class="nc bnc" id="L71" title="All 2 branches missed.">                if (POSITIVE.equals(values[1])) {</span>
+<span class="nc" id="L72">                    doubleValues[1] = Double.MAX_VALUE;</span>
+                } else {
+<span class="nc" id="L74">                    doubleValues[1] = Double.parseDouble(values[1]);</span>
+                }
+<span class="nc" id="L76">                String startBracket = expr.substring(0, 1);</span>
+<span class="nc" id="L77">                String endBracket = expr.substring(expr.length() - 1);</span>
+<span class="nc bnc" id="L78" title="All 2 branches missed.">                if (SPLIT_EQU_LEFT.equals(startBracket)) {</span>
+<span class="nc bnc" id="L79" title="All 2 branches missed.">                    if (SPLIT_EQU_RIGHT.equals(endBracket)) {</span>
+<span class="nc bnc" id="L80" title="All 4 branches missed.">                        if (numberValue &gt; doubleValues[0] &amp;&amp; numberValue &lt; doubleValues[1]) {</span>
+<span class="nc" id="L81">                            return true;</span>
+                        }
+<span class="nc bnc" id="L83" title="All 2 branches missed.">                    } else if (SPLIT_EQ_RIGHT.equals(endBracket)) {</span>
+<span class="nc bnc" id="L84" title="All 4 branches missed.">                        if (numberValue &gt; doubleValues[0] &amp;&amp; numberValue &lt;= doubleValues[1]) {</span>
+<span class="nc" id="L85">                            return true;</span>
+                        }
+                    }
+<span class="nc bnc" id="L88" title="All 2 branches missed.">                } else if (SPLIT_EQ_LEFT.equals(startBracket)) {</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">                    if (SPLIT_EQU_RIGHT.equals(endBracket)) {</span>
+<span class="nc bnc" id="L90" title="All 4 branches missed.">                        if (numberValue &gt;= doubleValues[0] &amp;&amp; numberValue &lt; doubleValues[1]) {</span>
+<span class="nc" id="L91">                            return true;</span>
+                        }
+<span class="nc bnc" id="L93" title="All 2 branches missed.">                    } else if (SPLIT_EQ_RIGHT.equals(endBracket)) {</span>
+<span class="nc bnc" id="L94" title="All 4 branches missed.">                        if (numberValue &gt;= doubleValues[0] &amp;&amp; numberValue &lt;= doubleValues[1]) {</span>
+<span class="nc" id="L95">                            return true;</span>
+                        }
+                    }
+                }
+            }
+<span class="nc" id="L100">            return false;</span>
+<span class="nc" id="L101">        } catch (Exception e) {</span>
+<span class="nc" id="L102">            log.debug(e.getMessage(), e);</span>
+<span class="nc" id="L103">            return false;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

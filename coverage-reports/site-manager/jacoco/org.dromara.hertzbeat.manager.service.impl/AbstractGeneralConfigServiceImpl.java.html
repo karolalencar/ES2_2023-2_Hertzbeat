@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AbstractGeneralConfigServiceImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.service.impl</a> &gt; <span class="el_source">AbstractGeneralConfigServiceImpl.java</span></div><h1>AbstractGeneralConfigServiceImpl.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.manager.service.impl;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.common.entity.manager.GeneralConfig;
+import org.dromara.hertzbeat.manager.dao.GeneralConfigDao;
+import org.dromara.hertzbeat.manager.service.GeneralConfigService;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * 提供通用配置Service的抽象实现，实现了增删查改等操作。
+ *
+ * &lt;p&gt;Abstract implementation of GeneralConfigService, providing CRUD operations for configurations.&lt;/p&gt;
+ *
+ * @author zqr10159
+ */
+<span class="fc" id="L19">@Slf4j</span>
+abstract class AbstractGeneralConfigServiceImpl&lt;T&gt; implements GeneralConfigService&lt;T&gt; {
+    protected final GeneralConfigDao generalConfigDao;
+    protected final ObjectMapper objectMapper;
+
+    /**
+     * 构造方法，传入GeneralConfigDao、ObjectMapper和type。
+     *
+     * &lt;p&gt;Constructor, passing in GeneralConfigDao, ObjectMapper and type.&lt;/p&gt;
+     *
+     * @param generalConfigDao 配置Dao对象
+     * @param objectMapper     JSON工具类对象
+     */
+<span class="fc" id="L32">    protected AbstractGeneralConfigServiceImpl(GeneralConfigDao generalConfigDao, ObjectMapper objectMapper) {</span>
+<span class="fc" id="L33">        this.generalConfigDao = generalConfigDao;</span>
+<span class="fc" id="L34">        this.objectMapper = objectMapper;</span>
+<span class="fc" id="L35">    }</span>
+
+    /**
+     * 保存配置。
+     *
+     * &lt;p&gt;Save a configuration.&lt;/p&gt;
+     *
+     * @param config 需要保存的配置对象
+     */
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public void saveConfig(T config) {
+        try {
+<span class="nc" id="L48">            String contentJson = objectMapper.writeValueAsString(config);</span>
+
+<span class="nc" id="L50">            GeneralConfig generalConfig2Save = GeneralConfig.builder()</span>
+<span class="nc" id="L51">                    .type(type())</span>
+<span class="nc" id="L52">                    .content(contentJson)</span>
+<span class="nc" id="L53">                    .build();</span>
+<span class="nc" id="L54">            generalConfigDao.save(generalConfig2Save);</span>
+<span class="nc" id="L55">            log.info(&quot;配置保存成功|Configuration saved successfully&quot;);</span>
+<span class="nc" id="L56">            handler(getConfig());</span>
+<span class="nc" id="L57">        } catch (JsonProcessingException e) {</span>
+<span class="nc" id="L58">            throw new IllegalArgumentException(&quot;Configuration saved failed: &quot; + e.getMessage());</span>
+<span class="nc" id="L59">        }</span>
+<span class="nc" id="L60">    }</span>
+
+    /**
+     * 获取配置。
+     *
+     * &lt;p&gt;Get a configuration.&lt;/p&gt;
+     *
+     * @return 查询到的配置对象
+     */
+    @Override
+    public T getConfig() {
+<span class="fc" id="L71">        GeneralConfig generalConfig = generalConfigDao.findByType(type());</span>
+<span class="fc bfc" id="L72" title="All 2 branches covered.">        if (generalConfig == null) {</span>
+<span class="fc" id="L73">            return null;</span>
+        }
+        try {
+<span class="fc" id="L76">            return objectMapper.readValue(generalConfig.getContent(), getTypeReference());</span>
+<span class="nc" id="L77">        } catch (JsonProcessingException e) {</span>
+<span class="nc" id="L78">            throw new IllegalArgumentException(&quot;Get configuration failed: &quot; + e.getMessage());</span>
+        }
+    }
+
+    /**
+     * 获取配置类型的TypeReference对象。
+     *
+     * &lt;p&gt;Get TypeReference object of configuration type.&lt;/p&gt;
+     *
+     * @return 配置类型的TypeReference对象
+     */
+    protected abstract TypeReference&lt;T&gt; getTypeReference();
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

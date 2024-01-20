@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>WorkerPool.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.dispatch</a> &gt; <span class="el_source">WorkerPool.java</span></div><h1>WorkerPool.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.collector.dispatch;
+
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.DisposableBean;
+import org.springframework.stereotype.Component;
+
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Collection task worker thread pool
+ */
+@Component
+<span class="nc" id="L35">@Slf4j</span>
+public class WorkerPool implements DisposableBean {
+
+    private ThreadPoolExecutor workerExecutor;
+
+<span class="nc" id="L40">    public WorkerPool() {</span>
+<span class="nc" id="L41">        initWorkExecutor();</span>
+<span class="nc" id="L42">    }</span>
+
+    private void initWorkExecutor() {
+        // thread factory
+<span class="nc" id="L46">        ThreadFactory threadFactory = new ThreadFactoryBuilder()</span>
+<span class="nc" id="L47">                .setUncaughtExceptionHandler((thread, throwable) -&gt; {</span>
+<span class="nc" id="L48">                    log.error(&quot;workerExecutor has uncaughtException.&quot;);</span>
+<span class="nc" id="L49">                    log.error(throwable.getMessage(), throwable);</span>
+<span class="nc" id="L50">                })</span>
+<span class="nc" id="L51">                .setDaemon(true)</span>
+<span class="nc" id="L52">                .setNameFormat(&quot;collect-worker-%d&quot;)</span>
+<span class="nc" id="L53">                .build();</span>
+<span class="nc" id="L54">        workerExecutor = new ThreadPoolExecutor(100,</span>
+                800,
+                10,
+                TimeUnit.SECONDS,
+                new SynchronousQueue&lt;&gt;(),
+                threadFactory,
+                new ThreadPoolExecutor.AbortPolicy());
+<span class="nc" id="L61">    }</span>
+
+    /**
+     * Run the collection task thread
+     *
+     * @param runnable Task  
+     * @throws RejectedExecutionException when thread pool full 
+     */
+    public void executeJob(Runnable runnable) throws RejectedExecutionException {
+<span class="nc" id="L70">        workerExecutor.execute(runnable);</span>
+<span class="nc" id="L71">    }</span>
+
+    @Override
+    public void destroy() throws Exception {
+<span class="nc bnc" id="L75" title="All 2 branches missed.">        if (workerExecutor != null) {</span>
+<span class="nc" id="L76">            workerExecutor.shutdownNow();</span>
+        }
+<span class="nc" id="L78">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

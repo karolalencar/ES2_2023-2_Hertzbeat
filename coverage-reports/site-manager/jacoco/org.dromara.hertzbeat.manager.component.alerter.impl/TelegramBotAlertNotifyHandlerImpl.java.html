@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TelegramBotAlertNotifyHandlerImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.component.alerter.impl</a> &gt; <span class="el_source">TelegramBotAlertNotifyHandlerImpl.java</span></div><h1>TelegramBotAlertNotifyHandlerImpl.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.manager.component.alerter.impl;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.common.entity.alerter.Alert;
+import org.dromara.hertzbeat.common.entity.manager.NoticeReceiver;
+import org.dromara.hertzbeat.common.entity.manager.NoticeTemplate;
+import org.dromara.hertzbeat.manager.support.exception.AlertNoticeException;
+import org.springframework.http.*;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
+
+/**
+ * Send alarm information by Telegram Bot
+ * 通过Telegram Bot发送告警信息
+ *
+ * @author &lt;a href=&quot;mailto:gcwm99@gmail.com&quot;&gt;gcdd1993&lt;/a&gt;
+ * @version 2.1
+ * Created by Musk.Chen on 2023/1/16
+ */
+@Component
+<span class="fc" id="L44">@Slf4j</span>
+<span class="fc" id="L45">final class TelegramBotAlertNotifyHandlerImpl extends AbstractAlertNotifyHandlerImpl {</span>
+
+    @Override
+    public void send(NoticeReceiver receiver, NoticeTemplate noticeTemplate, Alert alert) throws AlertNoticeException {
+        try {
+<span class="nc" id="L50">            String url = String.format(alerterProperties.getTelegramBotApiUrl(), receiver.getTgBotToken());</span>
+<span class="nc" id="L51">            TelegramBotNotifyDTO notifyBody = TelegramBotNotifyDTO.builder()</span>
+<span class="nc" id="L52">                    .chatId(receiver.getTgUserId())</span>
+<span class="nc" id="L53">                    .text(renderContent(noticeTemplate, alert))</span>
+<span class="nc" id="L54">                    .disableWebPagePreview(true)</span>
+<span class="nc" id="L55">                    .build();</span>
+<span class="nc" id="L56">            HttpHeaders headers = new HttpHeaders();</span>
+<span class="nc" id="L57">            headers.setContentType(MediaType.APPLICATION_JSON);</span>
+<span class="nc" id="L58">            HttpEntity&lt;TelegramBotNotifyDTO&gt; telegramEntity = new HttpEntity&lt;&gt;(notifyBody, headers);</span>
+<span class="nc" id="L59">            ResponseEntity&lt;TelegramBotNotifyResponse&gt; entity = restTemplate.postForEntity(url, telegramEntity, TelegramBotNotifyResponse.class);</span>
+<span class="nc bnc" id="L60" title="All 4 branches missed.">            if (entity.getStatusCode() == HttpStatus.OK &amp;&amp; entity.getBody() != null) {</span>
+<span class="nc" id="L61">                TelegramBotNotifyResponse body = entity.getBody();</span>
+<span class="nc bnc" id="L62" title="All 2 branches missed.">                if (body.ok) {</span>
+<span class="nc" id="L63">                    log.debug(&quot;Send Telegram Bot Success&quot;);</span>
+                } else {
+<span class="nc" id="L65">                    log.warn(&quot;Send Telegram Bot Failed: {}, error_code: {}&quot;, body.description, body.errorCode);</span>
+<span class="nc" id="L66">                    throw new AlertNoticeException(body.description);</span>
+                }
+<span class="nc" id="L68">            } else {</span>
+<span class="nc" id="L69">                log.warn(&quot;Send Telegram Bot Failed {}&quot;, entity.getBody());</span>
+<span class="nc" id="L70">                throw new AlertNoticeException(&quot;Http StatusCode &quot; + entity.getStatusCode());</span>
+            }
+<span class="nc" id="L72">        } catch (Exception e) {</span>
+<span class="nc" id="L73">            throw new AlertNoticeException(&quot;[Telegram Bot Notify Error] &quot; + e.getMessage());</span>
+<span class="nc" id="L74">        }</span>
+<span class="nc" id="L75">    }</span>
+
+    @Override
+    public byte type() {
+<span class="fc" id="L79">        return 7;</span>
+    }
+
+<span class="nc bnc" id="L82" title="All 30 branches missed.">    @Data</span>
+<span class="nc" id="L83">    @Builder</span>
+    private static class TelegramBotNotifyDTO {
+        @JsonProperty(&quot;chat_id&quot;)
+<span class="nc" id="L86">        private String chatId;</span>
+<span class="nc" id="L87">        private String text;</span>
+        @JsonProperty(&quot;disable_web_page_preview&quot;)
+<span class="nc" id="L89">        private Boolean disableWebPagePreview;</span>
+    }
+
+<span class="nc" id="L92">    @NoArgsConstructor</span>
+<span class="nc bnc" id="L93" title="All 26 branches missed.">    @Data</span>
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private static class TelegramBotNotifyResponse {
+<span class="nc" id="L96">        private boolean ok;</span>
+        @JsonProperty(&quot;error_code&quot;)
+<span class="nc" id="L98">        private Integer errorCode;</span>
+<span class="nc" id="L99">        private String description;</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

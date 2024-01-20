@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>NoticeConfigController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.controller</a> &gt; <span class="el_source">NoticeConfigController.java</span></div><h1>NoticeConfigController.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.manager.controller;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.dromara.hertzbeat.common.entity.dto.Message;
+import org.dromara.hertzbeat.common.entity.manager.NoticeReceiver;
+import org.dromara.hertzbeat.common.entity.manager.NoticeRule;
+import org.dromara.hertzbeat.common.entity.manager.NoticeTemplate;
+import org.dromara.hertzbeat.manager.service.NoticeConfigService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import javax.persistence.criteria.Predicate;
+import javax.validation.Valid;
+import java.util.List;
+import java.util.Optional;
+
+import static org.dromara.hertzbeat.common.constants.CommonConstants.FAIL_CODE;
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
+
+
+/**
+ * Message Notification Configuration API
+ * 消息通知配置API
+ *
+ * @author tom
+ */
+@Tag(name = &quot;Notification Config API | 消息通知配置API&quot;)
+@RestController()
+@RequestMapping(value = &quot;/api/notice&quot;, produces = {APPLICATION_JSON_VALUE})
+<span class="fc" id="L51">public class NoticeConfigController {</span>
+
+    @Autowired
+    private NoticeConfigService noticeConfigService;
+    @PostMapping(path = &quot;/receiver&quot;)
+    @Operation(summary = &quot;Add a recipient&quot;, description = &quot;新增一个接收人&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; addNewNoticeReceiver(@Valid @RequestBody NoticeReceiver noticeReceiver) {
+<span class="fc" id="L58">        noticeConfigService.addReceiver(noticeReceiver);</span>
+<span class="fc" id="L59">        return ResponseEntity.ok(Message.success(&quot;Add success&quot;));</span>
+    }
+
+    @PutMapping(path = &quot;/receiver&quot;)
+    @Operation(summary = &quot;Modify existing recipient information&quot;, description = &quot;修改已存在的接收人信息&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; editNoticeReceiver(@Valid @RequestBody NoticeReceiver noticeReceiver) {
+<span class="fc" id="L65">        noticeConfigService.editReceiver(noticeReceiver);</span>
+<span class="fc" id="L66">        return ResponseEntity.ok(Message.success(&quot;Edit success&quot;));</span>
+    }
+
+    @DeleteMapping(path = &quot;/receiver/{id}&quot;)
+    @Operation(summary = &quot;Delete existing recipient information&quot;, description = &quot;删除已存在的接收人信息&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; deleteNoticeReceiver(
+            @Parameter(description = &quot;en: Recipient ID,zh: 接收人ID&quot;, example = &quot;6565463543&quot;) @PathVariable(&quot;id&quot;) final Long receiverId) {
+<span class="fc" id="L73">        NoticeReceiver noticeReceiver = noticeConfigService.getReceiverById(receiverId);</span>
+<span class="fc bfc" id="L74" title="All 2 branches covered.">        if (noticeReceiver == null) {</span>
+<span class="fc" id="L75">            return ResponseEntity.ok(Message.success(&quot;The relevant information of the recipient could not be found, please check whether the parameters are correct&quot;));</span>
+        }
+<span class="fc" id="L77">        noticeConfigService.deleteReceiver(receiverId);</span>
+<span class="fc" id="L78">        return ResponseEntity.ok(Message.success(&quot;Delete success&quot;));</span>
+    }
+
+    @GetMapping(path = &quot;/receivers&quot;)
+    @Operation(summary = &quot;Get a list of message notification recipients based on query filter items&quot;,
+            description = &quot;根据查询过滤项获取消息通知接收人列表&quot;)
+    public ResponseEntity&lt;Message&lt;List&lt;NoticeReceiver&gt;&gt;&gt; getReceivers(
+            @Parameter(description = &quot;en: Recipient name,zh: 接收人名称，模糊查询&quot;, example = &quot;tom&quot;) @RequestParam(required = false) final String name) {
+<span class="fc" id="L86">        Specification&lt;NoticeReceiver&gt; specification = (root, query, criteriaBuilder) -&gt; {</span>
+<span class="nc" id="L87">            Predicate predicate = criteriaBuilder.conjunction();</span>
+<span class="nc bnc" id="L88" title="All 4 branches missed.">            if (name != null &amp;&amp; !name.isEmpty()) {</span>
+<span class="nc" id="L89">                Predicate predicateName = criteriaBuilder.like(root.get(&quot;name&quot;), &quot;%&quot; + name + &quot;%&quot;);</span>
+<span class="nc" id="L90">                predicate = criteriaBuilder.and(predicateName);</span>
+            }
+<span class="nc" id="L92">            return predicate;</span>
+        };
+<span class="fc" id="L94">        List&lt;NoticeReceiver&gt; receivers = noticeConfigService.getNoticeReceivers(specification);</span>
+<span class="fc" id="L95">        Message&lt;List&lt;NoticeReceiver&gt;&gt; message = Message.success(receivers);</span>
+<span class="fc" id="L96">        return ResponseEntity.ok(message);</span>
+    }
+
+    @PostMapping(path = &quot;/rule&quot;)
+    @Operation(summary = &quot;Add a notification policy&quot;, description = &quot;新增一个通知策略&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; addNewNoticeRule(@Valid @RequestBody NoticeRule noticeRule) {
+<span class="fc" id="L102">        noticeConfigService.addNoticeRule(noticeRule);</span>
+<span class="fc" id="L103">        return ResponseEntity.ok(Message.success(&quot;Add success&quot;));</span>
+    }
+
+    @PutMapping(path = &quot;/rule&quot;)
+    @Operation(summary = &quot;Modify existing notification policy information&quot;, description = &quot;修改已存在的通知策略信息&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; editNoticeRule(@Valid @RequestBody NoticeRule noticeRule) {
+<span class="fc" id="L109">        noticeConfigService.editNoticeRule(noticeRule);</span>
+<span class="fc" id="L110">        return ResponseEntity.ok(Message.success(&quot;Edit success&quot;));</span>
+    }
+
+    @DeleteMapping(path = &quot;/rule/{id}&quot;)
+    @Operation(summary = &quot;Delete existing notification policy information&quot;, description = &quot;删除已存在的通知策略信息&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; deleteNoticeRule(
+            @Parameter(description = &quot;en: Notification Policy ID,zh: 通知策略ID&quot;, example = &quot;6565463543&quot;) @PathVariable(&quot;id&quot;) final Long ruleId) {
+        // Returns success if it does not exist or if the deletion is successful
+        // todo 不存在或删除成功都返回成功
+<span class="fc" id="L119">        NoticeRule noticeRule = noticeConfigService.getNoticeRulesById(ruleId);</span>
+<span class="fc bfc" id="L120" title="All 2 branches covered.">        if (noticeRule == null) {</span>
+<span class="fc" id="L121">            return ResponseEntity.ok(Message.success(&quot;The specified notification rule could not be queried, please check whether the parameters are correct&quot;));</span>
+        }
+<span class="fc" id="L123">        noticeConfigService.deleteNoticeRule(ruleId);</span>
+<span class="fc" id="L124">        return ResponseEntity.ok(Message.success(&quot;Delete success&quot;));</span>
+    }
+
+    @GetMapping(path = &quot;/rules&quot;)
+    @Operation(summary = &quot;Get a list of message notification policies based on query filter items&quot;,
+            description = &quot;根据查询过滤项获取消息通知策略列表&quot;)
+    public ResponseEntity&lt;Message&lt;List&lt;NoticeRule&gt;&gt;&gt; getRules(
+            @Parameter(description = &quot;en: Recipient name,zh: 接收人名称，模糊查询&quot;, example = &quot;rule1&quot;) @RequestParam(required = false) final String name) {
+<span class="fc" id="L132">        Specification&lt;NoticeRule&gt; specification = (root, query, criteriaBuilder) -&gt; {</span>
+<span class="nc" id="L133">            Predicate predicate = criteriaBuilder.conjunction();</span>
+<span class="nc bnc" id="L134" title="All 4 branches missed.">            if (name != null &amp;&amp; !name.isEmpty()) {</span>
+<span class="nc" id="L135">                Predicate predicateName = criteriaBuilder.like(root.get(&quot;name&quot;), &quot;%&quot; + name + &quot;%&quot;);</span>
+<span class="nc" id="L136">                predicate = criteriaBuilder.and(predicateName);</span>
+            }
+<span class="nc" id="L138">            return predicate;</span>
+        };
+<span class="fc" id="L140">        List&lt;NoticeRule&gt; receiverPage = noticeConfigService.getNoticeRules(specification);</span>
+<span class="fc" id="L141">        Message&lt;List&lt;NoticeRule&gt;&gt; message = Message.success(receiverPage);</span>
+<span class="fc" id="L142">        return ResponseEntity.ok(message);</span>
+    }
+
+
+    @PostMapping(path = &quot;/template&quot;)
+    @Operation(summary = &quot;Add a notification template&quot;, description = &quot;新增一个通知模板&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; addNewNoticeTemplate(@Valid @RequestBody NoticeTemplate noticeTemplate) {
+<span class="nc" id="L149">        noticeConfigService.addNoticeTemplate(noticeTemplate);</span>
+<span class="nc" id="L150">        return ResponseEntity.ok(Message.success(&quot;Add success&quot;));</span>
+    }
+
+    @PutMapping(path = &quot;/template&quot;)
+    @Operation(summary = &quot;Modify existing notification template information&quot;, description = &quot;修改已存在的通知模板信息&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; editNoticeTemplate(@Valid @RequestBody NoticeTemplate noticeTemplate) {
+<span class="nc" id="L156">        noticeConfigService.editNoticeTemplate(noticeTemplate);</span>
+<span class="nc" id="L157">        return ResponseEntity.ok(Message.success(&quot;Edit success&quot;));</span>
+    }
+
+    @DeleteMapping(path = &quot;/template/{id}&quot;)
+    @Operation(summary = &quot;Delete existing notification template information&quot;, description = &quot;删除已存在的通知模板信息&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; deleteNoticeTemplate(
+            @Parameter(description = &quot;en: Notification template ID,zh: 通知模板ID&quot;, example = &quot;6565463543&quot;) @PathVariable(&quot;id&quot;) final Long templateId) {
+        // Returns success if it does not exist or if the deletion is successful
+        // todo 不存在或删除成功都返回成功
+<span class="nc" id="L166">        Optional&lt;NoticeTemplate&gt; noticeTemplate = noticeConfigService.getNoticeTemplatesById(templateId);</span>
+<span class="nc bnc" id="L167" title="All 2 branches missed.">        if (noticeTemplate.isEmpty()) {</span>
+<span class="nc" id="L168">            return ResponseEntity.ok(Message.success(&quot;The specified notification template could not be queried, please check whether the parameters are correct&quot;));</span>
+        }
+<span class="nc" id="L170">        noticeConfigService.deleteNoticeTemplate(templateId);</span>
+<span class="nc" id="L171">        return ResponseEntity.ok(Message.success(&quot;Delete success&quot;));</span>
+    }
+
+    @GetMapping(path = &quot;/templates&quot;)
+    @Operation(summary = &quot;Get a list of message notification templates based on query filter items&quot;,
+            description = &quot;根据查询过滤项获取消息通知模板列表&quot;)
+    public ResponseEntity&lt;Message&lt;List&lt;NoticeTemplate&gt;&gt;&gt; getTemplates(
+            @Parameter(description = &quot;Template name | 模板名称，模糊查询&quot;, example = &quot;rule1&quot;) @RequestParam(required = false) final String name) {
+
+<span class="nc" id="L180">        Specification&lt;NoticeTemplate&gt; specification = (root, query, criteriaBuilder) -&gt; {</span>
+<span class="nc" id="L181">            Predicate predicate = criteriaBuilder.conjunction();</span>
+<span class="nc bnc" id="L182" title="All 4 branches missed.">            if (name != null &amp;&amp; !&quot;&quot;.equals(name)) {</span>
+<span class="nc" id="L183">                Predicate predicateName = criteriaBuilder.like(root.get(&quot;name&quot;), &quot;%&quot; + name + &quot;%&quot;);</span>
+<span class="nc" id="L184">                predicate = criteriaBuilder.and(predicateName);</span>
+            }
+<span class="nc" id="L186">            return predicate;</span>
+        };
+<span class="nc" id="L188">        List&lt;NoticeTemplate&gt; templatePage = noticeConfigService.getNoticeTemplates(specification);</span>
+<span class="nc" id="L189">        Message&lt;List&lt;NoticeTemplate&gt;&gt; message = Message.success(templatePage);</span>
+<span class="nc" id="L190">        return ResponseEntity.ok(message);</span>
+    }
+
+    @PostMapping(path = &quot;/receiver/send-test-msg&quot;)
+    @Operation(summary = &quot;Send test msg to receiver&quot;, description = &quot;给指定接收人发送测试消息&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; sendTestMsg(@Valid @RequestBody NoticeReceiver noticeReceiver) {
+<span class="fc" id="L196">        boolean sendFlag = noticeConfigService.sendTestMsg(noticeReceiver);</span>
+<span class="fc bfc" id="L197" title="All 2 branches covered.">        if (sendFlag) {</span>
+<span class="fc" id="L198">            return ResponseEntity.ok(Message.success());</span>
+        }
+<span class="fc" id="L200">        return ResponseEntity.ok(Message.fail(FAIL_CODE, &quot;Notify service not available, please check config!&quot;));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

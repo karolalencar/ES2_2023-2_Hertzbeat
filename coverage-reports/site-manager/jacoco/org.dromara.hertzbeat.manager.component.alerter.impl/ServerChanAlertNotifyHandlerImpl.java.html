@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ServerChanAlertNotifyHandlerImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.component.alerter.impl</a> &gt; <span class="el_source">ServerChanAlertNotifyHandlerImpl.java</span></div><h1>ServerChanAlertNotifyHandlerImpl.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.manager.component.alerter.impl;
+
+import lombok.Data;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.common.entity.alerter.Alert;
+import org.dromara.hertzbeat.common.entity.manager.NoticeReceiver;
+import org.dromara.hertzbeat.common.entity.manager.NoticeTemplate;
+import org.dromara.hertzbeat.manager.support.exception.AlertNoticeException;
+import org.springframework.http.*;
+import org.springframework.stereotype.Component;
+
+/**
+ * Server酱发送
+ *
+ * @author zqr10159
+ */
+@Component
+<span class="fc" id="L19">@RequiredArgsConstructor</span>
+<span class="fc" id="L20">@Slf4j</span>
+public class ServerChanAlertNotifyHandlerImpl extends AbstractAlertNotifyHandlerImpl {
+    /**
+     * 发送报警通知
+     *
+     * @param receiver Notification configuration information   通知配置信息
+     * @param alert    Alarm information                        告警信息
+     * @throws AlertNoticeException when send receiver error
+     */
+    @Override
+    public void send(NoticeReceiver receiver, NoticeTemplate noticeTemplate, Alert alert) throws AlertNoticeException {
+        try {
+<span class="nc" id="L32">            ServerChanAlertNotifyHandlerImpl.ServerChanWebHookDto serverChanWebHookDto = new ServerChanAlertNotifyHandlerImpl.ServerChanWebHookDto();</span>
+<span class="nc" id="L33">            serverChanWebHookDto.setTitle(bundle.getString(&quot;alerter.notify.title&quot;));</span>
+<span class="nc" id="L34">            serverChanWebHookDto.setDesp(renderContent(noticeTemplate, alert));</span>
+<span class="nc" id="L35">            HttpHeaders headers = new HttpHeaders();</span>
+<span class="nc" id="L36">            headers.setContentType(MediaType.APPLICATION_JSON);</span>
+<span class="nc" id="L37">            HttpEntity&lt;ServerChanAlertNotifyHandlerImpl.ServerChanWebHookDto&gt; httpEntity = new HttpEntity&lt;&gt;(serverChanWebHookDto, headers);</span>
+<span class="nc" id="L38">            String webHookUrl = String.format(alerterProperties.getServerChanNotifyUrl(), receiver.getServerChanToken());</span>
+<span class="nc" id="L39">            ResponseEntity&lt;CommonRobotNotifyResp&gt; responseEntity = restTemplate.postForEntity(webHookUrl,</span>
+                    httpEntity, CommonRobotNotifyResp.class);
+<span class="nc" id="L41">            System.out.println(responseEntity);</span>
+<span class="nc bnc" id="L42" title="All 2 branches missed.">            if (responseEntity.getStatusCode() == HttpStatus.OK) {</span>
+<span class="nc" id="L43">                log.debug(&quot;Send ServerChan webHook: {} Success&quot;, webHookUrl);</span>
+            } else {
+<span class="nc" id="L45">                log.warn(&quot;Send ServerChan webHook: {} Failed: {}&quot;, webHookUrl, responseEntity.getBody());</span>
+<span class="nc" id="L46">                throw new AlertNoticeException(&quot;Http StatusCode &quot; + responseEntity.getStatusCode());</span>
+            }
+<span class="nc" id="L48">        } catch (Exception e) {</span>
+<span class="nc" id="L49">            throw new AlertNoticeException(&quot;[ServerChan Notify Error] &quot; + e.getMessage());</span>
+<span class="nc" id="L50">        }</span>
+<span class="nc" id="L51">    }</span>
+
+    /**
+     * 通知类型
+     *
+     * @return 通知类型
+     */
+    @Override
+    public byte type() {
+<span class="fc" id="L60">        return 12;</span>
+    }
+
+<span class="nc bnc" id="L63" title="All 22 branches missed.">    @Data</span>
+    private static class ServerChanWebHookDto {
+        private static final String MARKDOWN = &quot;markdown&quot;;
+        /**
+         * 标题
+         */
+<span class="nc" id="L69">        private String title;</span>
+        /**
+         * markdown消息内容
+         */
+<span class="nc" id="L73">        private String desp;</span>
+
+    }
+
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

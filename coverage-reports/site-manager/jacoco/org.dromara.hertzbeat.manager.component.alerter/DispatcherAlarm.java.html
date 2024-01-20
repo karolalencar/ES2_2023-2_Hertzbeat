@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DispatcherAlarm.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.component.alerter</a> &gt; <span class="el_source">DispatcherAlarm.java</span></div><h1>DispatcherAlarm.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.manager.component.alerter;
+
+import com.google.common.collect.Maps;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.alert.AlerterWorkerPool;
+import org.dromara.hertzbeat.common.entity.alerter.Alert;
+import org.dromara.hertzbeat.common.entity.manager.NoticeReceiver;
+import org.dromara.hertzbeat.common.entity.manager.NoticeRule;
+import org.dromara.hertzbeat.common.entity.manager.NoticeTemplate;
+import org.dromara.hertzbeat.common.queue.CommonDataQueue;
+import org.dromara.hertzbeat.manager.service.NoticeConfigService;
+import org.dromara.hertzbeat.manager.support.exception.AlertNoticeException;
+import org.dromara.hertzbeat.manager.support.exception.IgnoreException;
+import org.springframework.beans.factory.InitializingBean;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Alarm information storage and distribution
+ * 告警信息入库分发
+ *
+ * @author tom
+ */
+@Component
+<span class="fc" id="L44">@Slf4j</span>
+public class DispatcherAlarm implements InitializingBean {
+    private static final int DISPATCH_THREADS = 3;
+
+    private final AlerterWorkerPool workerPool;
+    private final CommonDataQueue dataQueue;
+    private final NoticeConfigService noticeConfigService;
+    private final AlertStoreHandler alertStoreHandler;
+    private final Map&lt;Byte, AlertNotifyHandler&gt; alertNotifyHandlerMap;
+
+    public DispatcherAlarm(AlerterWorkerPool workerPool,
+                           CommonDataQueue dataQueue,
+                           NoticeConfigService noticeConfigService,
+                           AlertStoreHandler alertStoreHandler,
+<span class="fc" id="L58">                           List&lt;AlertNotifyHandler&gt; alertNotifyHandlerList) {</span>
+<span class="fc" id="L59">        this.workerPool = workerPool;</span>
+<span class="fc" id="L60">        this.dataQueue = dataQueue;</span>
+<span class="fc" id="L61">        this.noticeConfigService = noticeConfigService;</span>
+<span class="fc" id="L62">        this.alertStoreHandler = alertStoreHandler;</span>
+<span class="fc" id="L63">        alertNotifyHandlerMap = Maps.newHashMapWithExpectedSize(alertNotifyHandlerList.size());</span>
+<span class="fc" id="L64">        alertNotifyHandlerList.forEach(r -&gt; alertNotifyHandlerMap.put(r.type(), r));</span>
+<span class="fc" id="L65">    }</span>
+
+    @Override
+    public void afterPropertiesSet() throws Exception {
+        // 启动报警分发
+<span class="fc" id="L70">        DispatchTask dispatchTask = new DispatchTask();</span>
+<span class="fc bfc" id="L71" title="All 2 branches covered.">        for (int i = 0; i &lt; DISPATCH_THREADS; i++) {</span>
+<span class="fc" id="L72">            workerPool.executeJob(dispatchTask);</span>
+        }
+<span class="fc" id="L74">    }</span>
+
+    /**
+     * send alert msg to receiver
+     *
+     * @param receiver receiver
+     * @param alert    alert msg
+     * @return send success or failed
+     */
+    public boolean sendNoticeMsg(NoticeReceiver receiver, NoticeTemplate noticeTemplate, Alert alert) {
+<span class="nc bnc" id="L84" title="All 4 branches missed.">        if (receiver == null || receiver.getType() == null) {</span>
+<span class="nc" id="L85">            log.warn(&quot;DispatcherAlarm-sendNoticeMsg params is empty alert:[{}], receiver:[{}]&quot;, alert, receiver);</span>
+<span class="nc" id="L86">            return false;</span>
+        }
+<span class="nc" id="L88">        byte type = receiver.getType();</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">        if (alertNotifyHandlerMap.containsKey(type)) {</span>
+<span class="nc" id="L90">            alertNotifyHandlerMap.get(type).send(receiver, noticeTemplate, alert);</span>
+<span class="nc" id="L91">            return true;</span>
+        }
+<span class="nc" id="L93">        return false;</span>
+    }
+
+    private NoticeReceiver getOneReceiverById(Long id) {
+<span class="nc" id="L97">        return noticeConfigService.getOneReceiverById(id);</span>
+    }
+
+    private NoticeTemplate getOneTemplateById(Long id) {
+<span class="nc" id="L101">        return noticeConfigService.getOneTemplateById(id);</span>
+    }
+
+    private List&lt;NoticeRule&gt; matchNoticeRulesByAlert(Alert alert) {
+<span class="nc" id="L105">        return noticeConfigService.getReceiverFilterRule(alert);</span>
+    }
+
+<span class="fc" id="L108">    private class DispatchTask implements Runnable {</span>
+
+        @Override
+        public void run() {
+<span class="pc bpc" id="L112" title="1 of 2 branches missed.">            while (!Thread.currentThread().isInterrupted()) {</span>
+                try {
+<span class="fc" id="L114">                    Alert alert = dataQueue.pollAlertsData();</span>
+<span class="pc bpc" id="L115" title="1 of 2 branches missed.">                    if (alert != null) {</span>
+                        // Determining alarm type storage   判断告警类型入库
+<span class="nc" id="L117">                        alertStoreHandler.store(alert);</span>
+                        // 通知分发
+<span class="nc" id="L119">                        sendNotify(alert);</span>
+                    }
+<span class="nc" id="L121">                } catch (IgnoreException ignored) {</span>
+<span class="nc" id="L122">                } catch (InterruptedException e) {</span>
+<span class="nc" id="L123">                    log.error(e.getMessage());</span>
+<span class="nc" id="L124">                } catch (Exception exception) {</span>
+<span class="nc" id="L125">                    log.error(exception.getMessage(), exception);</span>
+<span class="pc" id="L126">                }</span>
+            }
+<span class="nc" id="L128">        }</span>
+
+        private void sendNotify(Alert alert) {
+<span class="nc" id="L131">            List&lt;NoticeRule&gt; noticeRules = matchNoticeRulesByAlert(alert);</span>
+            // todo Send notification here temporarily single thread     发送通知这里暂时单线程
+<span class="nc bnc" id="L133" title="All 2 branches missed.">            if (noticeRules != null) {</span>
+<span class="nc bnc" id="L134" title="All 2 branches missed.">                for (NoticeRule rule : noticeRules) {</span>
+                    try {
+<span class="nc bnc" id="L136" title="All 2 branches missed.">                        if (rule.getTemplateId() == null) {</span>
+<span class="nc" id="L137">                            sendNoticeMsg(getOneReceiverById(rule.getReceiverId()),</span>
+                                    null, alert);
+                        } else {
+<span class="nc" id="L140">                            sendNoticeMsg(getOneReceiverById(rule.getReceiverId()),</span>
+<span class="nc" id="L141">                                    getOneTemplateById(rule.getTemplateId()), alert);</span>
+                        }
+<span class="nc" id="L143">                    } catch (AlertNoticeException e) {</span>
+<span class="nc" id="L144">                        log.warn(&quot;DispatchTask sendNoticeMsg error, message: {}&quot;, e.getMessage());</span>
+<span class="nc" id="L145">                    }</span>
+<span class="nc" id="L146">                }</span>
+            }
+<span class="nc" id="L148">        }</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

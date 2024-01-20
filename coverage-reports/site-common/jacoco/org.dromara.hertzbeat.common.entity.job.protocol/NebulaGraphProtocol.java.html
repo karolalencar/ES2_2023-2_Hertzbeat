@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>NebulaGraphProtocol.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.entity.job.protocol</a> &gt; <span class="el_source">NebulaGraphProtocol.java</span></div><h1>NebulaGraphProtocol.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.common.entity.job.protocol;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+/**
+ * @author dongfeng
+ */
+<span class="nc bnc" id="L11" title="All 46 branches missed.">@Data</span>
+<span class="nc" id="L12">@Builder</span>
+<span class="nc" id="L13">@AllArgsConstructor</span>
+<span class="nc" id="L14">@NoArgsConstructor</span>
+public class NebulaGraphProtocol {
+    /**
+     * NebulaGraph 主机ip或域名
+     */
+<span class="nc" id="L19">    private String host;</span>
+
+    /**
+     * NebulaGraph Graph 服务端口默认为 19669
+     * NebulaGraph Storage 服务端口默认为 19779
+     */
+<span class="nc" id="L25">    private String port;</span>
+
+    /**
+     * NebulaGraph Graph 服务监控API为/stats
+     * NebulaGraph Storage 服务监控API为/rocksdb_stats
+     */
+<span class="nc" id="L31">    private String url;</span>
+
+    /**
+     * NebulaGraph 监控时间间隔
+     */
+<span class="nc" id="L36">    private String timePeriod;</span>
+
+    /**
+     * 超时时间
+     */
+<span class="nc" id="L41">    private String timeout;</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

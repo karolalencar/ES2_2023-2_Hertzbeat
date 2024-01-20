@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ObjectStoreConfigServiceImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.service.impl</a> &gt; <span class="el_source">ObjectStoreConfigServiceImpl.java</span></div><h1>ObjectStoreConfigServiceImpl.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.manager.service.impl;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.obs.services.ObsClient;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.formula.functions.T;
+import org.dromara.hertzbeat.manager.dao.GeneralConfigDao;
+import org.dromara.hertzbeat.manager.pojo.dto.ObjectStoreConfigChangeEvent;
+import org.dromara.hertzbeat.manager.pojo.dto.ObjectStoreDTO;
+import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.context.ApplicationContext;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Service;
+import org.springframework.util.Assert;
+
+import javax.annotation.Resource;
+import java.lang.reflect.Type;
+
+/**
+ * 文件存储配置服务
+ *
+ * @author &lt;a href=&quot;mailto:gcwm99@gmail.com&quot;&gt;gcdd1993&lt;/a&gt;
+ * Created by gcdd1993 on 2023/9/13
+ */
+@Order(Ordered.HIGHEST_PRECEDENCE)
+<span class="fc" id="L29">@Slf4j</span>
+@Service
+public class ObjectStoreConfigServiceImpl extends AbstractGeneralConfigServiceImpl&lt;ObjectStoreDTO&lt;T&gt;&gt; implements InitializingBean {
+    @Resource
+    private DefaultListableBeanFactory beanFactory;
+
+    @Resource
+    private ApplicationContext ctx;
+
+    private static final String BEAN_NAME = &quot;ObjectStoreService&quot;;
+
+    /**
+     * 构造方法，传入GeneralConfigDao、ObjectMapper和type。
+     *
+     * &lt;p&gt;Constructor, passing in GeneralConfigDao, ObjectMapper and type.&lt;/p&gt;
+     *
+     * @param generalConfigDao 配置Dao对象
+     * @param objectMapper     JSON工具类对象
+     */
+    protected ObjectStoreConfigServiceImpl(GeneralConfigDao generalConfigDao, ObjectMapper objectMapper) {
+<span class="fc" id="L49">        super(generalConfigDao, objectMapper);</span>
+<span class="fc" id="L50">    }</span>
+
+    @Override
+    public String type() {
+<span class="fc" id="L54">        return &quot;oss&quot;;</span>
+    }
+
+    @Override
+    protected TypeReference&lt;ObjectStoreDTO&lt;T&gt;&gt; getTypeReference() {
+<span class="nc" id="L59">        return new TypeReference&lt;&gt;() {</span>
+            @Override
+            public Type getType() {
+<span class="nc" id="L62">                return ObjectStoreDTO.class;</span>
+            }
+        };
+    }
+
+    @Override
+    public void handler(ObjectStoreDTO&lt;T&gt; config) {
+        // 初始化文件存储服务
+<span class="pc bpc" id="L70" title="1 of 2 branches missed.">        if (config != null) {</span>
+<span class="nc bnc" id="L71" title="All 2 branches missed.">            switch (config.getType()) {</span>
+                case OBS:
+<span class="nc" id="L73">                    initObs(config);</span>
+                    break;
+                // case other object store service
+            }
+<span class="nc" id="L77">            ctx.publishEvent(new ObjectStoreConfigChangeEvent(config));</span>
+        }
+<span class="fc" id="L79">    }</span>
+
+    /**
+     * 初始化华为云OBS
+     */
+    private void initObs(ObjectStoreDTO&lt;T&gt; config) {
+<span class="nc" id="L85">        var obsConfig = objectMapper.convertValue(config.getConfig(), ObjectStoreDTO.ObsConfig.class);</span>
+<span class="nc" id="L86">        Assert.hasText(obsConfig.getAccessKey(), &quot;cannot find obs accessKey&quot;);</span>
+<span class="nc" id="L87">        Assert.hasText(obsConfig.getSecretKey(), &quot;cannot find obs secretKey&quot;);</span>
+<span class="nc" id="L88">        Assert.hasText(obsConfig.getEndpoint(), &quot;cannot find obs endpoint&quot;);</span>
+<span class="nc" id="L89">        Assert.hasText(obsConfig.getBucketName(), &quot;cannot find obs bucket name&quot;);</span>
+
+<span class="nc" id="L91">        var obsClient = new ObsClient(obsConfig.getAccessKey(), obsConfig.getSecretKey(), obsConfig.getEndpoint());</span>
+
+<span class="nc" id="L93">        beanFactory.destroySingleton(BEAN_NAME);</span>
+<span class="nc" id="L94">        beanFactory.registerSingleton(BEAN_NAME, new ObsObjectStoreServiceImpl(obsClient, obsConfig.getBucketName(), obsConfig.getSavePath()));</span>
+
+<span class="nc" id="L96">        log.info(&quot;obs store service init success.&quot;);</span>
+<span class="nc" id="L97">    }</span>
+
+    @Override
+    public void afterPropertiesSet() throws Exception {
+        // 初始化文件存储
+<span class="fc" id="L102">        handler(getConfig());</span>
+<span class="fc" id="L103">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TagController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.controller</a> &gt; <span class="el_source">TagController.java</span></div><h1>TagController.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.manager.controller;
+
+import org.dromara.hertzbeat.common.entity.dto.Message;
+import org.dromara.hertzbeat.common.entity.manager.Tag;
+import org.dromara.hertzbeat.manager.service.TagService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import javax.persistence.criteria.Predicate;
+import javax.validation.Valid;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.stream.Collectors;
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
+
+/**
+ * Tags management API
+ * 标签管理API
+ * @author tomsun28
+ *
+ */
+@io.swagger.v3.oas.annotations.tags.Tag(name = &quot;Tag Manage API | 标签管理API&quot;)
+@RestController
+@RequestMapping(path = &quot;/api/tag&quot;, produces = {APPLICATION_JSON_VALUE})
+<span class="fc" id="L48">public class TagController {</span>
+    @Autowired
+    private TagService tagService;
+
+    @PostMapping
+    @Operation(summary = &quot;Add Tag&quot;, description = &quot;新增标签&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; addNewTags(@Valid @RequestBody List&lt;Tag&gt; tags) {
+        // Verify request data  校验请求数据 去重
+<span class="fc" id="L56">        tags = tags.stream().peek(tag -&gt; {</span>
+<span class="fc" id="L57">            tag.setType((byte) 1);</span>
+<span class="fc" id="L58">            tag.setId(null);</span>
+<span class="fc" id="L59">            }).distinct().collect(Collectors.toList());</span>
+<span class="fc" id="L60">        tagService.addTags(tags);</span>
+<span class="fc" id="L61">        return ResponseEntity.ok(Message.success(&quot;Add success&quot;));</span>
+    }
+
+    @PutMapping
+    @Operation(summary = &quot;Modify an existing tag&quot;, description = &quot;修改一个已存在标签&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; modifyMonitor(@Valid @RequestBody Tag tag) {
+        // Verify request data  校验请求数据
+<span class="pc bpc" id="L68" title="2 of 4 branches missed.">        if (tag.getId() == null || tag.getName() == null) {</span>
+<span class="nc" id="L69">            throw new IllegalArgumentException(&quot;The Tag not exist.&quot;);</span>
+        }
+<span class="fc" id="L71">        tagService.modifyTag(tag);</span>
+<span class="fc" id="L72">        return ResponseEntity.ok(Message.success(&quot;Modify success&quot;));</span>
+    }
+
+    @GetMapping()
+    @Operation(summary = &quot;Get tags information&quot;, description = &quot;根据条件获取标签信息&quot;)
+    public ResponseEntity&lt;Message&lt;Page&lt;Tag&gt;&gt;&gt; getTags(
+            @Parameter(description = &quot;Tag content search | 标签内容模糊查询&quot;, example = &quot;status&quot;) @RequestParam(required = false) String search,
+            @Parameter(description = &quot;Tag type | 标签类型&quot;, example = &quot;0&quot;) @RequestParam(required = false) Byte type,
+            @Parameter(description = &quot;List current page | 列表当前分页&quot;, example = &quot;0&quot;) @RequestParam(defaultValue = &quot;0&quot;) int pageIndex,
+            @Parameter(description = &quot;Number of list pagination | 列表分页数量&quot;, example = &quot;8&quot;) @RequestParam(defaultValue = &quot;8&quot;) int pageSize) {
+        // Get tag information
+<span class="fc" id="L83">        Specification&lt;Tag&gt; specification = (root, query, criteriaBuilder) -&gt; {</span>
+<span class="nc" id="L84">            List&lt;Predicate&gt; andList = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L85" title="All 2 branches missed.">            if (type != null) {</span>
+<span class="nc" id="L86">                Predicate predicateApp = criteriaBuilder.equal(root.get(&quot;type&quot;), type);</span>
+<span class="nc" id="L87">                andList.add(predicateApp);</span>
+            }
+<span class="nc" id="L89">            Predicate[] andPredicates = new Predicate[andList.size()];</span>
+<span class="nc" id="L90">            Predicate andPredicate = criteriaBuilder.and(andList.toArray(andPredicates));</span>
+
+<span class="nc" id="L92">            List&lt;Predicate&gt; orList = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L93" title="All 4 branches missed.">            if (search != null &amp;&amp; !search.isEmpty()) {</span>
+<span class="nc" id="L94">                Predicate predicateName = criteriaBuilder.like(root.get(&quot;name&quot;), &quot;%&quot; + search + &quot;%&quot;);</span>
+<span class="nc" id="L95">                orList.add(predicateName);</span>
+<span class="nc" id="L96">                Predicate predicateValue = criteriaBuilder.like(root.get(&quot;value&quot;), &quot;%&quot; + search + &quot;%&quot;);</span>
+<span class="nc" id="L97">                orList.add(predicateValue);</span>
+            }
+<span class="nc" id="L99">            Predicate[] orPredicates = new Predicate[orList.size()];</span>
+<span class="nc" id="L100">            Predicate orPredicate = criteriaBuilder.or(orList.toArray(orPredicates));</span>
+
+<span class="nc bnc" id="L102" title="All 4 branches missed.">            if (andPredicate.getExpressions().isEmpty() &amp;&amp; orPredicate.getExpressions().isEmpty()) {</span>
+<span class="nc" id="L103">                return query.where().getRestriction();</span>
+<span class="nc bnc" id="L104" title="All 2 branches missed.">            } else if (andPredicate.getExpressions().isEmpty()) {</span>
+<span class="nc" id="L105">                return query.where(orPredicate).getRestriction();</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">            } else if (orPredicate.getExpressions().isEmpty()) {</span>
+<span class="nc" id="L107">                return query.where(andPredicate).getRestriction();</span>
+            } else {
+<span class="nc" id="L109">                return query.where(andPredicate, orPredicate).getRestriction();</span>
+            }
+        };
+<span class="fc" id="L112">        PageRequest pageRequest = PageRequest.of(pageIndex, pageSize);</span>
+<span class="fc" id="L113">        Page&lt;Tag&gt; alertPage = tagService.getTags(specification, pageRequest);</span>
+<span class="fc" id="L114">        Message&lt;Page&lt;Tag&gt;&gt; message = Message.success(alertPage);</span>
+<span class="fc" id="L115">        return ResponseEntity.ok(message);</span>
+    }
+
+    @DeleteMapping()
+    @Operation(summary = &quot;Delete tags based on ID&quot;, description = &quot;根据TAG ID删除TAG&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; deleteTags(
+            @Parameter(description = &quot;TAG IDs | 监控任务ID列表&quot;, example = &quot;6565463543&quot;) @RequestParam(required = false) List&lt;Long&gt; ids) {
+<span class="pc bpc" id="L122" title="3 of 4 branches missed.">        if (ids != null &amp;&amp; !ids.isEmpty()) {</span>
+<span class="nc" id="L123">            tagService.deleteTags(new HashSet&lt;&gt;(ids));</span>
+        }
+<span class="fc" id="L125">        return ResponseEntity.ok(Message.success(&quot;Delete success&quot;));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

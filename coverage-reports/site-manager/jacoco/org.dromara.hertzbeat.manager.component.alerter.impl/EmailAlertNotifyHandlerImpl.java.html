@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>EmailAlertNotifyHandlerImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.component.alerter.impl</a> &gt; <span class="el_source">EmailAlertNotifyHandlerImpl.java</span></div><h1>EmailAlertNotifyHandlerImpl.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.manager.component.alerter.impl;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.common.entity.alerter.Alert;
+import org.dromara.hertzbeat.common.entity.manager.GeneralConfig;
+import org.dromara.hertzbeat.common.entity.manager.NoticeReceiver;
+import org.dromara.hertzbeat.common.entity.manager.NoticeTemplate;
+import org.dromara.hertzbeat.common.support.event.SystemConfigChangeEvent;
+import org.dromara.hertzbeat.common.util.ResourceBundleUtil;
+import org.dromara.hertzbeat.manager.component.alerter.AlertNotifyHandler;
+import org.dromara.hertzbeat.manager.dao.GeneralConfigDao;
+import org.dromara.hertzbeat.manager.pojo.dto.EmailNoticeSender;
+import org.dromara.hertzbeat.manager.service.MailService;
+import org.dromara.hertzbeat.manager.support.exception.AlertNoticeException;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.event.EventListener;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.JavaMailSenderImpl;
+import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.stereotype.Component;
+
+import javax.mail.internet.MimeMessage;
+import java.util.Date;
+import java.util.Properties;
+import java.util.ResourceBundle;
+
+/**
+ * @author &lt;a href=&quot;mailto:Musk.Chen@fanruan.com&quot;&gt;Musk.Chen&lt;/a&gt;
+ */
+@Component
+<span class="fc" id="L50">@RequiredArgsConstructor</span>
+<span class="fc" id="L51">@Slf4j</span>
+public class EmailAlertNotifyHandlerImpl implements AlertNotifyHandler {
+
+    private final JavaMailSender javaMailSender;
+
+    private final MailService mailService;
+
+    @Value(&quot;${spring.mail.host:smtp.demo.com}&quot;)
+    private String host;
+
+    @Value(&quot;${spring.mail.username:demo}&quot;)
+    private String username;
+
+    @Value(&quot;${spring.mail.password:demo}&quot;)
+    private String password;
+
+    @Value(&quot;${spring.mail.port:465}&quot;)
+    private Integer port;
+
+<span class="fc" id="L70">    @Value(&quot;${spring.mail.properties.mail.smtp.ssl.enable:true}&quot;)</span>
+    private boolean sslEnable = true;
+
+    private final GeneralConfigDao generalConfigDao;
+
+    private final ObjectMapper objectMapper;
+
+    private static final String TYPE = &quot;email&quot;;
+
+<span class="fc" id="L79">    private ResourceBundle bundle = ResourceBundleUtil.getBundle(&quot;alerter&quot;);</span>
+
+    @Override
+    public void send(NoticeReceiver receiver, NoticeTemplate noticeTemplate, Alert alert) throws AlertNoticeException {
+        try {
+            //获取sender
+<span class="nc" id="L85">            JavaMailSenderImpl sender = (JavaMailSenderImpl) javaMailSender;</span>
+<span class="nc" id="L86">            String fromUsername = username;</span>
+            try {
+<span class="nc" id="L88">                boolean useDatabase = false;</span>
+<span class="nc" id="L89">                GeneralConfig emailConfig = generalConfigDao.findByType(TYPE);</span>
+<span class="nc bnc" id="L90" title="All 4 branches missed.">                if (emailConfig != null &amp;&amp; emailConfig.getContent() != null) {</span>
+                    // 若启用数据库配置
+<span class="nc" id="L92">                    String content = emailConfig.getContent();</span>
+<span class="nc" id="L93">                    EmailNoticeSender emailNoticeSenderConfig = objectMapper.readValue(content, EmailNoticeSender.class);</span>
+<span class="nc bnc" id="L94" title="All 2 branches missed.">                    if (emailNoticeSenderConfig.isEnable()) {</span>
+<span class="nc" id="L95">                        sender.setHost(emailNoticeSenderConfig.getEmailHost());</span>
+<span class="nc" id="L96">                        sender.setPort(emailNoticeSenderConfig.getEmailPort());</span>
+<span class="nc" id="L97">                        sender.setUsername(emailNoticeSenderConfig.getEmailUsername());</span>
+<span class="nc" id="L98">                        sender.setPassword(emailNoticeSenderConfig.getEmailPassword());</span>
+<span class="nc" id="L99">                        Properties props = sender.getJavaMailProperties();</span>
+<span class="nc" id="L100">                        props.put(&quot;mail.smtp.ssl.enable&quot;, emailNoticeSenderConfig.isEmailSsl());</span>
+<span class="nc" id="L101">                        fromUsername = emailNoticeSenderConfig.getEmailUsername();</span>
+<span class="nc" id="L102">                        useDatabase = true;</span>
+                    }
+                }
+<span class="nc bnc" id="L105" title="All 2 branches missed.">                if (!useDatabase) {</span>
+                    // 若数据库未配置则启用yml配置
+<span class="nc" id="L107">                    sender.setHost(host);</span>
+<span class="nc" id="L108">                    sender.setPort(port);</span>
+<span class="nc" id="L109">                    sender.setUsername(username);</span>
+<span class="nc" id="L110">                    sender.setPassword(password);</span>
+<span class="nc" id="L111">                    Properties props = sender.getJavaMailProperties();</span>
+<span class="nc" id="L112">                    props.put(&quot;mail.smtp.ssl.enable&quot;, sslEnable);</span>
+                }
+<span class="nc" id="L114">            } catch (Exception e) {</span>
+<span class="nc" id="L115">                log.error(&quot;Type not found {}&quot;, e.getMessage());</span>
+<span class="nc" id="L116">            }</span>
+<span class="nc" id="L117">            MimeMessage mimeMessage = javaMailSender.createMimeMessage();</span>
+<span class="nc" id="L118">            MimeMessageHelper messageHelper = new MimeMessageHelper(mimeMessage, true, &quot;UTF-8&quot;);</span>
+<span class="nc" id="L119">            messageHelper.setSubject(bundle.getString(&quot;alerter.notify.title&quot;));</span>
+            //Set sender Email 设置发件人Email
+<span class="nc" id="L121">            messageHelper.setFrom(fromUsername);</span>
+            //Set recipient Email 设定收件人Email
+<span class="nc" id="L123">            messageHelper.setTo(receiver.getEmail());</span>
+<span class="nc" id="L124">            messageHelper.setSentDate(new Date());</span>
+            //Build email templates 构建邮件模版
+<span class="nc" id="L126">            String process = mailService.buildAlertHtmlTemplate(alert, noticeTemplate);</span>
+            //Set Email Content Template 设置邮件内容模版
+<span class="nc" id="L128">            messageHelper.setText(process, true);</span>
+<span class="nc" id="L129">            javaMailSender.send(mimeMessage);</span>
+<span class="nc" id="L130">        } catch (Exception e) {</span>
+<span class="nc" id="L131">            throw new AlertNoticeException(&quot;[Email Notify Error] &quot; + e.getMessage());</span>
+<span class="nc" id="L132">        }</span>
+<span class="nc" id="L133">    }</span>
+
+    @Override
+    public byte type() {
+<span class="fc" id="L137">        return 1;</span>
+    }
+
+    @EventListener(SystemConfigChangeEvent.class)
+    public void onEvent(SystemConfigChangeEvent event) {
+<span class="nc" id="L142">        log.info(&quot;{} receive system config change event: {}.&quot;, this.getClass().getName(), event.getSource());</span>
+<span class="nc" id="L143">        this.bundle = ResourceBundleUtil.getBundle(&quot;alerter&quot;);</span>
+<span class="nc" id="L144">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TextParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.prometheus.parser</a> &gt; <span class="el_source">TextParser.java</span></div><h1>TextParser.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.collect.prometheus.parser;
+
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.collector.collect.http.promethus.ParseException;
+import org.dromara.hertzbeat.common.util.StrBuffer;
+
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * @author ceilzcx
+ *
+ * 解析prometheus的exporter接口传递的数据 http:xxx/metrics
+ * 参考: prometheus的text_parse.go的代码, 入口: TextToMetricFamilies
+ */
+<span class="nc" id="L20">@Slf4j</span>
+<span class="nc" id="L21">public class TextParser {</span>
+    private static final String NAME_LABEL = &quot;__name__&quot;;
+    private static final char LEFT_CURLY_BRACKET = '{';
+    private static final char RIGHT_CURLY_BRACKET = '}';
+    private static final char EQUALS = '=';
+    private static final char QUOTES = '&quot;';
+    private static final char ENTER = '\n';
+    private static final char SPACE = ' ';
+    private static final char COMMA = ',';
+
+
+    /**
+     * parser prometheus exporter text metrics data
+     * todo use inputStream bytebuffer instead of resp string
+     * @param resp txt data
+     * @return metrics family
+     */
+    public static Map&lt;String, MetricFamily&gt; textToMetricFamilies(String resp) {
+        // key: metric name, value: metric family
+<span class="nc" id="L40">        Map&lt;String, MetricFamily&gt; metricMap = new ConcurrentHashMap&lt;&gt;(10);</span>
+        try {
+<span class="nc" id="L42">            String[] lines = resp.split(&quot;\n&quot;);</span>
+<span class="nc bnc" id="L43" title="All 2 branches missed.">            for (String line : lines) {</span>
+<span class="nc" id="L44">                parseLine(metricMap, new StrBuffer(line));</span>
+            }
+<span class="nc" id="L46">            return metricMap;</span>
+<span class="nc" id="L47">        } catch (Exception e) {</span>
+<span class="nc" id="L48">            log.error(&quot;parse prometheus exporter data error, msg: {}&quot;, e.getMessage(), e);</span>
+        }
+<span class="nc" id="L50">        return metricMap;</span>
+    }
+
+    private static void parseLine(Map&lt;String, MetricFamily&gt; metricMap, StrBuffer buffer) {
+<span class="nc" id="L54">        buffer.skipBlankTabs();</span>
+<span class="nc bnc" id="L55" title="All 2 branches missed.">        if (buffer.isEmpty()) return;</span>
+<span class="nc bnc" id="L56" title="All 2 branches missed.">        switch (buffer.charAt(0)) {</span>
+            case '#':
+            case ENTER:
+<span class="nc" id="L59">                break;</span>
+            default:
+<span class="nc" id="L61">                parseMetric(metricMap, buffer);</span>
+        }
+<span class="nc" id="L63">    }</span>
+
+    private static void parseMetric(Map&lt;String, MetricFamily&gt; metricMap, StrBuffer buffer) {
+<span class="nc" id="L66">        String metricName = readTokenAsMetricName(buffer);</span>
+<span class="nc bnc" id="L67" title="All 2 branches missed.">        if (metricName.isEmpty()) {</span>
+<span class="nc" id="L68">            log.error(&quot;error parse metric, metric name is null, line: {}&quot;, buffer.toStr());</span>
+<span class="nc" id="L69">            return;</span>
+        }
+<span class="nc" id="L71">        MetricFamily currentMetricFamily = metricMap.computeIfAbsent(metricName, key -&gt; new MetricFamily());</span>
+<span class="nc" id="L72">        List&lt;MetricFamily.Metric&gt; metricList = currentMetricFamily.getMetricList();</span>
+<span class="nc bnc" id="L73" title="All 2 branches missed.">        if (metricList == null) {</span>
+<span class="nc" id="L74">            metricList = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L75">            currentMetricFamily.setMetricList(metricList);</span>
+        }
+<span class="nc" id="L77">        MetricFamily.Metric metric = new MetricFamily.Metric();</span>
+<span class="nc" id="L78">        metricList.add(metric);</span>
+<span class="nc" id="L79">        readLabels(metric, buffer);</span>
+<span class="nc" id="L80">    }</span>
+
+    private static void readLabels(MetricFamily.Metric metric, StrBuffer buffer) {
+<span class="nc" id="L83">        buffer.skipBlankTabs();</span>
+<span class="nc bnc" id="L84" title="All 2 branches missed.">        if (buffer.isEmpty()) return;</span>
+<span class="nc" id="L85">        metric.setLabels(new LinkedList&lt;&gt;());</span>
+<span class="nc bnc" id="L86" title="All 2 branches missed.">        if (buffer.charAt(0) == LEFT_CURLY_BRACKET) {</span>
+<span class="nc" id="L87">            buffer.read();</span>
+<span class="nc" id="L88">            startReadLabelName(metric, buffer);</span>
+        } else {
+<span class="nc" id="L90">            readLabelValue(metric, buffer);</span>
+        }
+<span class="nc" id="L92">    }</span>
+
+    private static void startReadLabelName(MetricFamily.Metric metric, StrBuffer buffer) {
+<span class="nc" id="L95">        buffer.skipBlankTabs();</span>
+<span class="nc bnc" id="L96" title="All 2 branches missed.">        if (buffer.isEmpty()) return;</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">        if (buffer.charAt(0) == RIGHT_CURLY_BRACKET) {</span>
+<span class="nc" id="L98">            buffer.read();</span>
+<span class="nc" id="L99">            buffer.skipBlankTabs();</span>
+<span class="nc bnc" id="L100" title="All 2 branches missed.">            if (buffer.isEmpty()) return;</span>
+<span class="nc" id="L101">            readLabelValue(metric, buffer);</span>
+<span class="nc" id="L102">            return;</span>
+        }
+<span class="nc" id="L104">        String labelName = readTokenAsLabelName(buffer);</span>
+<span class="nc bnc" id="L105" title="All 4 branches missed.">        if (labelName.isEmpty() || NAME_LABEL.equals(labelName)) {</span>
+<span class="nc" id="L106">            throw new ParseException(&quot;invalid label name&quot; + labelName + &quot;, label name size = 0 or label name equals &quot; + NAME_LABEL);</span>
+        }
+<span class="nc" id="L108">        MetricFamily.Label label = new MetricFamily.Label();</span>
+<span class="nc" id="L109">        label.setName(labelName);</span>
+<span class="nc bnc" id="L110" title="All 2 branches missed.">        if (buffer.read() != EQUALS) {</span>
+<span class="nc" id="L111">            throw new ParseException(&quot;parse error, not match the format of labelName=labelValue&quot;);</span>
+        }
+<span class="nc" id="L113">        startReadLabelValue(metric, label, buffer);</span>
+<span class="nc" id="L114">    }</span>
+
+    private static void startReadLabelValue(MetricFamily.Metric metric, MetricFamily.Label label, StrBuffer buffer) {
+<span class="nc" id="L117">        buffer.skipBlankTabs();</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">        if (buffer.isEmpty()) return;</span>
+<span class="nc" id="L119">        char c = buffer.read();</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">        if (c != QUOTES) {</span>
+<span class="nc" id="L121">            throw new ParseException(&quot;expected '\&quot;' at start of label value, line: &quot; + buffer.toStr());</span>
+        }
+<span class="nc" id="L123">        String labelValue = readTokenAsLabelValue(buffer);</span>
+<span class="nc" id="L124">        label.setValue(labelValue);</span>
+<span class="nc bnc" id="L125" title="All 2 branches missed.">        if (!isValidLabelValue(labelValue)) {</span>
+<span class="nc" id="L126">            throw new ParseException(&quot;no valid label value: &quot; + labelValue);</span>
+        }
+<span class="nc" id="L128">        metric.getLabels().add(label);</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">        if (buffer.isEmpty()) return;</span>
+<span class="nc" id="L130">        c = buffer.read();</span>
+<span class="nc bnc" id="L131" title="All 3 branches missed.">        switch (c) {</span>
+            case COMMA:
+<span class="nc" id="L133">                startReadLabelName(metric, buffer);</span>
+<span class="nc" id="L134">                break;</span>
+            case RIGHT_CURLY_BRACKET:
+<span class="nc" id="L136">                readLabelValue(metric, buffer);</span>
+<span class="nc" id="L137">                break;</span>
+            default:
+<span class="nc" id="L139">                throw new ParseException(&quot;expected '}' or ',' at end of label value, line: &quot; + buffer.toStr());</span>
+        }
+<span class="nc" id="L141">    }</span>
+
+    private static void readLabelValue(MetricFamily.Metric metric, StrBuffer buffer) {
+<span class="nc" id="L144">        buffer.skipBlankTabs();</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">        if (buffer.isEmpty()) return;</span>
+<span class="nc" id="L146">        metric.setValue(buffer.toDouble());</span>
+<span class="nc" id="L147">    }</span>
+
+    /**
+     * 获取指标的名称
+     *
+     * @param buffer 行数据对象
+     * @return token name
+     */
+    private static String readTokenAsMetricName(StrBuffer buffer) {
+<span class="nc" id="L156">        buffer.skipBlankTabs();</span>
+<span class="nc" id="L157">        StringBuilder builder = new StringBuilder();</span>
+<span class="nc bnc" id="L158" title="All 2 branches missed.">        if (isValidMetricNameStart(buffer.charAt(0))) {</span>
+<span class="nc bnc" id="L159" title="All 2 branches missed.">            while (!buffer.isEmpty()) {</span>
+<span class="nc" id="L160">                char c = buffer.read();</span>
+<span class="nc bnc" id="L161" title="All 2 branches missed.">                if (!isValidMetricNameContinuation(c)) {</span>
+<span class="nc" id="L162">                    buffer.rollback();</span>
+<span class="nc" id="L163">                    break;</span>
+                }
+<span class="nc" id="L165">                builder.append(c);</span>
+<span class="nc" id="L166">            }</span>
+<span class="nc" id="L167">            return builder.toString();</span>
+        }
+<span class="nc" id="L169">        throw new ParseException(&quot;parse metric name error&quot;);</span>
+    }
+
+    /**
+     * 获取label的名称
+     *
+     * @param buffer 行数据对象
+     * @return label name
+     */
+    private static String readTokenAsLabelName(StrBuffer buffer) {
+<span class="nc" id="L179">        buffer.skipBlankTabs();</span>
+<span class="nc" id="L180">        StringBuilder builder = new StringBuilder();</span>
+<span class="nc" id="L181">        char c = buffer.read();</span>
+<span class="nc bnc" id="L182" title="All 2 branches missed.">        if (isValidLabelNameStart(c)) {</span>
+<span class="nc" id="L183">            builder.append(c);</span>
+<span class="nc bnc" id="L184" title="All 2 branches missed.">            while (!buffer.isEmpty()) {</span>
+<span class="nc" id="L185">                c = buffer.read();</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">                if (!isValidLabelNameContinuation(c)) {</span>
+<span class="nc" id="L187">                    buffer.rollback();</span>
+<span class="nc" id="L188">                    break;</span>
+                }
+<span class="nc" id="L190">                builder.append(c);</span>
+            }
+<span class="nc" id="L192">            return builder.toString();</span>
+        }
+<span class="nc" id="L194">        throw new ParseException(&quot;parse label name error&quot;);</span>
+    }
+
+    /**
+     * 获取Label的值
+     *
+     * @param buffer 行数据对象
+     * @return label value
+     */
+    private static String readTokenAsLabelValue(StrBuffer buffer) {
+<span class="nc" id="L204">        StringBuilder builder = new StringBuilder();</span>
+<span class="nc" id="L205">        boolean escaped = false;</span>
+<span class="nc bnc" id="L206" title="All 2 branches missed.">        while (!buffer.isEmpty()) {</span>
+<span class="nc" id="L207">            char c = buffer.read();</span>
+            // 处理 '\\' 转义
+<span class="nc bnc" id="L209" title="All 2 branches missed.">            if (escaped) {</span>
+<span class="nc bnc" id="L210" title="All 3 branches missed.">                switch (c) {</span>
+                    case QUOTES:
+                    case '\\':
+<span class="nc" id="L213">                        builder.append(c);</span>
+<span class="nc" id="L214">                        break;</span>
+                    case 'n':
+<span class="nc" id="L216">                        builder.append('\n');</span>
+<span class="nc" id="L217">                        break;</span>
+                    default:
+<span class="nc" id="L219">                        throw new ParseException(&quot;parse label value error&quot;);</span>
+                }
+<span class="nc" id="L221">                escaped = false;</span>
+            } else {
+<span class="nc bnc" id="L223" title="All 4 branches missed.">                switch (c) {</span>
+                    case QUOTES:
+<span class="nc" id="L225">                        return builder.toString();</span>
+                    case ENTER:
+<span class="nc" id="L227">                        throw new ParseException(&quot;parse label value error, next line&quot;);</span>
+                    case '\\':
+<span class="nc" id="L229">                        escaped = true;</span>
+<span class="nc" id="L230">                        break;</span>
+                    default:
+<span class="nc" id="L232">                        builder.append(c);</span>
+                }
+            }
+<span class="nc" id="L235">        }</span>
+<span class="nc" id="L236">        return builder.toString();</span>
+    }
+
+    /**
+     * 是否符合metric name首字符规则
+     *
+     * @param c metric字符
+     * @return true/false
+     */
+    private static boolean isValidMetricNameStart(char c) {
+<span class="nc bnc" id="L246" title="All 4 branches missed.">        return isValidLabelNameStart(c) || c == ':';</span>
+    }
+
+    /**
+     * 是否符合metric name除首字符其他字符规则
+     *
+     * @param c metric字符
+     * @return true/false
+     */
+    private static boolean isValidMetricNameContinuation(char c) {
+<span class="nc bnc" id="L256" title="All 4 branches missed.">        return isValidLabelNameContinuation(c) || c == ':';</span>
+    }
+
+    /**
+     * 是否符合label name首字符规则
+     *
+     * @param c metric字符
+     * @return true/false
+     */
+    private static boolean isValidLabelNameStart(char c) {
+<span class="nc bnc" id="L266" title="All 10 branches missed.">        return (c &gt;= 'a' &amp;&amp; c &lt;= 'z') || (c &gt;= 'A' &amp;&amp; c &lt;= 'Z') || c == '_';</span>
+    }
+
+    /**
+     * 是否符合label name除首字符其他字符规则
+     *
+     * @param c metric字符
+     * @return true/false
+     */
+    private static boolean isValidLabelNameContinuation(char c) {
+<span class="nc bnc" id="L276" title="All 6 branches missed.">        return isValidLabelNameStart(c) || (c &gt;= '0' &amp;&amp; c &lt;= '9');</span>
+    }
+
+    /**
+     * 检测是否是有效的utf8编码的字符串
+     *
+     * @param s label value
+     * @return true/false
+     */
+    private static boolean isValidLabelValue(String s) {
+<span class="nc bnc" id="L286" title="All 4 branches missed.">        return s != null &amp;&amp; s.equals(new String(s.getBytes(StandardCharsets.UTF_8)));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

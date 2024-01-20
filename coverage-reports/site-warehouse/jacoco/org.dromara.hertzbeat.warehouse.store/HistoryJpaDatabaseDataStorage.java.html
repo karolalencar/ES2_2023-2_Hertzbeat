@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>HistoryJpaDatabaseDataStorage.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-warehouse</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.warehouse.store</a> &gt; <span class="el_source">HistoryJpaDatabaseDataStorage.java</span></div><h1>HistoryJpaDatabaseDataStorage.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.warehouse.store;
+
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.math.NumberUtils;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.dto.Value;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.entity.warehouse.History;
+import org.dromara.hertzbeat.common.util.JsonUtil;
+import org.dromara.hertzbeat.common.util.TimePeriodUtil;
+import org.dromara.hertzbeat.warehouse.config.WarehouseProperties;
+import org.dromara.hertzbeat.warehouse.dao.HistoryDao;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Component;
+
+import javax.persistence.criteria.Predicate;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Duration;
+import java.time.ZonedDateTime;
+import java.time.temporal.TemporalAmount;
+import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * data storage by mysql/h2 - jpa
+ *
+ * @author tom
+ */
+@Component
+@ConditionalOnProperty(prefix = &quot;warehouse.store.jpa&quot;,
+		name = &quot;enabled&quot;, havingValue = &quot;true&quot;)
+<span class="nc" id="L57">@Slf4j</span>
+public class HistoryJpaDatabaseDataStorage extends AbstractHistoryDataStorage {
+	private final HistoryDao historyDao;
+	private final WarehouseProperties.StoreProperties.JpaProperties jpaProperties;
+
+	private static final int STRING_MAX_LENGTH = 1024;
+
+	public HistoryJpaDatabaseDataStorage(WarehouseProperties properties,
+<span class="nc" id="L65">										 HistoryDao historyDao) {</span>
+<span class="nc" id="L66">		this.jpaProperties = properties.getStore().getJpa();</span>
+<span class="nc" id="L67">		this.serverAvailable = true;</span>
+<span class="nc" id="L68">		this.historyDao = historyDao;</span>
+<span class="nc" id="L69">		expiredDataCleaner();</span>
+<span class="nc" id="L70">	}</span>
+
+	public void expiredDataCleaner() {
+<span class="nc" id="L73">		ThreadFactory threadFactory = new ThreadFactoryBuilder()</span>
+<span class="nc" id="L74">				.setUncaughtExceptionHandler((thread, throwable) -&gt; {</span>
+<span class="nc" id="L75">					log.error(&quot;Jpa metrics store has uncaughtException.&quot;);</span>
+<span class="nc" id="L76">					log.error(throwable.getMessage(), throwable);</span>
+<span class="nc" id="L77">				})</span>
+<span class="nc" id="L78">				.setDaemon(true)</span>
+<span class="nc" id="L79">				.setNameFormat(&quot;jpa-metrics-cleaner-%d&quot;)</span>
+<span class="nc" id="L80">				.build();</span>
+<span class="nc" id="L81">		ScheduledExecutorService scheduledExecutor = Executors.newSingleThreadScheduledExecutor(threadFactory);</span>
+<span class="nc" id="L82">		scheduledExecutor.scheduleAtFixedRate(() -&gt; {</span>
+<span class="nc" id="L83">			log.warn(&quot;[jpa-metrics-store]-start running expired data cleaner.&quot; +</span>
+					&quot;Please use time series db instead of jpa for better performance&quot;);
+<span class="nc" id="L85">			String expireTimeStr = jpaProperties.getExpireTime();</span>
+<span class="nc" id="L86">			long expireTime = 0;</span>
+			try {
+<span class="nc bnc" id="L88" title="All 2 branches missed.">				if (NumberUtils.isParsable(expireTimeStr)) {</span>
+<span class="nc" id="L89">					expireTime = NumberUtils.toLong(expireTimeStr);</span>
+<span class="nc" id="L90">					expireTime = (ZonedDateTime.now().toEpochSecond() + expireTime) * 1000;</span>
+				} else {
+<span class="nc" id="L92">					TemporalAmount temporalAmount = TimePeriodUtil.parseTokenTime(expireTimeStr);</span>
+<span class="nc" id="L93">					ZonedDateTime dateTime = ZonedDateTime.now().minus(temporalAmount);</span>
+<span class="nc" id="L94">					expireTime = dateTime.toEpochSecond() * 1000;</span>
+				}
+<span class="nc" id="L96">			} catch (Exception e) {</span>
+<span class="nc" id="L97">				log.error(&quot;expiredDataCleaner time error: {}. use default expire time to clean: 1h&quot;, e.getMessage());</span>
+<span class="nc" id="L98">				ZonedDateTime dateTime = ZonedDateTime.now().minus(Duration.ofHours(1));</span>
+<span class="nc" id="L99">				expireTime = dateTime.toEpochSecond() * 1000;</span>
+<span class="nc" id="L100">			}</span>
+			try {
+<span class="nc" id="L102">				int rows = historyDao.deleteHistoriesByTimeBefore(expireTime);</span>
+<span class="nc" id="L103">				log.info(&quot;[jpa-metrics-store]-delete {} rows.&quot;, rows);</span>
+<span class="nc" id="L104">				long total = historyDao.count();</span>
+<span class="nc bnc" id="L105" title="All 2 branches missed.">				if (total &gt; jpaProperties.getMaxHistoryRecordNum()) {</span>
+<span class="nc" id="L106">					rows = historyDao.deleteOlderHistoriesRecord(jpaProperties.getMaxHistoryRecordNum() / 2);</span>
+<span class="nc" id="L107">					log.warn(&quot;[jpa-metrics-store]-force delete {} rows due too many. Please use time series db instead of jpa for better performance.&quot;, rows);</span>
+				}
+<span class="nc" id="L109">			} catch (Exception e) {</span>
+<span class="nc" id="L110">				log.error(&quot;expiredDataCleaner database error: {}.&quot;, e.getMessage());</span>
+<span class="nc" id="L111">				log.error(&quot;try to truncate table hzb_history. Please use time series db instead of jpa for better performance.&quot;);</span>
+<span class="nc" id="L112">				historyDao.truncateTable();</span>
+<span class="nc" id="L113">			}</span>
+<span class="nc" id="L114">		}, 5, 30, TimeUnit.SECONDS);</span>
+<span class="nc" id="L115">	}</span>
+
+	@Override
+	void saveData(CollectRep.MetricsData metricsData) {
+<span class="nc bnc" id="L119" title="All 2 branches missed.">		if (metricsData.getCode() != CollectRep.Code.SUCCESS) {</span>
+<span class="nc" id="L120">			return;</span>
+		}
+<span class="nc bnc" id="L122" title="All 2 branches missed.">		if (metricsData.getValuesList().isEmpty()) {</span>
+<span class="nc" id="L123">			log.info(&quot;[warehouse jpa] flush metrics data {} is null, ignore.&quot;, metricsData.getId());</span>
+<span class="nc" id="L124">			return;</span>
+		}
+<span class="nc" id="L126">		String monitorType = metricsData.getApp();</span>
+<span class="nc" id="L127">		String metrics = metricsData.getMetrics();</span>
+<span class="nc" id="L128">		List&lt;CollectRep.Field&gt; fieldsList = metricsData.getFieldsList();</span>
+		try {
+<span class="nc" id="L130">			List&lt;History&gt; historyList = new LinkedList&lt;&gt;();</span>
+<span class="nc" id="L131">			History.HistoryBuilder historyBuilder = History.builder()</span>
+<span class="nc" id="L132">					.monitorId(metricsData.getId())</span>
+<span class="nc" id="L133">					.app(monitorType)</span>
+<span class="nc" id="L134">					.metrics(metrics)</span>
+<span class="nc" id="L135">					.time(metricsData.getTime());</span>
+<span class="nc bnc" id="L136" title="All 2 branches missed.">			for (CollectRep.ValueRow valueRow : metricsData.getValuesList()) {</span>
+<span class="nc" id="L137">				Map&lt;String, String&gt; labels = new HashMap&lt;&gt;(8);</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">				for (int i = 0; i &lt; fieldsList.size(); i++) {</span>
+<span class="nc" id="L139">					final CollectRep.Field field = fieldsList.get(i);</span>
+<span class="nc" id="L140">					final int fieldType = field.getType();</span>
+<span class="nc" id="L141">					final String fieldName = field.getName();</span>
+<span class="nc" id="L142">					final String columnValue = valueRow.getColumns(i);</span>
+
+<span class="nc" id="L144">					historyBuilder.metric(fieldName);</span>
+
+<span class="nc bnc" id="L146" title="All 2 branches missed.">					if (CommonConstants.NULL_VALUE.equals(columnValue)) {</span>
+<span class="nc bnc" id="L147" title="All 4 branches missed.">						switch (fieldType) {</span>
+							case CommonConstants.TYPE_NUMBER: {
+<span class="nc" id="L149">								historyBuilder.metricType(CommonConstants.TYPE_NUMBER)</span>
+<span class="nc" id="L150">										.dou(null);</span>
+<span class="nc" id="L151">								break;</span>
+							}
+
+							case CommonConstants.TYPE_STRING: {
+<span class="nc" id="L155">								historyBuilder.metricType(CommonConstants.TYPE_STRING)</span>
+<span class="nc" id="L156">										.str(null);</span>
+<span class="nc" id="L157">								break;</span>
+							}
+
+							case CommonConstants.TYPE_TIME: {
+<span class="nc" id="L161">								historyBuilder.metricType(CommonConstants.TYPE_TIME)</span>
+<span class="nc" id="L162">										.int32(null);</span>
+<span class="nc" id="L163">								break;</span>
+							}
+						}
+					} else {
+<span class="nc bnc" id="L167" title="All 4 branches missed.">						switch (fieldType) {</span>
+							case CommonConstants.TYPE_NUMBER: {
+<span class="nc" id="L169">								historyBuilder.metricType(CommonConstants.TYPE_NUMBER)</span>
+<span class="nc" id="L170">										.dou(Double.parseDouble(columnValue));</span>
+<span class="nc" id="L171">								break;</span>
+							}
+
+							case CommonConstants.TYPE_STRING: {
+<span class="nc" id="L175">								historyBuilder.metricType(CommonConstants.TYPE_STRING)</span>
+<span class="nc" id="L176">										.str(formatStrValue(columnValue));</span>
+<span class="nc" id="L177">								break;</span>
+							}
+
+							case CommonConstants.TYPE_TIME: {
+<span class="nc" id="L181">								historyBuilder.metricType(CommonConstants.TYPE_TIME)</span>
+<span class="nc" id="L182">										.int32(Integer.parseInt(columnValue));</span>
+								break;
+							}
+						}
+
+<span class="nc bnc" id="L187" title="All 2 branches missed.">						if (field.getLabel()) {</span>
+<span class="nc" id="L188">							labels.put(fieldName, columnValue);</span>
+						}
+					}
+
+<span class="nc" id="L192">					historyList.add(historyBuilder.build());</span>
+				}
+<span class="nc" id="L194">				historyBuilder.instance(JsonUtil.toJson(labels));</span>
+<span class="nc" id="L195">			}</span>
+<span class="nc" id="L196">			historyDao.saveAll(historyList);</span>
+<span class="nc" id="L197">		} catch (Exception e) {</span>
+<span class="nc" id="L198">			log.error(e.getMessage(), e);</span>
+<span class="nc" id="L199">		}</span>
+<span class="nc" id="L200">	}</span>
+
+	@Override
+	public Map&lt;String, List&lt;Value&gt;&gt; getHistoryMetricData(Long monitorId, String app, String metrics, String metric, String label, String history) {
+<span class="nc" id="L204">		Map&lt;String, List&lt;Value&gt;&gt; instanceValuesMap = new HashMap&lt;&gt;(8);</span>
+<span class="nc" id="L205">		Specification&lt;History&gt; specification = (root, query, criteriaBuilder) -&gt; {</span>
+<span class="nc" id="L206">			List&lt;Predicate&gt; andList = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L207">			Predicate predicateMonitorId = criteriaBuilder.equal(root.get(&quot;monitorId&quot;), monitorId);</span>
+<span class="nc" id="L208">			Predicate predicateMonitorType = criteriaBuilder.equal(root.get(&quot;app&quot;), app);</span>
+<span class="nc" id="L209">			Predicate predicateMonitorMetrics = criteriaBuilder.equal(root.get(&quot;metrics&quot;), metrics);</span>
+<span class="nc" id="L210">			Predicate predicateMonitorMetric = criteriaBuilder.equal(root.get(&quot;metric&quot;), metric);</span>
+<span class="nc" id="L211">			andList.add(predicateMonitorId);</span>
+<span class="nc" id="L212">			andList.add(predicateMonitorType);</span>
+<span class="nc" id="L213">			andList.add(predicateMonitorMetrics);</span>
+<span class="nc" id="L214">			andList.add(predicateMonitorMetric);</span>
+
+<span class="nc bnc" id="L216" title="All 2 branches missed.">			if (StringUtils.isNotBlank(label)) {</span>
+<span class="nc" id="L217">				Predicate predicateMonitorInstance = criteriaBuilder.equal(root.get(&quot;instance&quot;), label);</span>
+<span class="nc" id="L218">				andList.add(predicateMonitorInstance);</span>
+			}
+
+<span class="nc bnc" id="L221" title="All 2 branches missed.">			if (history != null) {</span>
+				try {
+<span class="nc" id="L223">					TemporalAmount temporalAmount = TimePeriodUtil.parseTokenTime(history);</span>
+<span class="nc" id="L224">					ZonedDateTime dateTime = ZonedDateTime.now().minus(temporalAmount);</span>
+<span class="nc" id="L225">					long timeBefore = dateTime.toEpochSecond() * 1000;</span>
+<span class="nc" id="L226">					Predicate timePredicate = criteriaBuilder.ge(root.get(&quot;time&quot;), timeBefore);</span>
+<span class="nc" id="L227">					andList.add(timePredicate);</span>
+<span class="nc" id="L228">				} catch (Exception e) {</span>
+<span class="nc" id="L229">					log.error(e.getMessage());</span>
+<span class="nc" id="L230">				}</span>
+			}
+<span class="nc" id="L232">			Predicate[] predicates = new Predicate[andList.size()];</span>
+<span class="nc" id="L233">			Predicate predicate = criteriaBuilder.and(andList.toArray(predicates));</span>
+<span class="nc" id="L234">			return query.where(predicate).getRestriction();</span>
+		};
+<span class="nc" id="L236">		Sort sortExp = Sort.by(new Sort.Order(Sort.Direction.DESC, &quot;time&quot;));</span>
+<span class="nc" id="L237">		List&lt;History&gt; historyList = historyDao.findAll(specification, sortExp);</span>
+<span class="nc bnc" id="L238" title="All 2 branches missed.">		for (History dataItem : historyList) {</span>
+<span class="nc" id="L239">			String value = &quot;&quot;;</span>
+<span class="nc bnc" id="L240" title="All 2 branches missed.">			if (dataItem.getMetricType() == CommonConstants.TYPE_NUMBER) {</span>
+<span class="nc bnc" id="L241" title="All 2 branches missed.">				if (dataItem.getDou() != null) {</span>
+<span class="nc" id="L242">					value = BigDecimal.valueOf(dataItem.getDou()).setScale(4, RoundingMode.HALF_UP)</span>
+<span class="nc" id="L243">							.stripTrailingZeros().toPlainString();</span>
+				}
+			} else {
+<span class="nc" id="L246">				value = dataItem.getStr();</span>
+			}
+<span class="nc bnc" id="L248" title="All 2 branches missed.">			String instanceValue = dataItem.getInstance() == null ? &quot;&quot; : dataItem.getInstance();</span>
+<span class="nc" id="L249">			List&lt;Value&gt; valueList = instanceValuesMap.computeIfAbsent(instanceValue, k -&gt; new LinkedList&lt;&gt;());</span>
+<span class="nc" id="L250">			valueList.add(new Value(value, dataItem.getTime()));</span>
+<span class="nc" id="L251">		}</span>
+<span class="nc" id="L252">		return instanceValuesMap;</span>
+	}
+
+	private String formatStrValue(String value) {
+<span class="nc bnc" id="L256" title="All 2 branches missed.">		if (value == null) {</span>
+<span class="nc" id="L257">			return &quot;&quot;;</span>
+		}
+<span class="nc" id="L259">		value = value.replace(&quot;'&quot;, &quot;\\'&quot;);</span>
+<span class="nc" id="L260">		value = value.replace(&quot;\&quot;&quot;, &quot;\\\&quot;&quot;);</span>
+<span class="nc" id="L261">		value = value.replace(&quot;*&quot;, &quot;-&quot;);</span>
+<span class="nc" id="L262">		value = String.format(&quot;`%s`&quot;, value);</span>
+<span class="nc bnc" id="L263" title="All 2 branches missed.">		if (value.length() &gt; STRING_MAX_LENGTH) {</span>
+<span class="nc" id="L264">			value = value.substring(0, STRING_MAX_LENGTH - 1);</span>
+		}
+<span class="nc" id="L266">		return value;</span>
+	}
+
+	@Override
+	public Map&lt;String, List&lt;Value&gt;&gt; getHistoryIntervalMetricData(Long monitorId, String app, String metrics, String metric, String label, String history) {
+<span class="nc" id="L271">		return new HashMap&lt;&gt;(8);</span>
+	}
+
+	@Override
+	public void destroy() throws Exception {
+<span class="nc" id="L276">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

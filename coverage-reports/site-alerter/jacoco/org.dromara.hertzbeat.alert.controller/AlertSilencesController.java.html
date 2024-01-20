@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AlertSilencesController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-alerter</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.alert.controller</a> &gt; <span class="el_source">AlertSilencesController.java</span></div><h1>AlertSilencesController.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.alert.controller;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.dromara.hertzbeat.alert.service.AlertSilenceService;
+import org.dromara.hertzbeat.common.entity.alerter.AlertSilence;
+import org.dromara.hertzbeat.common.entity.dto.Message;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.*;
+
+import javax.persistence.criteria.CriteriaBuilder;
+import javax.persistence.criteria.Predicate;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
+
+/**
+ * Silence the batch API for alarms
+ * @author tom
+ */
+@Tag(name = &quot;Alert Silence Batch API | 告警静默管理API&quot;)
+@RestController
+@RequestMapping(path = &quot;/api/alert/silences&quot;, produces = {APPLICATION_JSON_VALUE})
+<span class="nc" id="L50">public class AlertSilencesController {</span>
+
+    @Autowired
+    private AlertSilenceService alertSilenceService;
+
+    @GetMapping
+    @Operation(summary = &quot;Query the alarm silence list ｜ 查询告警静默列表&quot;,
+            description = &quot;You can obtain the list of alarm silence by querying filter items ｜ 根据查询过滤项获取告警静默信息列表&quot;)
+    public ResponseEntity&lt;Message&lt;Page&lt;AlertSilence&gt;&gt;&gt; getAlertSilences(
+            @Parameter(description = &quot;Alarm Silence ID ｜ 告警静默ID&quot;, example = &quot;6565463543&quot;) @RequestParam(required = false) List&lt;Long&gt; ids,
+            @Parameter(description = &quot;Search Name ｜ 模糊查询-名称&quot;, example = &quot;x&quot;) @RequestParam(required = false) String search,
+            @Parameter(description = &quot;Sort field, default id ｜ 排序字段，默认id&quot;, example = &quot;id&quot;) @RequestParam(defaultValue = &quot;id&quot;) String sort,
+            @Parameter(description = &quot;Sort mode: asc: ascending, desc: descending ｜ 排序方式，asc:升序，desc:降序&quot;, example = &quot;desc&quot;) @RequestParam(defaultValue = &quot;desc&quot;) String order,
+            @Parameter(description = &quot;List current page ｜ 列表当前分页&quot;, example = &quot;0&quot;) @RequestParam(defaultValue = &quot;0&quot;) int pageIndex,
+            @Parameter(description = &quot;Number of list pages ｜ 列表分页数量&quot;, example = &quot;8&quot;) @RequestParam(defaultValue = &quot;8&quot;) int pageSize) {
+
+<span class="nc" id="L66">        Specification&lt;AlertSilence&gt; specification = (root, query, criteriaBuilder) -&gt; {</span>
+<span class="nc" id="L67">            List&lt;Predicate&gt; andList = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L68" title="All 4 branches missed.">            if (ids != null &amp;&amp; !ids.isEmpty()) {</span>
+<span class="nc" id="L69">                CriteriaBuilder.In&lt;Long&gt; inPredicate= criteriaBuilder.in(root.get(&quot;id&quot;));</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">                for (long id : ids) {</span>
+<span class="nc" id="L71">                    inPredicate.value(id);</span>
+<span class="nc" id="L72">                }</span>
+<span class="nc" id="L73">                andList.add(inPredicate);</span>
+            }
+<span class="nc bnc" id="L75" title="All 2 branches missed.">            if (StringUtils.hasText(search)) {</span>
+<span class="nc" id="L76">                Predicate predicate = criteriaBuilder.or(</span>
+<span class="nc" id="L77">                        criteriaBuilder.like(</span>
+<span class="nc" id="L78">                                criteriaBuilder.lower(root.get(&quot;name&quot;)),</span>
+<span class="nc" id="L79">                                &quot;%&quot; + search.toLowerCase() + &quot;%&quot;</span>
+                        )
+                );
+<span class="nc" id="L82">                andList.add(predicate);</span>
+            }
+<span class="nc" id="L84">            Predicate[] predicates = new Predicate[andList.size()];</span>
+<span class="nc" id="L85">            return criteriaBuilder.and(andList.toArray(predicates));</span>
+        };
+<span class="nc" id="L87">        Sort sortExp = Sort.by(new Sort.Order(Sort.Direction.fromString(order), sort));</span>
+<span class="nc" id="L88">        PageRequest pageRequest = PageRequest.of(pageIndex, pageSize, sortExp);</span>
+<span class="nc" id="L89">        Page&lt;AlertSilence&gt; alertSilencePage = alertSilenceService.getAlertSilences(specification,pageRequest);</span>
+<span class="nc" id="L90">        Message&lt;Page&lt;AlertSilence&gt;&gt; message = Message.success(alertSilencePage);</span>
+<span class="nc" id="L91">        return ResponseEntity.ok(message);</span>
+    }
+
+    @DeleteMapping
+    @Operation(summary = &quot;Delete alarm silence in batches ｜ 批量删除告警静默&quot;,
+            description = &quot;Delete alarm silence in batches based on the alarm silence ID list ｜ 根据告警静默ID列表批量删除告警静默&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; deleteAlertDefines(
+            @Parameter(description = &quot;Alarm Silence IDs ｜ 告警静默IDs&quot;, example = &quot;6565463543&quot;) @RequestParam(required = false) List&lt;Long&gt; ids
+    ) {
+<span class="nc bnc" id="L100" title="All 4 branches missed.">        if (ids != null &amp;&amp; !ids.isEmpty()) {</span>
+<span class="nc" id="L101">            alertSilenceService.deleteAlertSilences(new HashSet&lt;&gt;(ids));</span>
+        }
+<span class="nc" id="L103">        Message&lt;Void&gt; message = Message.success();</span>
+<span class="nc" id="L104">        return ResponseEntity.ok(message);</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

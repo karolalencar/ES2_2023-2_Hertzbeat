@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CommonSshClient.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.common.ssh</a> &gt; <span class="el_source">CommonSshClient.java</span></div><h1>CommonSshClient.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.collect.common.ssh;
+
+import lombok.extern.slf4j.Slf4j;
+import org.apache.sshd.client.ClientBuilder;
+import org.apache.sshd.client.SshClient;
+import org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier;
+import org.apache.sshd.common.NamedFactory;
+import org.apache.sshd.common.PropertyResolverUtils;
+import org.apache.sshd.common.kex.BuiltinDHFactories;
+import org.apache.sshd.common.signature.BuiltinSignatures;
+import org.apache.sshd.core.CoreModuleProperties;
+
+import java.util.ArrayList;
+
+/**
+ * common ssh pool client
+ * @author tom
+ */
+<span class="nc" id="L19">@Slf4j</span>
+<span class="nc" id="L20">public class CommonSshClient {</span>
+
+    private static final SshClient SSH_CLIENT;
+    
+    static {
+<span class="nc" id="L25">        SSH_CLIENT = SshClient.setUpDefaultClient();</span>
+        // accept all server key verifier, will print warn log : Server at {} presented unverified {} key: {}
+<span class="nc" id="L27">        AcceptAllServerKeyVerifier verifier = AcceptAllServerKeyVerifier.INSTANCE;</span>
+<span class="nc" id="L28">        SSH_CLIENT.setServerKeyVerifier(verifier);</span>
+        // set connection heartbeat interval time 2000ms, wait for heartbeat response timeout 300_000ms
+<span class="nc" id="L30">        PropertyResolverUtils.updateProperty(</span>
+<span class="nc" id="L31">                SSH_CLIENT, CoreModuleProperties.HEARTBEAT_INTERVAL.getName(), 2000);</span>
+<span class="nc" id="L32">        PropertyResolverUtils.updateProperty(</span>
+<span class="nc" id="L33">                SSH_CLIENT, CoreModuleProperties.HEARTBEAT_REPLY_WAIT.getName(), 300_000);</span>
+<span class="nc" id="L34">        PropertyResolverUtils.updateProperty(</span>
+<span class="nc" id="L35">                SSH_CLIENT, CoreModuleProperties.SOCKET_KEEPALIVE.getName(), true);</span>
+        // set support all KeyExchange
+<span class="nc" id="L37">        SSH_CLIENT.setKeyExchangeFactories(NamedFactory.setUpTransformedFactories(</span>
+                false,
+                BuiltinDHFactories.VALUES,
+                ClientBuilder.DH2KEX
+        ));
+<span class="nc" id="L42">        SSH_CLIENT.setSignatureFactories(new ArrayList&lt;&gt;(BuiltinSignatures.VALUES));</span>
+<span class="nc" id="L43">        SSH_CLIENT.start();</span>
+<span class="nc" id="L44">    }</span>
+
+    public static SshClient getSshClient() {
+<span class="nc" id="L47">        return SSH_CLIENT;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

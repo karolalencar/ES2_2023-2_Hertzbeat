@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GeneralConfigService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.service</a> &gt; <span class="el_source">GeneralConfigService.java</span></div><h1>GeneralConfigService.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.manager.service;
+
+/**
+ * ConfigService接口，提供配置的增删查改操作。
+ *
+ * &lt;p&gt;ConfigService interface provides CRUD operations for configurations.&lt;/p&gt;
+ * @author zqr10159
+ * @param &lt;T&gt; 配置类型
+ * @version 1.0
+ */
+public interface GeneralConfigService&lt;T&gt; {
+    
+    
+    /**
+     * config type: email, sms
+     * @return type string
+     */
+    String type();
+    
+    /**
+     * 保存更新配置
+     *
+     * @param config 需要保存的配置
+     */
+    void saveConfig(T config);
+
+    /**
+     * 获取配置
+     *
+     * @return 查询到的配置
+     */
+    T getConfig();
+    
+    /**
+     * handler after save config
+     * @param config config
+     */
+<span class="nc" id="L38">    default void handler(T config) {}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

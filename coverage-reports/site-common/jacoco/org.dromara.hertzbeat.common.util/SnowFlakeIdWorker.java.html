@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SnowFlakeIdWorker.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.util</a> &gt; <span class="el_source">SnowFlakeIdWorker.java</span></div><h1>SnowFlakeIdWorker.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.common.util;
+
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.Random;
+
+/**
+ * SnowFlakeId Instance 
+ * 注意 由于前端JS TS 在json解析大数会造成精度丢失 UUID 不能超过 9007199254740991（10进制）16进制为 0x1FFFFFFFFFFFFF (小于53bit)
+ * 1位符号位+41位时间戳+4位机器ID+8位序列号 = 53位
+ * Note that because the front-end JS TS parses large numbers in json, the precision will be lost.
+ * UUID cannot exceed hexadecimal 0x1FFFFFFFFFFFFFF (less than 53bit)
+ * @author from https://www.cnblogs.com/vchar/p/14857677.html
+ *
+ */
+<span class="fc" id="L33">@Slf4j</span>
+public class SnowFlakeIdWorker {
+
+    /**
+     * 开始时间戳，单位毫秒；这里是2021-06-01
+     */
+    private static final long TW_EPOCH = 1622476800000L;
+
+    /**
+     * 机器 ID 所占的位数
+     */
+    private static final long WORKER_ID_BITS = 4L;
+
+    /**
+     * 支持的最大机器ID，0-15
+     * &lt;p&gt;
+     * PS. Twitter的源码是 -1L ^ (-1L &lt;&lt; workerIdBits)；这里最后和-1进行异或运算，由于-1的二进制补码的特殊性，就相当于进行取反。
+     */
+    private static final long MAX_WORKER_ID = ~(-1L &lt;&lt; WORKER_ID_BITS);
+
+    /**
+     * 序列在 ID 中占的位数
+     */
+    private static final long SEQUENCE_BITS = 8L;
+
+    /**
+     * 机器 ID 向左移位数
+     */
+    private static final long WORKER_ID_SHIFT = SEQUENCE_BITS;
+
+    /**
+     * 时间截向左移位数
+     */
+    private static final long TIMESTAMP_LEFT_SHIFT = SEQUENCE_BITS + WORKER_ID_BITS;
+
+    /**
+     * 生成序列的掩码最大值，256
+     */
+    private static final long SEQUENCE_MASK = ~(-1L &lt;&lt; SEQUENCE_BITS);
+
+    /**
+     * 工作机器 ID(0~15)
+     */
+    private final long workerId;
+
+    /**
+     * 毫秒内序列(0~256)
+     */
+<span class="pc" id="L81">    private long sequence = 0L;</span>
+
+    /**
+     * 上次生成 ID 的时间戳
+     */
+<span class="pc" id="L86">    private long lastTimestamp = -1L;</span>
+
+    /**
+     * 创建 ID 生成器的方式: 使用工作机器的序号 范围是 [0, 15]
+     *
+     * @param workerId 工作机器 ID
+     */
+<span class="nc" id="L93">    public SnowFlakeIdWorker(long workerId) {</span>
+<span class="nc bnc" id="L94" title="All 4 branches missed.">        if (workerId &lt; 0 || workerId &gt; MAX_WORKER_ID) {</span>
+<span class="nc" id="L95">            Random random = new Random(workerId);</span>
+<span class="nc" id="L96">            workerId = random.nextInt((int) MAX_WORKER_ID);</span>
+<span class="nc" id="L97">            log.warn(&quot;Worker ID can't be greater than {} or less than 0, use random: {}.&quot;, MAX_WORKER_ID, workerId);</span>
+        }
+<span class="nc" id="L99">        this.workerId = workerId;</span>
+<span class="nc" id="L100">    }</span>
+
+    /**
+     * 创建 ID 生成器的方式: 使用本地IP作为机器ID创建生成器
+     */
+<span class="fc" id="L105">    public SnowFlakeIdWorker() {</span>
+<span class="fc" id="L106">        int workerId = 0;</span>
+<span class="fc" id="L107">        String host = IpDomainUtil.getLocalhostIp();</span>
+<span class="pc bpc" id="L108" title="1 of 2 branches missed.">        if (host == null) {</span>
+<span class="nc" id="L109">            Random random = new Random(workerId);</span>
+<span class="nc" id="L110">            workerId = random.nextInt((int) MAX_WORKER_ID);</span>
+<span class="nc" id="L111">        } else {</span>
+<span class="fc" id="L112">            workerId = host.hashCode() % (int) MAX_WORKER_ID;</span>
+<span class="fc" id="L113">            workerId = Math.abs(workerId);</span>
+        }
+<span class="fc" id="L115">        this.workerId = workerId;</span>
+<span class="fc" id="L116">    }</span>
+
+    /**
+     * get next id
+     * thread safe
+     * @return id with 15 length
+     */
+    public synchronized long nextId() {
+<span class="fc" id="L124">        long timestamp = timeGen();</span>
+<span class="fc bfc" id="L125" title="All 2 branches covered.">        if (lastTimestamp == timestamp) {</span>
+            // 同一时间生成的，则序号+1
+<span class="fc" id="L127">            sequence = (sequence + 1) &amp; SEQUENCE_MASK;</span>
+            // 毫秒内序列溢出：超过最大值
+<span class="fc bfc" id="L129" title="All 2 branches covered.">            if (sequence == 0) {</span>
+                // 阻塞到下一个毫秒，获得新的时间戳
+<span class="fc" id="L131">                timestamp = tilNextMillis(lastTimestamp);</span>
+            }
+        } else {
+            // 时间戳改变，毫秒内序列重置
+<span class="fc" id="L135">            sequence = 0L;</span>
+        }
+        // 上次生成 ID 的时间戳
+<span class="fc" id="L138">        lastTimestamp = timestamp;</span>
+
+        // 移位并通过或运算拼到一起
+<span class="fc" id="L141">        return ((timestamp - TW_EPOCH) &lt;&lt; TIMESTAMP_LEFT_SHIFT)</span>
+                | (workerId &lt;&lt; WORKER_ID_SHIFT)
+                | sequence;
+    }
+
+    private long tilNextMillis(long lastTimestamp) {
+<span class="fc" id="L147">        long timestamp = timeGen();</span>
+<span class="fc bfc" id="L148" title="All 2 branches covered.">        while (timestamp &lt;= lastTimestamp) {</span>
+<span class="fc" id="L149">            timestamp = timeGen();</span>
+        }
+<span class="fc" id="L151">        return timestamp;</span>
+    }
+
+    private long timeGen() {
+<span class="fc" id="L155">        return System.currentTimeMillis();</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

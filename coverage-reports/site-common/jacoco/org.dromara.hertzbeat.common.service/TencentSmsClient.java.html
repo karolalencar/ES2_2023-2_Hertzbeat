@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TencentSmsClient.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.service</a> &gt; <span class="el_source">TencentSmsClient.java</span></div><h1>TencentSmsClient.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.common.service;
+
+import com.tencentcloudapi.common.Credential;
+import com.tencentcloudapi.sms.v20210111.SmsClient;
+import com.tencentcloudapi.sms.v20210111.models.SendSmsRequest;
+import com.tencentcloudapi.sms.v20210111.models.SendSmsResponse;
+import com.tencentcloudapi.sms.v20210111.models.SendStatus;
+import org.dromara.hertzbeat.common.config.CommonProperties;
+import org.dromara.hertzbeat.common.support.exception.SendMessageException;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+
+/**
+ * sms service client for tencent cloud
+ * @author tom
+ */
+@Component
+@ConditionalOnProperty(&quot;common.sms.tencent.app-id&quot;)
+<span class="nc" id="L20">@Slf4j</span>
+public class TencentSmsClient {
+
+    private static final String RESPONSE_OK = &quot;Ok&quot;;
+    private static final String REGION = &quot;ap-guangzhou&quot;;
+
+    private SmsClient smsClient;
+    private String appId;
+    private String signName;
+    private String templateId;
+
+<span class="nc" id="L31">    public TencentSmsClient(CommonProperties properties) {</span>
+<span class="nc bnc" id="L32" title="All 6 branches missed.">        if (properties == null || properties.getSms() == null || properties.getSms().getTencent() == null) {</span>
+<span class="nc" id="L33">            log.error(&quot;init error, please config TencentSmsClient props in application.yml&quot;);</span>
+<span class="nc" id="L34">            throw new IllegalArgumentException(&quot;please config TencentSmsClient props&quot;);</span>
+        }
+<span class="nc" id="L36">        initSmsClient(properties.getSms().getTencent());</span>
+<span class="nc" id="L37">    }</span>
+
+    private void initSmsClient(CommonProperties.TencentSmsProperties tencent) {
+<span class="nc" id="L40">        this.appId = tencent.getAppId();</span>
+<span class="nc" id="L41">        this.signName = tencent.getSignName();</span>
+<span class="nc" id="L42">        this.templateId = tencent.getTemplateId();</span>
+<span class="nc" id="L43">        Credential cred = new Credential(tencent.getSecretId(), tencent.getSecretKey());</span>
+<span class="nc" id="L44">        smsClient = new SmsClient(cred, REGION);</span>
+<span class="nc" id="L45">    }</span>
+
+    /**
+     * 发送短信
+     * @param appId appId
+     * @param signName sign name
+     * @param templateId template id
+     * @param templateValues template values
+     * @param phones phones num
+     * @return true when send success
+     */
+    public void sendMessage(String appId, String signName, String templateId,
+                            String[] templateValues, String[] phones) {
+<span class="nc" id="L58">        SendSmsRequest req = new SendSmsRequest();</span>
+<span class="nc" id="L59">        req.setSmsSdkAppId(appId);</span>
+<span class="nc" id="L60">        req.setSignName(signName);</span>
+<span class="nc" id="L61">        req.setTemplateId(templateId);</span>
+<span class="nc" id="L62">        req.setTemplateParamSet(templateValues);</span>
+<span class="nc" id="L63">        req.setPhoneNumberSet(phones);</span>
+        try {
+<span class="nc" id="L65">            SendSmsResponse smsResponse = this.smsClient.SendSms(req);</span>
+<span class="nc" id="L66">            SendStatus sendStatus = smsResponse.getSendStatusSet()[0];</span>
+<span class="nc bnc" id="L67" title="All 2 branches missed.">            if (!RESPONSE_OK.equals(sendStatus.getCode())) {</span>
+<span class="nc" id="L68">                throw new SendMessageException(sendStatus.getCode() + &quot;:&quot; + sendStatus.getMessage());</span>
+            }
+<span class="nc" id="L70">        } catch (Exception e) {</span>
+<span class="nc" id="L71">            log.warn(e.getMessage());</span>
+<span class="nc" id="L72">            throw new SendMessageException(e.getMessage());</span>
+<span class="nc" id="L73">        }</span>
+<span class="nc" id="L74">    }</span>
+
+    /**
+     * 发送短信
+     * @param templateValues template values
+     * @param phones phones num
+     * @return true when send success
+     */
+    public void sendMessage(String[] templateValues, String[] phones) {
+<span class="nc" id="L83">        sendMessage(this.appId, this.signName, this.templateId, templateValues, phones);</span>
+<span class="nc" id="L84">    }</span>
+
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

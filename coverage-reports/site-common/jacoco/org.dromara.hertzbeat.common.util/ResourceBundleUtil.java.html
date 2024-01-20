@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ResourceBundleUtil.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.util</a> &gt; <span class="el_source">ResourceBundleUtil.java</span></div><h1>ResourceBundleUtil.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.common.util;
+
+import org.dromara.hertzbeat.common.support.ResourceBundleUtf8Control;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.Locale;
+import java.util.MissingResourceException;
+import java.util.ResourceBundle;
+
+/**
+ * i18n ResourceBundle util
+ * @author tom
+ */
+<span class="nc" id="L31">@Slf4j</span>
+<span class="nc" id="L32">public class ResourceBundleUtil {</span>
+
+<span class="nc" id="L34">    private static final ResourceBundleUtf8Control BUNDLE_UTF_8_CONTROL = new ResourceBundleUtf8Control();</span>
+<span class="nc" id="L35">    private static final Integer LANG_REGION_LENGTH = 2;</span>
+
+    static {
+        // set default locale by env
+        try {
+<span class="nc" id="L40">            String langEnv = System.getenv(&quot;LANG&quot;);</span>
+<span class="nc bnc" id="L41" title="All 2 branches missed.">            if (langEnv != null) {</span>
+<span class="nc" id="L42">                String[] langArr = langEnv.split(&quot;\\.&quot;);</span>
+<span class="nc bnc" id="L43" title="All 2 branches missed.">                if (langArr.length &gt;= 1) {</span>
+<span class="nc" id="L44">                    String[] regionArr = langArr[0].split(&quot;_&quot;);</span>
+<span class="nc bnc" id="L45" title="All 2 branches missed.">                    if (regionArr.length == LANG_REGION_LENGTH) {</span>
+<span class="nc" id="L46">                        String language = regionArr[0];</span>
+<span class="nc" id="L47">                        String region = regionArr[1];</span>
+<span class="nc" id="L48">                        Locale locale = new Locale(language, region);</span>
+<span class="nc" id="L49">                        Locale.setDefault(locale);</span>
+                    }
+                }
+            }
+<span class="nc" id="L53">        } catch (Exception e) {</span>
+<span class="nc" id="L54">            log.error(e.getMessage(), e);</span>
+<span class="nc" id="L55">        }</span>
+<span class="nc" id="L56">    }</span>
+
+    /**
+     * get resource bundle by bundle name
+     * @param bundleName bundle name
+     * @return resource bundle
+     */
+    public static ResourceBundle getBundle(String bundleName) {
+        try {
+<span class="nc" id="L65">            return ResourceBundle.getBundle(bundleName, BUNDLE_UTF_8_CONTROL);</span>
+<span class="nc" id="L66">        } catch (MissingResourceException resourceException) {</span>
+<span class="nc" id="L67">            return ResourceBundle.getBundle(bundleName, Locale.US, BUNDLE_UTF_8_CONTROL);</span>
+        }
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

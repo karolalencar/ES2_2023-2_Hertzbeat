@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>NebulaGraphCollectImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.nebulagraph</a> &gt; <span class="el_source">NebulaGraphCollectImpl.java</span></div><h1>NebulaGraphCollectImpl.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.collect.nebulagraph;
+
+import lombok.extern.slf4j.Slf4j;
+import org.apache.http.HttpHeaders;
+import org.apache.http.HttpHost;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.client.methods.RequestBuilder;
+import org.apache.http.client.protocol.HttpClientContext;
+import org.apache.http.protocol.HttpContext;
+import org.apache.http.util.EntityUtils;
+import org.dromara.hertzbeat.collector.collect.AbstractCollect;
+import org.dromara.hertzbeat.collector.collect.common.http.CommonHttpClient;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.collector.util.CollectUtil;
+import org.dromara.hertzbeat.common.constants.CollectorConstants;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.job.protocol.NebulaGraphProtocol;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+import org.dromara.hertzbeat.common.util.IpDomainUtil;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+
+/**
+ * @author dongfeng
+ */
+<span class="nc" id="L38">@Slf4j</span>
+<span class="nc" id="L39">public class NebulaGraphCollectImpl extends AbstractCollect {</span>
+    private final static int SUCCESS_CODE = 200;
+
+<span class="nc" id="L42">    private final static String[] TIME_RANGE = new String[]{&quot;5&quot;, &quot;60&quot;, &quot;600&quot;, &quot;3600&quot;};</span>
+
+    private final static String REGEX = &quot;\\.%s\\=&quot;;
+
+    private final static String STR_SPLIT = &quot;\n&quot;;
+
+    private final static String STORAGE_SPLIT_KEY_VALUE = &quot;=&quot;;
+
+    private final static String GRAPH_API = &quot;/stats&quot;;
+
+    private final static String STORAGE_API = &quot;/rocksdb_stats&quot;;
+
+
+    @Override
+    public void collect(CollectRep.MetricsData.Builder builder, long monitorId, String app, Metrics metrics) {
+<span class="nc" id="L57">        long startTime = System.currentTimeMillis();</span>
+<span class="nc bnc" id="L58" title="All 4 branches missed.">        if (metrics == null || metrics.getNebulaGraph() == null) {</span>
+<span class="nc" id="L59">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L60">            builder.setMsg(&quot;NebulaGraph collect must has NebulaGraph params&quot;);</span>
+<span class="nc" id="L61">            return;</span>
+        }
+<span class="nc" id="L63">        NebulaGraphProtocol nebulaGraph = metrics.getNebulaGraph();</span>
+<span class="nc" id="L64">        String timePeriod = nebulaGraph.getTimePeriod();</span>
+
+<span class="nc bnc" id="L66" title="All 4 branches missed.">        if (!Objects.isNull(nebulaGraph.getTimePeriod())&amp;&amp;!Arrays.asList(TIME_RANGE).contains(timePeriod)) {</span>
+<span class="nc" id="L67">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L68">            builder.setMsg(&quot;The time range for metric statistics, currently supporting 5 seconds, 60 seconds, 600 seconds, and 3600 seconds.&quot;);</span>
+<span class="nc" id="L69">            return;</span>
+        }
+
+<span class="nc bnc" id="L72" title="All 4 branches missed.">        if (nebulaGraph.getHost() == null || nebulaGraph.getHost().isEmpty()) {</span>
+<span class="nc" id="L73">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L74">            builder.setMsg(&quot;The host of NebulaGraph must be set&quot;);</span>
+<span class="nc" id="L75">            return;</span>
+        }
+
+        String resp;
+        long responseTime;
+<span class="nc" id="L80">        HashMap&lt;String, String&gt; resultMap = new HashMap&lt;&gt;(64);</span>
+        CloseableHttpResponse response;
+<span class="nc" id="L82">        HttpContext httpContext = createHttpContext(nebulaGraph.getHost(), nebulaGraph.getPort());</span>
+<span class="nc" id="L83">        HttpUriRequest request = createHttpRequest(nebulaGraph.getHost(), nebulaGraph.getPort(),</span>
+<span class="nc" id="L84">                nebulaGraph.getUrl(), nebulaGraph.getTimeout());</span>
+        try {
+            // 发起http请求，获取响应数据
+<span class="nc" id="L87">            response = CommonHttpClient.getHttpClient().execute(request, httpContext);</span>
+<span class="nc" id="L88">            int statusCode = response.getStatusLine().getStatusCode();</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">            if (statusCode != SUCCESS_CODE) {</span>
+<span class="nc" id="L90">                builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L91">                builder.setMsg(&quot;StatusCode &quot; + statusCode);</span>
+<span class="nc" id="L92">                return;</span>
+            }
+<span class="nc" id="L94">            resp = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);</span>
+<span class="nc" id="L95">            responseTime = System.currentTimeMillis() - startTime;</span>
+<span class="nc" id="L96">            resultMap.put(CollectorConstants.RESPONSE_TIME, Long.toString(responseTime));</span>
+            // 根据API进行不同解析
+<span class="nc bnc" id="L98" title="All 2 branches missed.">            if (GRAPH_API.equals(nebulaGraph.getUrl())) {</span>
+<span class="nc" id="L99">                parseStatsResponse(resp, nebulaGraph.getTimePeriod(), resultMap);</span>
+<span class="nc bnc" id="L100" title="All 2 branches missed.">            } else if (STORAGE_API.equals(nebulaGraph.getUrl())) {</span>
+<span class="nc" id="L101">                parseStorageResponse(resp, resultMap);</span>
+            }
+<span class="nc" id="L103">            List&lt;String&gt; aliasFields = metrics.getAliasFields();</span>
+<span class="nc" id="L104">            CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L105" title="All 2 branches missed.">            for (String field : aliasFields) {</span>
+<span class="nc" id="L106">                String fieldValue = resultMap.get(field);</span>
+<span class="nc" id="L107">                valueRowBuilder.addColumns(Objects.requireNonNullElse(fieldValue, CommonConstants.NULL_VALUE));</span>
+<span class="nc" id="L108">            }</span>
+<span class="nc" id="L109">            builder.addValues(valueRowBuilder.build());</span>
+<span class="nc" id="L110">        } catch (IOException e) {</span>
+<span class="nc" id="L111">            String errorMsg = CommonUtil.getMessageFromThrowable(e);</span>
+<span class="nc" id="L112">            log.info(errorMsg);</span>
+<span class="nc" id="L113">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L114">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L115">        }</span>
+<span class="nc" id="L116">    }</span>
+
+
+    @Override
+    public String supportProtocol() {
+<span class="nc" id="L121">        return DispatchConstants.PROTOCOL_NEBULAGRAPH;</span>
+    }
+
+    private HttpContext createHttpContext(String host, String port) {
+<span class="nc" id="L125">        HttpHost httpHost = new HttpHost(host, Integer.parseInt(port));</span>
+<span class="nc" id="L126">        HttpClientContext httpClientContext = new HttpClientContext();</span>
+<span class="nc" id="L127">        httpClientContext.setTargetHost(httpHost);</span>
+<span class="nc" id="L128">        return httpClientContext;</span>
+    }
+
+    private HttpUriRequest createHttpRequest(String host, String port, String url, String timeoutStr) {
+<span class="nc" id="L132">        RequestBuilder requestBuilder = RequestBuilder.get();</span>
+        // uri
+<span class="nc" id="L134">        String uri = CollectUtil.replaceUriSpecialChar(url);</span>
+<span class="nc bnc" id="L135" title="All 2 branches missed.">        if (IpDomainUtil.isHasSchema(host)) {</span>
+<span class="nc" id="L136">            requestBuilder.setUri(host + &quot;:&quot; + port + uri);</span>
+        } else {
+<span class="nc" id="L138">            String ipAddressType = IpDomainUtil.checkIpAddressType(host);</span>
+<span class="nc bnc" id="L139" title="All 2 branches missed.">            String baseUri = CollectorConstants.IPV6.equals(ipAddressType)</span>
+<span class="nc" id="L140">                    ? String.format(&quot;[%s]:%s&quot;, host, port + uri)</span>
+<span class="nc" id="L141">                    : String.format(&quot;%s:%s&quot;, host, port + uri);</span>
+
+<span class="nc" id="L143">            requestBuilder.setUri(CollectorConstants.HTTP_HEADER + baseUri);</span>
+        }
+
+<span class="nc" id="L146">        requestBuilder.addHeader(HttpHeaders.CONNECTION, &quot;keep-alive&quot;);</span>
+<span class="nc" id="L147">        requestBuilder.addHeader(HttpHeaders.USER_AGENT, &quot;Mozilla/5.0 (Windows NT 6.1; WOW64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.76 Safari/537.36&quot;);</span>
+
+<span class="nc" id="L149">        requestBuilder.addHeader(HttpHeaders.ACCEPT, &quot;text/plain&quot;);</span>
+
+<span class="nc" id="L151">        int timeout = Integer.parseInt(timeoutStr);</span>
+<span class="nc bnc" id="L152" title="All 2 branches missed.">        if (timeout &gt; 0) {</span>
+<span class="nc" id="L153">            RequestConfig requestConfig = RequestConfig.custom()</span>
+<span class="nc" id="L154">                    .setConnectTimeout(timeout)</span>
+<span class="nc" id="L155">                    .setSocketTimeout(timeout)</span>
+<span class="nc" id="L156">                    .setRedirectsEnabled(true)</span>
+<span class="nc" id="L157">                    .build();</span>
+<span class="nc" id="L158">            requestBuilder.setConfig(requestConfig);</span>
+        }
+<span class="nc" id="L160">        return requestBuilder.build();</span>
+    }
+
+    /**
+     * 解析Stats响应通过时间间隔进行筛选
+     *
+     * @param responseBody 响应体
+     * @param timePeriod   时间间隔
+     */
+    private void parseStatsResponse(String responseBody, String timePeriod, HashMap&lt;String, String&gt; resultMap) {
+        // 设置正则匹配
+<span class="nc" id="L171">        String timeRegex = String.format(REGEX, timePeriod);</span>
+<span class="nc" id="L172">        Pattern pattern = Pattern.compile(timeRegex);</span>
+<span class="nc" id="L173">        String[] strArray = responseBody.split(STR_SPLIT);</span>
+<span class="nc bnc" id="L174" title="All 2 branches missed.">        for (String str : strArray) {</span>
+<span class="nc" id="L175">            Matcher matcher = pattern.matcher(str);</span>
+<span class="nc bnc" id="L176" title="All 2 branches missed.">            if (matcher.find()) {</span>
+<span class="nc" id="L177">                String[] split = str.split(timeRegex);</span>
+<span class="nc" id="L178">                resultMap.put(split[0], split[1]);</span>
+            }
+        }
+<span class="nc" id="L181">    }</span>
+
+
+    /**
+     * 解析Storage响应通过时间间隔进行筛选
+     *
+     * @param responseBody 响应体
+     */
+    private void parseStorageResponse(String responseBody, HashMap&lt;String, String&gt; resultMap) {
+<span class="nc" id="L190">        String[] strArray = responseBody.split(STR_SPLIT);</span>
+<span class="nc bnc" id="L191" title="All 2 branches missed.">        for (String str : strArray) {</span>
+<span class="nc" id="L192">            String[] split = str.split(STORAGE_SPLIT_KEY_VALUE);</span>
+<span class="nc" id="L193">            resultMap.put(split[0], split[1]);</span>
+        }
+<span class="nc" id="L195">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

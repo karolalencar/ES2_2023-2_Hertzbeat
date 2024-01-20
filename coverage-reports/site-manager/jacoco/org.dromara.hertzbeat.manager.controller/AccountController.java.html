@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AccountController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.controller</a> &gt; <span class="el_source">AccountController.java</span></div><h1>AccountController.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.manager.controller;
+
+import com.usthe.sureness.provider.SurenessAccount;
+import com.usthe.sureness.provider.SurenessAccountProvider;
+import com.usthe.sureness.provider.ducument.DocumentAccountProvider;
+import com.usthe.sureness.util.JsonWebTokenUtil;
+import com.usthe.sureness.util.Md5Util;
+import io.jsonwebtoken.Claims;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.common.entity.dto.Message;
+import org.dromara.hertzbeat.common.util.JsonUtil;
+import org.dromara.hertzbeat.manager.pojo.dto.LoginDto;
+import org.dromara.hertzbeat.manager.pojo.dto.RefreshTokenResponse;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import javax.validation.Valid;
+import javax.validation.constraints.NotNull;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import static org.dromara.hertzbeat.common.constants.CommonConstants.MONITOR_LOGIN_FAILED_CODE;
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
+
+/**
+ * Authentication registration TOKEN management API
+ * 认证注册TOKEN管理API
+ *
+ * @author tomsun28
+ */
+@Tag(name = &quot;Auth Manage API | 认证注册TOKEN管理API&quot;)
+@RestController()
+@RequestMapping(value = &quot;/api/account/auth&quot;, produces = {APPLICATION_JSON_VALUE})
+<span class="fc" id="L55">@Slf4j</span>
+<span class="fc" id="L56">public class AccountController {</span>
+    /**
+     * Token validity time in seconds
+     * TOKEN有效期时间 单位秒
+     */
+    private static final long PERIOD_TIME = 3600L;
+    /**
+     * account data provider
+     */
+<span class="fc" id="L65">    private SurenessAccountProvider accountProvider = new DocumentAccountProvider();</span>
+
+    @PostMapping(&quot;/form&quot;)
+    @Operation(summary = &quot;Account password login to obtain associated user information&quot;, description = &quot;账户密码登录获取关联用户信息&quot;)
+    public ResponseEntity&lt;Message&lt;Map&lt;String, String&gt;&gt;&gt; authGetToken(@Valid @RequestBody LoginDto loginDto) {
+<span class="fc" id="L70">        SurenessAccount account = accountProvider.loadAccount(loginDto.getIdentifier());</span>
+<span class="pc bpc" id="L71" title="2 of 4 branches missed.">        if (account == null || account.getPassword() == null) {</span>
+<span class="nc" id="L72">            return ResponseEntity.ok(Message.fail(MONITOR_LOGIN_FAILED_CODE, &quot;账户密码错误&quot;));</span>
+        } else {
+<span class="fc" id="L74">            String password = loginDto.getCredential();</span>
+<span class="pc bpc" id="L75" title="1 of 2 branches missed.">            if (account.getSalt() != null) {</span>
+<span class="nc" id="L76">                password = Md5Util.md5(password + account.getSalt());</span>
+            }
+<span class="fc bfc" id="L78" title="All 2 branches covered.">            if (!account.getPassword().equals(password)) {</span>
+<span class="fc" id="L79">                return ResponseEntity.ok(Message.fail(MONITOR_LOGIN_FAILED_CODE, &quot;账户密码错误&quot;));</span>
+            }
+<span class="pc bpc" id="L81" title="2 of 4 branches missed.">            if (account.isDisabledAccount() || account.isExcessiveAttempts()) {</span>
+<span class="nc" id="L82">                return ResponseEntity.ok(Message.fail(MONITOR_LOGIN_FAILED_CODE, &quot;账户过期或被锁定&quot;));</span>
+            }
+        }
+        // Get the roles the user has - rbac
+<span class="fc" id="L86">        List&lt;String&gt; roles = account.getOwnRoles();</span>
+        // Issue TOKEN      签发TOKEN
+<span class="fc" id="L88">        String issueToken = JsonWebTokenUtil.issueJwt(loginDto.getIdentifier(), PERIOD_TIME, roles);</span>
+<span class="fc" id="L89">        Map&lt;String, Object&gt; customClaimMap = new HashMap&lt;&gt;(1);</span>
+<span class="fc" id="L90">        customClaimMap.put(&quot;refresh&quot;, true);</span>
+<span class="fc" id="L91">        String issueRefresh = JsonWebTokenUtil.issueJwt(loginDto.getIdentifier(), PERIOD_TIME &lt;&lt; 5, customClaimMap);</span>
+<span class="fc" id="L92">        Map&lt;String, String&gt; resp = new HashMap&lt;&gt;(2);</span>
+<span class="fc" id="L93">        resp.put(&quot;token&quot;, issueToken);</span>
+<span class="fc" id="L94">        resp.put(&quot;refreshToken&quot;, issueRefresh);</span>
+<span class="fc" id="L95">        resp.put(&quot;role&quot;, JsonUtil.toJson(roles));</span>
+<span class="fc" id="L96">        return ResponseEntity.ok(Message.success(resp));</span>
+    }
+
+    @GetMapping(&quot;/refresh/{refreshToken}&quot;)
+    @Operation(summary = &quot;Use refresh TOKEN to re-acquire TOKEN&quot;, description = &quot;使用刷新TOKEN重新获取TOKEN&quot;)
+    public ResponseEntity&lt;Message&lt;RefreshTokenResponse&gt;&gt; refreshToken(
+            @Parameter(description = &quot;Refresh TOKEN | 刷新TOKEN&quot;, example = &quot;xxx&quot;)
+            @PathVariable(&quot;refreshToken&quot;) @NotNull final String refreshToken) {
+        try {
+<span class="nc" id="L105">            Claims claims = JsonWebTokenUtil.parseJwt(refreshToken);</span>
+<span class="nc" id="L106">            String userId = String.valueOf(claims.getSubject());</span>
+<span class="nc" id="L107">            boolean isRefresh = claims.get(&quot;refresh&quot;, Boolean.class);</span>
+<span class="nc bnc" id="L108" title="All 4 branches missed.">            if (userId == null || !isRefresh) {</span>
+<span class="nc" id="L109">                return ResponseEntity.ok(Message.fail(MONITOR_LOGIN_FAILED_CODE, &quot;非法的刷新TOKEN&quot;));</span>
+            }
+<span class="nc" id="L111">            SurenessAccount account = accountProvider.loadAccount(userId);</span>
+<span class="nc bnc" id="L112" title="All 2 branches missed.">            if (account == null) {</span>
+<span class="nc" id="L113">                return ResponseEntity.ok(Message.fail(MONITOR_LOGIN_FAILED_CODE, &quot;TOKEN对应的账户不存在&quot;));</span>
+            }
+<span class="nc" id="L115">            List&lt;String&gt; roles = account.getOwnRoles();</span>
+<span class="nc" id="L116">            String issueToken = issueToken(userId, roles, PERIOD_TIME);</span>
+<span class="nc" id="L117">            String issueRefresh = issueToken(userId, roles, PERIOD_TIME &lt;&lt; 5);</span>
+<span class="nc" id="L118">            RefreshTokenResponse response = new RefreshTokenResponse(issueToken, issueRefresh);</span>
+<span class="nc" id="L119">            return ResponseEntity.ok(Message.success(response));</span>
+<span class="fc" id="L120">        } catch (Exception e) {</span>
+<span class="fc" id="L121">            log.error(&quot;Exception occurred during token refresh: {}&quot;, e.getClass().getName(), e);</span>
+<span class="fc" id="L122">            return ResponseEntity.ok(Message.fail(MONITOR_LOGIN_FAILED_CODE, &quot;刷新TOKEN过期或错误&quot;));</span>
+        }
+    }
+
+    private String issueToken(String userId, List&lt;String&gt; roles, long expirationMillis) {
+<span class="nc" id="L127">        Map&lt;String, Object&gt; customClaimMap = new HashMap&lt;&gt;(1);</span>
+<span class="nc" id="L128">        customClaimMap.put(&quot;refresh&quot;, true);</span>
+<span class="nc" id="L129">        return JsonWebTokenUtil.issueJwt(userId, expirationMillis, roles, customClaimMap);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

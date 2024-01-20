@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RealTimeRedisDataStorage.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-warehouse</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.warehouse.store</a> &gt; <span class="el_source">RealTimeRedisDataStorage.java</span></div><h1>RealTimeRedisDataStorage.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.warehouse.store;
+
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.warehouse.config.WarehouseProperties;
+import io.lettuce.core.RedisClient;
+import io.lettuce.core.RedisURI;
+import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.api.async.RedisAsyncCommands;
+import io.lettuce.core.api.sync.RedisCommands;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Primary;
+import org.springframework.lang.NonNull;
+import org.springframework.stereotype.Component;
+
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * redis存储采集实时数据
+ * @author tom
+ *
+ */
+@Primary
+@Component
+@ConditionalOnProperty(prefix = &quot;warehouse.store.redis&quot;,
+        name = &quot;enabled&quot;, havingValue = &quot;true&quot;)
+<span class="nc" id="L48">@Slf4j</span>
+public class RealTimeRedisDataStorage extends AbstractRealTimeDataStorage {
+
+    private RedisClient redisClient;
+    private final Integer db;
+    private StatefulRedisConnection&lt;String, CollectRep.MetricsData&gt; connection;
+
+<span class="nc" id="L55">    public RealTimeRedisDataStorage(WarehouseProperties properties) {</span>
+<span class="nc" id="L56">        this.serverAvailable = initRedisClient(properties);</span>
+<span class="nc" id="L57">        this.db = getRedisSelectDb(properties);</span>
+<span class="nc" id="L58">    }</span>
+    private Integer getRedisSelectDb(WarehouseProperties properties){
+<span class="nc" id="L60">        return properties.getStore().getRedis().getDb();</span>
+    }
+    @Override
+    public CollectRep.MetricsData getCurrentMetricsData(@NonNull Long monitorId, @NonNull String metric) {
+<span class="nc" id="L64">        RedisCommands&lt;String, CollectRep.MetricsData&gt; commands = connection.sync();</span>
+<span class="nc" id="L65">        commands.select(db);</span>
+<span class="nc" id="L66">        return commands.hget(String.valueOf(monitorId), metric);</span>
+    }
+
+    @Override
+    public List&lt;CollectRep.MetricsData&gt; getCurrentMetricsData(@NonNull Long monitorId) {
+<span class="nc" id="L71">        RedisCommands&lt;String, CollectRep.MetricsData&gt; commands = connection.sync();</span>
+<span class="nc" id="L72">        commands.select(db);</span>
+<span class="nc" id="L73">        Map&lt;String, CollectRep.MetricsData&gt; metricsDataMap = commands.hgetall(String.valueOf(monitorId));</span>
+<span class="nc" id="L74">        return new ArrayList&lt;&gt;(metricsDataMap.values());</span>
+    }
+
+    @Override
+    public void saveData(CollectRep.MetricsData metricsData) {
+<span class="nc" id="L79">        String key = String.valueOf(metricsData.getId());</span>
+<span class="nc" id="L80">        String hashKey = metricsData.getMetrics();</span>
+<span class="nc bnc" id="L81" title="All 2 branches missed.">        if (metricsData.getCode() != CollectRep.Code.SUCCESS) {</span>
+<span class="nc" id="L82">            return;</span>
+        }
+<span class="nc bnc" id="L84" title="All 2 branches missed.">        if (metricsData.getValuesList().isEmpty()) {</span>
+<span class="nc" id="L85">            log.info(&quot;[warehouse redis] redis flush metrics data {} - {} is null, ignore.&quot;, key, hashKey);</span>
+<span class="nc" id="L86">            return;</span>
+        }
+<span class="nc" id="L88">        RedisAsyncCommands&lt;String, CollectRep.MetricsData&gt; commands = connection.async();</span>
+<span class="nc" id="L89">        commands.select(db);</span>
+<span class="nc" id="L90">        commands.hset(key, hashKey, metricsData).thenAccept(response -&gt; {</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">            if (response) {</span>
+<span class="nc" id="L92">                log.debug(&quot;[warehouse] redis add new data {}:{}.&quot;, key, hashKey);</span>
+            } else {
+<span class="nc" id="L94">                log.debug(&quot;[warehouse] redis replace data {}:{}.&quot;, key, hashKey);</span>
+            }
+<span class="nc" id="L96">        });</span>
+<span class="nc" id="L97">    }</span>
+
+    private boolean initRedisClient(WarehouseProperties properties) {
+<span class="nc bnc" id="L100" title="All 6 branches missed.">        if (properties == null || properties.getStore() == null || properties.getStore().getRedis() == null) {</span>
+<span class="nc" id="L101">            log.error(&quot;init error, please config Warehouse redis props in application.yml&quot;);</span>
+<span class="nc" id="L102">            return false;</span>
+        }
+<span class="nc" id="L104">        WarehouseProperties.StoreProperties.RedisProperties redisProp = properties.getStore().getRedis();</span>
+<span class="nc" id="L105">        RedisURI.Builder uriBuilder = RedisURI.builder()</span>
+<span class="nc" id="L106">                .withHost(redisProp.getHost())</span>
+<span class="nc" id="L107">                .withPort(redisProp.getPort())</span>
+<span class="nc" id="L108">                .withTimeout(Duration.of(10, ChronoUnit.SECONDS));</span>
+<span class="nc bnc" id="L109" title="All 4 branches missed.">        if (redisProp.getPassword() != null &amp;&amp; !&quot;&quot;.equals(redisProp.getPassword())) {</span>
+<span class="nc" id="L110">            uriBuilder.withPassword(redisProp.getPassword().toCharArray());</span>
+        }
+        try {
+<span class="nc" id="L113">            redisClient = RedisClient.create(uriBuilder.build());</span>
+<span class="nc" id="L114">            connection = redisClient.connect(new MetricsDataRedisCodec());</span>
+<span class="nc" id="L115">            return true;</span>
+<span class="nc" id="L116">        } catch (Exception e) {</span>
+<span class="nc" id="L117">            log.error(&quot;init redis error {}&quot;, e.getMessage(), e);</span>
+        }
+<span class="nc" id="L119">        return false;</span>
+    }
+
+    @Override
+    public void destroy() {
+<span class="nc bnc" id="L124" title="All 2 branches missed.">        if (connection != null) {</span>
+<span class="nc" id="L125">            connection.close();</span>
+        }
+<span class="nc bnc" id="L127" title="All 2 branches missed.">        if (redisClient != null) {</span>
+<span class="nc" id="L128">            redisClient.shutdown();</span>
+        }
+<span class="nc" id="L130">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

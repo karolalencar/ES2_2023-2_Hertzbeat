@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CommonHttpClient.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.common.http</a> &gt; <span class="el_source">CommonHttpClient.java</span></div><h1>CommonHttpClient.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.collector.collect.common.http;
+
+import lombok.extern.slf4j.Slf4j;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.config.Registry;
+import org.apache.http.config.RegistryBuilder;
+import org.apache.http.conn.socket.ConnectionSocketFactory;
+import org.apache.http.conn.socket.PlainConnectionSocketFactory;
+import org.apache.http.conn.ssl.NoopHostnameVerifier;
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
+import org.apache.http.ssl.SSLContexts;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import java.security.cert.CertificateException;
+import java.security.cert.CertificateExpiredException;
+import java.security.cert.X509Certificate;
+import java.util.Date;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * common http client
+ * @author tomsun28
+ */
+<span class="fc" id="L46">@Slf4j</span>
+<span class="nc" id="L47">public class CommonHttpClient {</span>
+
+    private static CloseableHttpClient httpClient;
+
+    private static PoolingHttpClientConnectionManager connectionManager;
+
+    /**
+     * all max total connection
+     */
+    private static final int MAX_TOTAL_CONNECTIONS = 50000;
+
+    /**
+     * peer route max total connection
+     */
+    private static final int MAX_PER_ROUTE_CONNECTIONS = 80;
+
+    /**
+     * timeout for get connect from pool(ms)
+     */
+    private static final int REQUIRE_CONNECT_TIMEOUT = 4000;
+
+    /**
+     * tcp connect timeout(ms)
+     */
+    private static final int CONNECT_TIMEOUT = 4000;
+
+    /**
+     * socket read timeout(ms)
+     */
+    private static final int SOCKET_TIMEOUT = 60000;
+
+    /**
+     * validated time for idle connection
+     * 空闲连接免检的有效时间，被重用的空闲连接若超过此时间，需检查此连接的可用性
+     */
+    private static final int INACTIVITY_VALIDATED_TIME = 10000;
+
+    /**
+     * ssl supported version
+     */
+<span class="fc" id="L87">    private static final String[] SUPPORTED_SSL = {&quot;TLSv1&quot;,&quot;TLSv1.1&quot;,&quot;TLSv1.2&quot;,&quot;SSLv3&quot;};</span>
+
+    static {
+        try {
+<span class="fc" id="L91">            SSLContext sslContext = SSLContexts.createDefault();</span>
+<span class="fc" id="L92">            X509TrustManager x509TrustManager = new X509TrustManager() {</span>
+                @Override
+<span class="nc" id="L94">                public void checkClientTrusted(X509Certificate[] x509Certificates, String s) throws CertificateException { }</span>
+                @Override
+                public void checkServerTrusted(X509Certificate[] x509Certificates, String s) throws CertificateException {
+                    // check server certificate timeout 
+                    // 判断服务器证书有效时间
+<span class="nc" id="L99">                    Date now = new Date();</span>
+<span class="nc bnc" id="L100" title="All 4 branches missed.">                    if (x509Certificates != null &amp;&amp; x509Certificates.length &gt; 0) {</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">                        for (X509Certificate certificate : x509Certificates) {</span>
+<span class="nc" id="L102">                            Date deadline = certificate.getNotAfter();</span>
+<span class="nc bnc" id="L103" title="All 4 branches missed.">                            if (deadline != null &amp;&amp; now.after(deadline)) {</span>
+<span class="nc" id="L104">                                throw new CertificateExpiredException();</span>
+                            }
+                        }
+                    }
+<span class="nc" id="L108">                }</span>
+                @Override
+<span class="nc" id="L110">                public X509Certificate[] getAcceptedIssuers() { return null; }</span>
+            };
+<span class="fc" id="L112">            sslContext.init(null, new TrustManager[]{x509TrustManager}, null);</span>
+<span class="fc" id="L113">            SSLConnectionSocketFactory sslFactory = new SSLConnectionSocketFactory(sslContext, SUPPORTED_SSL, null, new NoopHostnameVerifier());</span>
+<span class="fc" id="L114">            Registry&lt;ConnectionSocketFactory&gt; registry = RegistryBuilder.&lt;ConnectionSocketFactory&gt;create()</span>
+<span class="fc" id="L115">                    .register(&quot;http&quot;, PlainConnectionSocketFactory.INSTANCE)</span>
+<span class="fc" id="L116">                    .register(&quot;https&quot;, sslFactory)</span>
+<span class="fc" id="L117">                    .build();</span>
+<span class="fc" id="L118">            RequestConfig requestConfig = RequestConfig.custom()</span>
+<span class="fc" id="L119">                    .setConnectionRequestTimeout(REQUIRE_CONNECT_TIMEOUT)</span>
+<span class="fc" id="L120">                    .setConnectTimeout(CONNECT_TIMEOUT)</span>
+<span class="fc" id="L121">                    .setSocketTimeout(SOCKET_TIMEOUT)</span>
+                    // auto redirect when 301 302 response status 
+<span class="fc" id="L123">                    .setRedirectsEnabled(true)</span>
+<span class="fc" id="L124">                    .build();</span>
+            // connection pool
+<span class="fc" id="L126">            connectionManager = new PoolingHttpClientConnectionManager(registry);</span>
+<span class="fc" id="L127">            connectionManager.setMaxTotal(MAX_TOTAL_CONNECTIONS);</span>
+<span class="fc" id="L128">            connectionManager.setDefaultMaxPerRoute(MAX_PER_ROUTE_CONNECTIONS);</span>
+<span class="fc" id="L129">            connectionManager.setValidateAfterInactivity(INACTIVITY_VALIDATED_TIME);</span>
+<span class="fc" id="L130">            httpClient = HttpClients.custom()</span>
+<span class="fc" id="L131">                    .setConnectionManager(connectionManager)</span>
+<span class="fc" id="L132">                    .setDefaultRequestConfig(requestConfig)</span>
+                    // 定期清理不可用过期连接
+<span class="fc" id="L134">                    .evictExpiredConnections()</span>
+                    // 定期清理可用但空闲的连接
+<span class="fc" id="L136">                    .evictIdleConnections(100, TimeUnit.SECONDS)</span>
+<span class="fc" id="L137">                    .build();</span>
+<span class="fc" id="L138">            Thread connectCleaner = new Thread(() -&gt; {</span>
+<span class="pc bpc" id="L139" title="1 of 2 branches missed.">                while (Thread.currentThread().isInterrupted()) {</span>
+                    try {
+<span class="nc" id="L141">                        Thread.sleep(30000);</span>
+<span class="nc" id="L142">                        connectionManager.closeExpiredConnections();</span>
+<span class="nc" id="L143">                        connectionManager.closeIdleConnections(100, TimeUnit.SECONDS);</span>
+<span class="nc" id="L144">                    } catch (InterruptedException e) {</span>
+<span class="nc" id="L145">                    }</span>
+                }
+<span class="fc" id="L147">            });</span>
+<span class="fc" id="L148">            connectCleaner.setName(&quot;http-connection-pool-cleaner&quot;);</span>
+<span class="fc" id="L149">            connectCleaner.setDaemon(true);</span>
+<span class="fc" id="L150">            connectCleaner.start();</span>
+<span class="nc" id="L151">        } catch (Exception e) {</span>
+<span class="fc" id="L152">        }</span>
+<span class="fc" id="L153">    }</span>
+
+    public static CloseableHttpClient getHttpClient() {
+<span class="fc" id="L156">        return httpClient;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

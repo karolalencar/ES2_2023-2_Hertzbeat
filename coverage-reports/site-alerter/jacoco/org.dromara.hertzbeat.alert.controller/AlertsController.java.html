@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AlertsController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-alerter</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.alert.controller</a> &gt; <span class="el_source">AlertsController.java</span></div><h1>AlertsController.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.alert.controller;
+
+import org.dromara.hertzbeat.alert.dto.AlertSummary;
+import org.dromara.hertzbeat.common.entity.alerter.Alert;
+import org.dromara.hertzbeat.alert.service.AlertService;
+import org.dromara.hertzbeat.common.entity.dto.Message;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import javax.persistence.criteria.CriteriaBuilder;
+import javax.persistence.criteria.Predicate;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
+
+/**
+ * Alarm Management API
+ * @author tom
+ * @author &lt;a href=&quot;mailto:1252532896@qq.com&quot;&gt;Hua.Cheng&lt;/a&gt;
+ */
+@Tag(name = &quot;Alarm Manage Batch API | 告警批量管理API&quot;)
+@RestController
+@RequestMapping(path = &quot;/api/alerts&quot;, produces = {APPLICATION_JSON_VALUE})
+<span class="fc" id="L51">public class AlertsController {</span>
+
+    @Autowired
+    private AlertService alertService;
+
+    @GetMapping
+    @Operation(summary = &quot;Get a list of alarm information based on query filter items&quot;, description = &quot;根据查询过滤项获取告警信息列表&quot;)
+    public ResponseEntity&lt;Message&lt;Page&lt;Alert&gt;&gt;&gt; getAlerts(
+            @Parameter(description = &quot;Alarm ID List | 告警IDS&quot;, example = &quot;6565466456&quot;) @RequestParam(required = false) List&lt;Long&gt; ids,
+            @Parameter(description = &quot;Alarm monitor object ID | 告警监控对象ID&quot;, example = &quot;6565463543&quot;) @RequestParam(required = false) Long monitorId,
+            @Parameter(description = &quot;Alarm level | 告警级别&quot;, example = &quot;6565463543&quot;) @RequestParam(required = false) Byte priority,
+            @Parameter(description = &quot;Alarm Status | 告警状态&quot;, example = &quot;6565463543&quot;) @RequestParam(required = false) Byte status,
+            @Parameter(description = &quot;Alarm content fuzzy query | 告警内容模糊查询&quot;, example = &quot;linux&quot;) @RequestParam(required = false) String content,
+            @Parameter(description = &quot;Sort field, default id | 排序字段，默认id&quot;, example = &quot;name&quot;) @RequestParam(defaultValue = &quot;id&quot;) String sort,
+            @Parameter(description = &quot;Sort Type | 排序方式，asc:升序，desc:降序&quot;, example = &quot;desc&quot;) @RequestParam(defaultValue = &quot;desc&quot;) String order,
+            @Parameter(description = &quot;List current page | 列表当前分页&quot;, example = &quot;0&quot;) @RequestParam(defaultValue = &quot;0&quot;) int pageIndex,
+            @Parameter(description = &quot;Number of list pagination | 列表分页数量&quot;, example = &quot;8&quot;) @RequestParam(defaultValue = &quot;8&quot;) int pageSize) {
+
+<span class="fc" id="L69">        Specification&lt;Alert&gt; specification = (root, query, criteriaBuilder) -&gt; {</span>
+<span class="nc" id="L70">            List&lt;Predicate&gt; andList = new ArrayList&lt;&gt;();</span>
+
+<span class="nc bnc" id="L72" title="All 4 branches missed.">            if (ids != null &amp;&amp; !ids.isEmpty()) {</span>
+<span class="nc" id="L73">                CriteriaBuilder.In&lt;Long&gt; inPredicate = criteriaBuilder.in(root.get(&quot;id&quot;));</span>
+<span class="nc bnc" id="L74" title="All 2 branches missed.">                for (long id : ids) {</span>
+<span class="nc" id="L75">                    inPredicate.value(id);</span>
+<span class="nc" id="L76">                }</span>
+<span class="nc" id="L77">                andList.add(inPredicate);</span>
+            }
+<span class="nc bnc" id="L79" title="All 2 branches missed.">            if (monitorId != null) {</span>
+<span class="nc" id="L80">                Predicate predicate = criteriaBuilder.like(root.get(&quot;tags&quot;).as(String.class), &quot;%&quot; + monitorId + &quot;%&quot;);</span>
+<span class="nc" id="L81">                andList.add(predicate);</span>
+            }
+<span class="nc bnc" id="L83" title="All 2 branches missed.">            if (priority != null) {</span>
+<span class="nc" id="L84">                Predicate predicate = criteriaBuilder.equal(root.get(&quot;priority&quot;), priority);</span>
+<span class="nc" id="L85">                andList.add(predicate);</span>
+            }
+<span class="nc bnc" id="L87" title="All 2 branches missed.">            if (status != null) {</span>
+<span class="nc" id="L88">                Predicate predicate = criteriaBuilder.equal(root.get(&quot;status&quot;), status);</span>
+<span class="nc" id="L89">                andList.add(predicate);</span>
+            }
+<span class="nc bnc" id="L91" title="All 4 branches missed.">            if (content != null &amp;&amp; !content.isEmpty()) {</span>
+<span class="nc" id="L92">                Predicate predicateContent = criteriaBuilder.like(root.get(&quot;content&quot;), &quot;%&quot; + content + &quot;%&quot;);</span>
+<span class="nc" id="L93">                andList.add(predicateContent);</span>
+            }
+<span class="nc" id="L95">            Predicate[] predicates = new Predicate[andList.size()];</span>
+<span class="nc" id="L96">            return criteriaBuilder.and(andList.toArray(predicates));</span>
+        };
+<span class="fc" id="L98">        Sort sortExp = Sort.by(new Sort.Order(Sort.Direction.fromString(order), sort));</span>
+<span class="fc" id="L99">        PageRequest pageRequest = PageRequest.of(pageIndex, pageSize, sortExp);</span>
+<span class="fc" id="L100">        Page&lt;Alert&gt; alertPage = alertService.getAlerts(specification, pageRequest);</span>
+<span class="fc" id="L101">        Message&lt;Page&lt;Alert&gt;&gt; message = Message.success(alertPage);</span>
+<span class="fc" id="L102">        return ResponseEntity.ok(message);</span>
+    }
+
+    @DeleteMapping
+    @Operation(summary = &quot;Delete alarms in batches&quot;, description = &quot;根据告警ID列表批量删除告警&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; deleteAlerts(
+            @Parameter(description = &quot;Alarm List ID | 告警IDs&quot;, example = &quot;6565463543&quot;) @RequestParam(required = false) List&lt;Long&gt; ids) {
+<span class="pc bpc" id="L109" title="2 of 4 branches missed.">        if (ids != null &amp;&amp; !ids.isEmpty()) {</span>
+<span class="fc" id="L110">            alertService.deleteAlerts(new HashSet&lt;&gt;(ids));</span>
+        }
+<span class="fc" id="L112">        Message&lt;Void&gt; message = Message.success();</span>
+<span class="fc" id="L113">        return ResponseEntity.ok(message);</span>
+    }
+
+    @DeleteMapping(&quot;/clear&quot;)
+    @Operation(summary = &quot;Delete alarms in batches&quot;, description = &quot;清空所有告警信息&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; clearAllAlerts() {
+<span class="fc" id="L119">        alertService.clearAlerts();</span>
+<span class="fc" id="L120">        Message&lt;Void&gt; message = Message.success();</span>
+<span class="fc" id="L121">        return ResponseEntity.ok(message);</span>
+    }
+
+    @PutMapping(path = &quot;/status/{status}&quot;)
+    @Operation(summary = &quot;Batch modify alarm status, set read and unread&quot;, description = &quot;批量修改告警状态,设置已读未读&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; applyAlertDefinesStatus(
+            @Parameter(description = &quot;Alarm status value | 告警状态值&quot;, example = &quot;0&quot;) @PathVariable Byte status,
+            @Parameter(description = &quot;Alarm List IDS | 告警IDS&quot;, example = &quot;6565463543&quot;) @RequestParam(required = false) List&lt;Long&gt; ids) {
+<span class="pc bpc" id="L129" title="3 of 6 branches missed.">        if (ids != null &amp;&amp; status != null &amp;&amp; !ids.isEmpty()) {</span>
+<span class="fc" id="L130">            alertService.editAlertStatus(status, ids);</span>
+        }
+<span class="fc" id="L132">        Message&lt;Void&gt; message = Message.success();</span>
+<span class="fc" id="L133">        return ResponseEntity.ok(message);</span>
+    }
+
+    @GetMapping(path = &quot;/summary&quot;)
+    @Operation(summary = &quot;Get alarm statistics&quot;, description = &quot;获取告警统计信息&quot;)
+    public ResponseEntity&lt;Message&lt;AlertSummary&gt;&gt; getAlertsSummary() {
+<span class="fc" id="L139">        AlertSummary alertSummary = alertService.getAlertsSummary();</span>
+<span class="fc" id="L140">        Message&lt;AlertSummary&gt; message = Message.success(alertSummary);</span>
+<span class="fc" id="L141">        return ResponseEntity.ok(message);</span>
+    }
+    
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

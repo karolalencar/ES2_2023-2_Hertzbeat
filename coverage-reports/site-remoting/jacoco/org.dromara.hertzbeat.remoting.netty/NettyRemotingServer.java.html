@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>NettyRemotingServer.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-remoting</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.remoting.netty</a> &gt; <span class="el_source">NettyRemotingServer.java</span></div><h1>NettyRemotingServer.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.remoting.netty;
+
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandler;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.epoll.EpollEventLoopGroup;
+import io.netty.channel.epoll.EpollServerSocketChannel;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.codec.compression.ZlibCodecFactory;
+import io.netty.handler.codec.compression.ZlibWrapper;
+import io.netty.handler.codec.protobuf.ProtobufDecoder;
+import io.netty.handler.codec.protobuf.ProtobufEncoder;
+import io.netty.handler.codec.protobuf.ProtobufVarint32FrameDecoder;
+import io.netty.handler.codec.protobuf.ProtobufVarint32LengthFieldPrepender;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.timeout.IdleStateHandler;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.common.entity.message.ClusterMsg;
+import org.dromara.hertzbeat.common.support.CommonThreadPool;
+import org.dromara.hertzbeat.remoting.RemotingServer;
+import org.dromara.hertzbeat.remoting.event.NettyEventListener;
+
+import java.util.List;
+import java.util.concurrent.ThreadFactory;
+
+/**
+ * netty server
+ */
+<span class="fc" id="L56">@Slf4j</span>
+public class NettyRemotingServer extends NettyRemotingAbstract implements RemotingServer {
+
+    private final NettyServerConfig nettyServerConfig;
+
+    private final CommonThreadPool threadPool;
+
+    private EventLoopGroup bossGroup;
+
+    private EventLoopGroup workerGroup;
+
+<span class="fc" id="L67">    private Channel channel = null;</span>
+
+    public NettyRemotingServer(final NettyServerConfig nettyServerConfig,
+                               final NettyEventListener nettyEventListener,
+                               final CommonThreadPool threadPool) {
+<span class="fc" id="L72">        super(nettyEventListener);</span>
+<span class="fc" id="L73">        this.nettyServerConfig = nettyServerConfig;</span>
+<span class="fc" id="L74">        this.threadPool = threadPool;</span>
+<span class="fc" id="L75">    }</span>
+
+    @Override
+    public void start() {
+
+<span class="fc" id="L80">        this.threadPool.execute(() -&gt; {</span>
+<span class="fc" id="L81">            int port = this.nettyServerConfig.getPort();</span>
+<span class="fc" id="L82">            ThreadFactory bossThreadFactory = new ThreadFactoryBuilder()</span>
+<span class="fc" id="L83">                    .setUncaughtExceptionHandler((thread, throwable) -&gt; {</span>
+<span class="nc" id="L84">                        log.error(&quot;NettyServerBoss has uncaughtException.&quot;);</span>
+<span class="nc" id="L85">                        log.error(throwable.getMessage(), throwable);</span>
+<span class="nc" id="L86">                    })</span>
+<span class="fc" id="L87">                    .setDaemon(true)</span>
+<span class="fc" id="L88">                    .setNameFormat(&quot;netty-server-boss-%d&quot;)</span>
+<span class="fc" id="L89">                    .build();</span>
+<span class="fc" id="L90">            ThreadFactory workerThreadFactory = new ThreadFactoryBuilder()</span>
+<span class="fc" id="L91">                    .setUncaughtExceptionHandler((thread, throwable) -&gt; {</span>
+<span class="nc" id="L92">                        log.error(&quot;NettyServerWorker has uncaughtException.&quot;);</span>
+<span class="nc" id="L93">                        log.error(throwable.getMessage(), throwable);</span>
+<span class="nc" id="L94">                    })</span>
+<span class="fc" id="L95">                    .setDaemon(true)</span>
+<span class="fc" id="L96">                    .setNameFormat(&quot;netty-server-worker-%d&quot;)</span>
+<span class="fc" id="L97">                    .build();</span>
+<span class="pc bpc" id="L98" title="1 of 2 branches missed.">            if (this.useEpoll()) {</span>
+<span class="nc" id="L99">                bossGroup = new EpollEventLoopGroup(bossThreadFactory);</span>
+<span class="nc" id="L100">                workerGroup = new EpollEventLoopGroup(workerThreadFactory);</span>
+            } else {
+<span class="fc" id="L102">                bossGroup = new NioEventLoopGroup(bossThreadFactory);</span>
+<span class="fc" id="L103">                workerGroup = new NioEventLoopGroup(workerThreadFactory);</span>
+            }
+
+            try {
+<span class="fc" id="L107">                ServerBootstrap b = new ServerBootstrap();</span>
+<span class="fc" id="L108">                b.group(bossGroup, workerGroup)</span>
+<span class="pc bpc" id="L109" title="1 of 2 branches missed.">                        .channel(this.useEpoll() ? EpollServerSocketChannel.class : NioServerSocketChannel.class)</span>
+<span class="fc" id="L110">                        .handler(new LoggingHandler(LogLevel.INFO))</span>
+<span class="fc" id="L111">                        .childOption(ChannelOption.TCP_NODELAY, true)</span>
+<span class="fc" id="L112">                        .childOption(ChannelOption.SO_KEEPALIVE, false)</span>
+<span class="fc" id="L113">                        .childHandler(new ChannelInitializer&lt;SocketChannel&gt;() {</span>
+                            @Override
+                            protected void initChannel(SocketChannel channel) throws Exception {
+<span class="fc" id="L116">                                NettyRemotingServer.this.initChannel(channel);</span>
+<span class="fc" id="L117">                            }</span>
+                        });
+<span class="fc" id="L119">                channel = b.bind(port).sync().channel();</span>
+<span class="nc" id="L120">                channel.closeFuture().sync();</span>
+<span class="fc" id="L121">            } catch (InterruptedException ignored) {</span>
+<span class="fc" id="L122">                log.info(&quot;server shutdown now!&quot;);</span>
+<span class="nc" id="L123">            } catch (Exception e) {</span>
+<span class="nc" id="L124">                log.error(&quot;Netty Server start exception, {}&quot;, e.getMessage());</span>
+<span class="nc" id="L125">                throw new RuntimeException(e);</span>
+            } finally {
+<span class="fc" id="L127">                bossGroup.shutdownGracefully();</span>
+<span class="fc" id="L128">                workerGroup.shutdownGracefully();</span>
+            }
+<span class="fc" id="L130">        });</span>
+<span class="fc" id="L131">    }</span>
+
+    @Override
+    public boolean isStart() {
+<span class="pc bpc" id="L135" title="2 of 4 branches missed.">        return this.channel != null &amp;&amp; this.channel.isActive();</span>
+    }
+
+    private void initChannel(final SocketChannel channel) {
+<span class="fc" id="L139">        ChannelPipeline pipeline = channel.pipeline();</span>
+        // zip
+<span class="fc" id="L141">        pipeline.addLast(ZlibCodecFactory.newZlibEncoder(ZlibWrapper.GZIP));</span>
+<span class="fc" id="L142">        pipeline.addLast(ZlibCodecFactory.newZlibDecoder(ZlibWrapper.GZIP));</span>
+        // protocol buf encode decode
+<span class="fc" id="L144">        pipeline.addLast(new ProtobufVarint32FrameDecoder());</span>
+<span class="fc" id="L145">        pipeline.addLast(new ProtobufDecoder(ClusterMsg.Message.getDefaultInstance()));</span>
+<span class="fc" id="L146">        pipeline.addLast(new ProtobufVarint32LengthFieldPrepender());</span>
+<span class="fc" id="L147">        pipeline.addLast(new ProtobufEncoder());</span>
+        // idle state
+<span class="fc" id="L149">        pipeline.addLast(new IdleStateHandler(0, 0, nettyServerConfig.getIdleStateEventTriggerTime()));</span>
+<span class="fc" id="L150">        pipeline.addLast(new NettyServerHandler());</span>
+<span class="fc" id="L151">    }</span>
+
+    @Override
+    public void shutdown() {
+        try {
+<span class="fc" id="L156">            this.bossGroup.shutdownGracefully();</span>
+
+<span class="fc" id="L158">            this.workerGroup.shutdownGracefully();</span>
+
+<span class="fc" id="L160">            this.threadPool.destroy();</span>
+
+<span class="nc" id="L162">        } catch (Exception e) {</span>
+<span class="nc" id="L163">            log.error(&quot;Netty Server shutdown exception, &quot;, e);</span>
+<span class="fc" id="L164">        }</span>
+<span class="fc" id="L165">    }</span>
+
+    @Override
+    public void sendMsg(final Channel channel, final ClusterMsg.Message request) {
+<span class="nc" id="L169">        this.sendMsgImpl(channel, request);</span>
+<span class="nc" id="L170">    }</span>
+
+    @Override
+    public ClusterMsg.Message sendMsgSync(final Channel channel, final ClusterMsg.Message request, final int timeoutMillis) {
+<span class="nc" id="L174">        return this.sendMsgSyncImpl(channel, request, timeoutMillis);</span>
+    }
+
+    @Override
+    public void registerHook(List&lt;NettyHook&gt; nettyHookList) {
+<span class="fc" id="L179">        this.nettyHookList.addAll(nettyHookList);</span>
+<span class="fc" id="L180">    }</span>
+
+    @ChannelHandler.Sharable
+<span class="fc" id="L183">    public class NettyServerHandler extends SimpleChannelInboundHandler&lt;ClusterMsg.Message&gt; {</span>
+
+        @Override
+        public void channelActive(ChannelHandlerContext ctx) throws Exception {
+<span class="fc" id="L187">            NettyRemotingServer.this.channelActive(ctx);</span>
+<span class="fc" id="L188">        }</span>
+
+        @Override
+        protected void channelRead0(ChannelHandlerContext ctx, ClusterMsg.Message msg) throws Exception {
+<span class="fc" id="L192">            NettyRemotingServer.this.processReceiveMsg(ctx, msg);</span>
+<span class="fc" id="L193">        }</span>
+
+        @Override
+        public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+<span class="nc" id="L197">            NettyRemotingServer.this.channelIdle(ctx, evt);</span>
+<span class="nc" id="L198">        }</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

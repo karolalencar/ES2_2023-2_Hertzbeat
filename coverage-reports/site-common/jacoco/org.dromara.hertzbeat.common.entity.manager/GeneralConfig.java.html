@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GeneralConfig.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.entity.manager</a> &gt; <span class="el_source">GeneralConfig.java</span></div><h1>GeneralConfig.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.common.entity.manager;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.CreatedBy;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedBy;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import javax.persistence.*;
+import javax.validation.constraints.NotNull;
+
+import java.time.LocalDateTime;
+
+import static io.swagger.v3.oas.annotations.media.Schema.AccessMode.READ_ONLY;
+import static io.swagger.v3.oas.annotations.media.Schema.AccessMode.READ_WRITE;
+
+/**
+ * Common Config Entity
+ * @author zqr10159
+ */
+@Entity
+@Table(name = &quot;hzb_config&quot;)
+<span class="nc bnc" id="L28" title="All 54 branches missed.">@Data</span>
+<span class="nc" id="L29">@Builder</span>
+<span class="nc" id="L30">@AllArgsConstructor</span>
+<span class="nc" id="L31">@NoArgsConstructor</span>
+@Schema(description = &quot;Common server config entity | 公共服务端配置实体&quot;)
+@EntityListeners(AuditingEntityListener.class)
+public class GeneralConfig {
+	
+	@Id
+	@Schema(title = &quot;Config type: email sms, primary key &quot;, description = &quot;配置类型: email sms, 主键&quot;,
+			accessMode = READ_WRITE)
+	@NotNull
+<span class="nc" id="L40">	private String type;</span>
+	
+	@Schema(title = &quot;Config content&quot;, description = &quot;配置内容，格式为json&quot;, accessMode = READ_WRITE)
+	@Column(length = 8192)
+<span class="nc" id="L44">	private String content;</span>
+	
+	@Schema(title = &quot;The creator of this record&quot;, example = &quot;tom&quot;, accessMode = READ_ONLY)
+	@CreatedBy
+<span class="nc" id="L48">	private String creator;</span>
+	
+	@Schema(title = &quot;This record was last modified by&quot;, example = &quot;tom&quot;, accessMode = READ_ONLY)
+	@LastModifiedBy
+<span class="nc" id="L52">	private String modifier;</span>
+	
+	@Schema(title = &quot;This record creation time (millisecond timestamp)&quot;, accessMode = READ_ONLY)
+	@CreatedDate
+<span class="nc" id="L56">	private LocalDateTime gmtCreate;</span>
+	
+	@Schema(title = &quot;Record the latest modification time (timestamp in milliseconds)&quot;, accessMode = READ_ONLY)
+	@LastModifiedDate
+<span class="nc" id="L60">	private LocalDateTime gmtUpdate;</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

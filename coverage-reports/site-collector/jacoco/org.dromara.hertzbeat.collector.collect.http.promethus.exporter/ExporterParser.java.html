@@ -1,0 +1,456 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ExporterParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.http.promethus.exporter</a> &gt; <span class="el_source">ExporterParser.java</span></div><h1>ExporterParser.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.collect.http.promethus.exporter;
+
+import org.dromara.hertzbeat.collector.collect.http.promethus.ParseException;
+import org.dromara.hertzbeat.common.util.StrBuffer;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.StringUtils;
+
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
+/**
+ * @author ceilzcx
+ *
+ * 解析prometheus的exporter接口传递的数据 http:xxx/metrics
+ * 参考: prometheus的text_parse.go的代码, 入口: TextToMetricFamilies
+ */
+<span class="fc" id="L22">@Slf4j</span>
+<span class="fc" id="L23">public class ExporterParser {</span>
+    private static final String HELP = &quot;HELP&quot;;
+    private static final String TYPE = &quot;TYPE&quot;;
+    private static final String EOF = &quot;EOF&quot;;
+
+    private static final String QUANTILE_LABEL = &quot;quantile&quot;;
+    private static final String BUCKET_LABEL = &quot;le&quot;;
+    private static final String NAME_LABEL = &quot;__name__&quot;;
+    private static final String SUM_SUFFIX = &quot;_sum&quot;;
+    private static final String COUNT_SUFFIX = &quot;_count&quot;;
+
+    private static final char LEFT_CURLY_BRACKET = '{';
+    private static final char RIGHT_CURLY_BRACKET = '}';
+    private static final char EQUALS = '=';
+    private static final char QUOTES = '&quot;';
+    private static final char ENTER = '\n';
+    private static final char SPACE = ' ';
+    private static final char COMMA = ',';
+
+    private MetricFamily currentMetricFamily;
+    private String currentQuantile;
+    private String currentBucket;
+
+<span class="fc" id="L46">    private final Lock lock = new ReentrantLock();</span>
+
+    public Map&lt;String, MetricFamily&gt; textToMetric(String resp) {
+        // key: metric name, value: metric family
+<span class="fc" id="L50">        Map&lt;String, MetricFamily&gt; metricMap = new ConcurrentHashMap&lt;&gt;(10);</span>
+<span class="fc" id="L51">        lock.lock();</span>
+        try {
+<span class="fc" id="L53">            String[] lines = resp.split(&quot;\n&quot;);</span>
+<span class="fc bfc" id="L54" title="All 2 branches covered.">            for (String line : lines) {</span>
+<span class="fc" id="L55">                this.parseLine(metricMap, new StrBuffer(line));</span>
+            }
+<span class="fc" id="L57">            return metricMap;</span>
+<span class="nc" id="L58">        } catch (Exception e) {</span>
+<span class="nc" id="L59">            log.error(&quot;parse prometheus exporter data error, msg: {}&quot;, e.getMessage());</span>
+        } finally {
+<span class="fc" id="L61">            lock.unlock();</span>
+        }
+<span class="nc" id="L63">        return metricMap;</span>
+    }
+
+    private void parseLine(Map&lt;String, MetricFamily&gt; metricMap, StrBuffer buffer) {
+<span class="fc" id="L67">        buffer.skipBlankTabs();</span>
+<span class="pc bpc" id="L68" title="1 of 2 branches missed.">        if (buffer.isEmpty()) return;</span>
+<span class="pc bpc" id="L69" title="1 of 3 branches missed.">        switch (buffer.charAt(0)) {</span>
+            case '#':
+<span class="fc" id="L71">                buffer.read();</span>
+<span class="fc" id="L72">                this.currentMetricFamily = null;</span>
+<span class="fc" id="L73">                this.parseComment(metricMap, buffer);</span>
+<span class="fc" id="L74">                break;</span>
+            case ENTER:
+<span class="nc" id="L76">                break;</span>
+            default:
+<span class="fc" id="L78">                this.currentBucket = null;</span>
+<span class="fc" id="L79">                this.currentQuantile = null;</span>
+<span class="fc" id="L80">                this.parseMetric(buffer);</span>
+        }
+<span class="fc" id="L82">    }</span>
+
+    private void parseComment(Map&lt;String, MetricFamily&gt; metricMap, StrBuffer buffer) {
+<span class="fc" id="L85">        buffer.skipBlankTabs();</span>
+<span class="pc bpc" id="L86" title="1 of 2 branches missed.">        if (buffer.isEmpty()) return;</span>
+<span class="fc" id="L87">        String token = this.readTokenUnitWhitespace(buffer);</span>
+<span class="fc bfc" id="L88" title="All 2 branches covered.">        if (EOF.equals(token)) {</span>
+<span class="fc" id="L89">            return;</span>
+        }
+<span class="pc bpc" id="L91" title="1 of 4 branches missed.">        if (!HELP.equals(token) &amp;&amp; !TYPE.equals(token)) {</span>
+<span class="nc" id="L92">            log.error(&quot;parse comment error {}, start without {} or {}&quot;, buffer.toStr(), HELP, TYPE);</span>
+<span class="nc" id="L93">            return;</span>
+        }
+<span class="fc" id="L95">        String metricName = this.readTokenAsMetricName(buffer);</span>
+<span class="fc" id="L96">        this.currentMetricFamily = metricMap.computeIfAbsent(metricName, key -&gt; new MetricFamily());</span>
+<span class="fc" id="L97">        this.currentMetricFamily.setName(metricName);</span>
+<span class="pc bpc" id="L98" title="1 of 3 branches missed.">        switch (token) {</span>
+            case HELP:
+<span class="fc" id="L100">                this.parseHelp(buffer);</span>
+<span class="fc" id="L101">                break;</span>
+            case TYPE:
+<span class="fc" id="L103">                this.parseType(buffer);</span>
+<span class="fc" id="L104">                break;</span>
+            default:
+        }
+<span class="fc" id="L107">    }</span>
+
+    private void parseHelp(StrBuffer line) {
+<span class="fc" id="L110">        line.skipBlankTabs();</span>
+<span class="fc" id="L111">        this.currentMetricFamily.setHelp(line.toStr());</span>
+<span class="fc" id="L112">    }</span>
+
+    private void parseType(StrBuffer line) {
+<span class="fc" id="L115">        line.skipBlankTabs();</span>
+<span class="fc" id="L116">        String type = line.toStr().toLowerCase();</span>
+<span class="fc" id="L117">        MetricType metricType = MetricType.getType(type);</span>
+<span class="pc bpc" id="L118" title="1 of 2 branches missed.">        if (metricType == null) {</span>
+<span class="nc" id="L119">            throw new ParseException(&quot;pare type error&quot;);</span>
+        }
+<span class="fc" id="L121">        this.currentMetricFamily.setMetricType(metricType);</span>
+<span class="fc" id="L122">    }</span>
+
+    private void parseMetric(StrBuffer buffer) {
+<span class="fc" id="L125">        String metricName = this.readTokenAsMetricName(buffer);</span>
+<span class="pc bpc" id="L126" title="1 of 2 branches missed.">        if (metricName.isEmpty()) {</span>
+<span class="nc" id="L127">            log.error(&quot;error parse metric, metric name is null, line: {}&quot;, buffer.toStr());</span>
+<span class="nc" id="L128">            return;</span>
+        }
+<span class="fc" id="L130">        List&lt;MetricFamily.Metric&gt; metricList = this.currentMetricFamily.getMetricList();</span>
+<span class="fc bfc" id="L131" title="All 2 branches covered.">        if (metricList == null) {</span>
+<span class="fc" id="L132">            metricList = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L133">            this.currentMetricFamily.setMetricList(metricList);</span>
+        }
+        // todo 这里可能存在问题, 目前逻辑是HISTOGRAM和SUMMARY只创建一个metric
+        //  相比源码有所改动: 源码通过属性存储解析结果; 这边通过参数传递
+        MetricFamily.Metric metric;
+<span class="fc bfc" id="L138" title="All 2 branches covered.">        if (!metricList.isEmpty() &amp;&amp;</span>
+<span class="pc bpc" id="L139" title="1 of 2 branches missed.">                (this.currentMetricFamily.getMetricType().equals(MetricType.HISTOGRAM) ||</span>
+<span class="pc bpc" id="L140" title="1 of 2 branches missed.">                        this.currentMetricFamily.getMetricType().equals(MetricType.SUMMARY))) {</span>
+<span class="fc" id="L141">            metric = metricList.get(0);</span>
+        } else {
+<span class="fc" id="L143">            metric = new MetricFamily.Metric();</span>
+<span class="fc" id="L144">            metricList.add(metric);</span>
+        }
+
+<span class="fc" id="L147">        this.readLabels(metric, buffer);</span>
+<span class="fc" id="L148">    }</span>
+
+    private void readLabels(MetricFamily.Metric metric, StrBuffer buffer) {
+<span class="fc" id="L151">        buffer.skipBlankTabs();</span>
+<span class="pc bpc" id="L152" title="1 of 2 branches missed.">        if (buffer.isEmpty()) return;</span>
+<span class="fc" id="L153">        metric.setLabelPair(new ArrayList&lt;&gt;());</span>
+<span class="fc bfc" id="L154" title="All 2 branches covered.">        if (buffer.charAt(0) == LEFT_CURLY_BRACKET) {</span>
+<span class="fc" id="L155">            buffer.read();</span>
+<span class="fc" id="L156">            this.startReadLabelName(metric, buffer);</span>
+        } else {
+<span class="fc" id="L158">            this.readLabelValue(metric, null, buffer);</span>
+        }
+<span class="fc" id="L160">    }</span>
+
+    private void startReadLabelName(MetricFamily.Metric metric, StrBuffer buffer) {
+<span class="fc" id="L163">        buffer.skipBlankTabs();</span>
+<span class="pc bpc" id="L164" title="1 of 2 branches missed.">        if (buffer.isEmpty()) return;</span>
+<span class="fc bfc" id="L165" title="All 2 branches covered.">        if (buffer.charAt(0) == RIGHT_CURLY_BRACKET) {</span>
+<span class="fc" id="L166">            buffer.read();</span>
+<span class="fc" id="L167">            buffer.skipBlankTabs();</span>
+<span class="pc bpc" id="L168" title="1 of 2 branches missed.">            if (buffer.isEmpty()) return;</span>
+<span class="fc" id="L169">            this.readLabelValue(metric, new MetricFamily.Label(), buffer);</span>
+<span class="fc" id="L170">            return;</span>
+        }
+<span class="fc" id="L172">        String labelName = this.readTokenAsLabelName(buffer);</span>
+<span class="pc bpc" id="L173" title="2 of 4 branches missed.">        if (labelName.isEmpty() || labelName.equals(NAME_LABEL)) {</span>
+<span class="nc" id="L174">            throw new ParseException(&quot;invalid label name&quot; + labelName + &quot;, label name size = 0 or label name equals &quot; + NAME_LABEL);</span>
+        }
+<span class="fc" id="L176">        MetricFamily.Label label = new MetricFamily.Label();</span>
+<span class="fc" id="L177">        label.setName(labelName);</span>
+<span class="pc bpc" id="L178" title="1 of 2 branches missed.">        if (buffer.read() != EQUALS) {</span>
+<span class="nc" id="L179">            throw new ParseException(&quot;parse error, not match the format of labelName=labelValue&quot;);</span>
+        }
+<span class="fc" id="L181">        this.startReadLabelValue(metric, label, buffer);</span>
+<span class="fc" id="L182">    }</span>
+
+    private void startReadLabelValue(MetricFamily.Metric metric, MetricFamily.Label label, StrBuffer buffer) {
+<span class="fc" id="L185">        buffer.skipBlankTabs();</span>
+<span class="pc bpc" id="L186" title="1 of 2 branches missed.">        if (buffer.isEmpty()) return;</span>
+<span class="fc" id="L187">        char c = buffer.read();</span>
+<span class="pc bpc" id="L188" title="1 of 2 branches missed.">        if (c != QUOTES) {</span>
+<span class="nc" id="L189">            throw new ParseException(&quot;expected '\&quot;' at start of label value, line: &quot; + buffer.toStr());</span>
+        }
+<span class="fc" id="L191">        String labelValue = this.readTokenAsLabelValue(buffer);</span>
+<span class="fc" id="L192">        label.setValue(labelValue);</span>
+<span class="pc bpc" id="L193" title="1 of 2 branches missed.">        if (!this.isValidLabelValue(labelValue)) {</span>
+<span class="nc" id="L194">            throw new ParseException(&quot;no valid label value: &quot; + labelValue);</span>
+        }
+<span class="fc bfc" id="L196" title="All 4 branches covered.">        if (this.currentMetricFamily.getMetricType().equals(MetricType.SUMMARY) &amp;&amp; label.getName().equals(QUANTILE_LABEL)) {</span>
+<span class="fc" id="L197">            this.currentQuantile = labelValue;</span>
+<span class="pc bpc" id="L198" title="3 of 4 branches missed.">        } else if (this.currentMetricFamily.getMetricType().equals(MetricType.HISTOGRAM) &amp;&amp; label.getName().equals(BUCKET_LABEL)) {</span>
+<span class="nc" id="L199">            this.currentBucket = labelValue;</span>
+        } else {
+<span class="fc" id="L201">            metric.getLabelPair().add(label);</span>
+        }
+<span class="pc bpc" id="L203" title="1 of 2 branches missed.">        if (buffer.isEmpty()) return;</span>
+<span class="fc" id="L204">        c = buffer.read();</span>
+<span class="pc bpc" id="L205" title="1 of 3 branches missed.">        switch (c) {</span>
+            case COMMA:
+<span class="fc" id="L207">                this.startReadLabelName(metric, buffer);</span>
+<span class="fc" id="L208">                break;</span>
+            case RIGHT_CURLY_BRACKET:
+<span class="fc" id="L210">                this.readLabelValue(metric, label, buffer);</span>
+<span class="fc" id="L211">                break;</span>
+            default:
+<span class="nc" id="L213">                throw new ParseException(&quot;expected '}' or ',' at end of label value, line: &quot; + buffer.toStr());</span>
+        }
+<span class="fc" id="L215">    }</span>
+
+    private void readLabelValue(MetricFamily.Metric metric, MetricFamily.Label label, StrBuffer buffer) {
+<span class="fc" id="L218">        buffer.skipBlankTabs();</span>
+<span class="pc bpc" id="L219" title="1 of 2 branches missed.">        if (buffer.isEmpty()) return;</span>
+<span class="pc bpc" id="L220" title="3 of 7 branches missed.">        switch (this.currentMetricFamily.getMetricType()) {</span>
+            case INFO:
+<span class="fc" id="L222">                MetricFamily.Info info = new MetricFamily.Info();</span>
+<span class="fc" id="L223">                info.setValue(buffer.toDouble());</span>
+<span class="fc" id="L224">                metric.setInfo(info);</span>
+<span class="fc" id="L225">                break;</span>
+            case COUNTER:
+<span class="fc" id="L227">                MetricFamily.Counter counter = new MetricFamily.Counter();</span>
+<span class="fc" id="L228">                counter.setValue(buffer.toDouble());</span>
+<span class="fc" id="L229">                metric.setCounter(counter);</span>
+<span class="fc" id="L230">                break;</span>
+            case GAUGE:
+<span class="fc" id="L232">                MetricFamily.Gauge gauge = new MetricFamily.Gauge();</span>
+<span class="fc" id="L233">                gauge.setValue(buffer.toDouble());</span>
+<span class="fc" id="L234">                metric.setGauge(gauge);</span>
+<span class="fc" id="L235">                break;</span>
+            case UNTYPED:
+<span class="nc" id="L237">                MetricFamily.Untyped untyped = new MetricFamily.Untyped();</span>
+<span class="nc" id="L238">                untyped.setValue(buffer.toDouble());</span>
+<span class="nc" id="L239">                metric.setUntyped(untyped);</span>
+<span class="nc" id="L240">                break;</span>
+            case SUMMARY:
+<span class="fc" id="L242">                MetricFamily.Summary summary = metric.getSummary();</span>
+<span class="fc bfc" id="L243" title="All 2 branches covered.">                if (summary == null) {</span>
+<span class="fc" id="L244">                    summary = new MetricFamily.Summary();</span>
+<span class="fc" id="L245">                    metric.setSummary(summary);</span>
+                }
+                // 处理 xxx_sum 的数据
+<span class="pc bpc" id="L248" title="2 of 4 branches missed.">                if (label != null &amp;&amp; this.isSum(label.getName())) {</span>
+<span class="nc" id="L249">                    summary.setSum(buffer.toDouble());</span>
+                }
+                // 处理 xxx_count 的数据
+<span class="pc bpc" id="L252" title="2 of 4 branches missed.">                else if (label != null &amp;&amp; this.isCount(label.getName())) {</span>
+<span class="nc" id="L253">                    summary.setCount(buffer.toLong());</span>
+                }
+                // 处理 &quot;xxx{quantile=\&quot;0\&quot;} 0&quot; 的格式
+<span class="fc bfc" id="L256" title="All 2 branches covered.">                else if (StringUtils.hasText(this.currentQuantile)) {</span>
+<span class="fc" id="L257">                    List&lt;MetricFamily.Quantile&gt; quantileList = summary.getQuantileList();</span>
+<span class="fc" id="L258">                    MetricFamily.Quantile quantile = new MetricFamily.Quantile();</span>
+<span class="fc" id="L259">                    quantile.setXLabel(StrBuffer.parseDouble(this.currentQuantile));</span>
+<span class="fc" id="L260">                    quantile.setValue(buffer.toDouble());</span>
+<span class="fc" id="L261">                    quantileList.add(quantile);</span>
+<span class="fc" id="L262">                }</span>
+                break;
+            case HISTOGRAM:
+<span class="nc" id="L265">                MetricFamily.Histogram histogram = metric.getHistogram();</span>
+<span class="nc bnc" id="L266" title="All 2 branches missed.">                if (histogram == null) {</span>
+<span class="nc" id="L267">                    histogram = new MetricFamily.Histogram();</span>
+<span class="nc" id="L268">                    metric.setHistogram(histogram);</span>
+                }
+<span class="nc bnc" id="L270" title="All 4 branches missed.">                if (label != null &amp;&amp; this.isSum(label.getName())) {</span>
+<span class="nc" id="L271">                    histogram.setSum(buffer.toDouble());</span>
+<span class="nc bnc" id="L272" title="All 4 branches missed.">                } else if (label != null &amp;&amp; this.isCount(label.getName())) {</span>
+<span class="nc" id="L273">                    histogram.setCount(buffer.toLong());</span>
+                }
+                // 处理 &quot;xxx{quantile=\&quot;0\&quot;} 0&quot; 的格式
+<span class="nc bnc" id="L276" title="All 2 branches missed.">                else if (StringUtils.hasText(this.currentBucket)) {</span>
+<span class="nc" id="L277">                    List&lt;MetricFamily.Bucket&gt; bucketList = histogram.getBucketList();</span>
+<span class="nc" id="L278">                    MetricFamily.Bucket bucket = new MetricFamily.Bucket();</span>
+<span class="nc" id="L279">                    bucket.setUpperBound(StrBuffer.parseDouble(this.currentBucket));</span>
+<span class="nc" id="L280">                    bucket.setCumulativeCount(buffer.toLong());</span>
+<span class="nc" id="L281">                    bucketList.add(bucket);</span>
+<span class="nc" id="L282">                }</span>
+                break;
+            default:
+<span class="nc" id="L285">                throw new ParseException(&quot;no such type in metricFamily&quot;);</span>
+        }
+<span class="fc" id="L287">    }</span>
+
+    /**
+     * 读取第一个空格符前的token
+     *
+     * @param buffer 行数据对象
+     * @return token unit
+     */
+    private String readTokenUnitWhitespace(StrBuffer buffer) {
+<span class="fc" id="L296">        StringBuilder builder = new StringBuilder();</span>
+<span class="fc bfc" id="L297" title="All 2 branches covered.">        while (!buffer.isEmpty()) {</span>
+<span class="fc" id="L298">            char c = buffer.read();</span>
+<span class="fc bfc" id="L299" title="All 2 branches covered.">            if (c == SPACE) {</span>
+<span class="fc" id="L300">                break;</span>
+            }
+<span class="fc" id="L302">            builder.append(c);</span>
+<span class="fc" id="L303">        }</span>
+<span class="fc" id="L304">        return builder.toString();</span>
+    }
+
+    /**
+     * 获取指标的名称
+     *
+     * @param buffer 行数据对象
+     * @return token name
+     */
+    private String readTokenAsMetricName(StrBuffer buffer) {
+<span class="fc" id="L314">        buffer.skipBlankTabs();</span>
+<span class="fc" id="L315">        StringBuilder builder = new StringBuilder();</span>
+<span class="pc bpc" id="L316" title="1 of 2 branches missed.">        if (this.isValidMetricNameStart(buffer.charAt(0))) {</span>
+<span class="pc bpc" id="L317" title="1 of 2 branches missed.">            while (!buffer.isEmpty()) {</span>
+<span class="fc" id="L318">                char c = buffer.read();</span>
+<span class="fc bfc" id="L319" title="All 2 branches covered.">                if (!this.isValidMetricNameContinuation(c)) {</span>
+<span class="fc" id="L320">                    buffer.rollback();</span>
+<span class="fc" id="L321">                    break;</span>
+                }
+<span class="fc" id="L323">                builder.append(c);</span>
+<span class="fc" id="L324">            }</span>
+<span class="fc" id="L325">            return builder.toString();</span>
+        }
+<span class="nc" id="L327">        throw new ParseException(&quot;parse metric name error&quot;);</span>
+    }
+
+    /**
+     * 获取label的名称
+     *
+     * @param buffer 行数据对象
+     * @return label name
+     */
+    private String readTokenAsLabelName(StrBuffer buffer) {
+<span class="fc" id="L337">        buffer.skipBlankTabs();</span>
+<span class="fc" id="L338">        StringBuilder builder = new StringBuilder();</span>
+<span class="fc" id="L339">        char c = buffer.read();</span>
+<span class="pc bpc" id="L340" title="1 of 2 branches missed.">        if (this.isValidLabelNameStart(c)) {</span>
+<span class="fc" id="L341">            builder.append(c);</span>
+<span class="pc bpc" id="L342" title="1 of 2 branches missed.">            while (!buffer.isEmpty()) {</span>
+<span class="fc" id="L343">                c = buffer.read();</span>
+<span class="fc bfc" id="L344" title="All 2 branches covered.">                if (!this.isValidLabelNameContinuation(c)) {</span>
+<span class="fc" id="L345">                    buffer.rollback();</span>
+<span class="fc" id="L346">                    break;</span>
+                }
+<span class="fc" id="L348">                builder.append(c);</span>
+            }
+<span class="fc" id="L350">            return builder.toString();</span>
+        }
+<span class="nc" id="L352">        throw new ParseException(&quot;parse label name error&quot;);</span>
+    }
+
+    /**
+     * 获取Label的值
+     *
+     * @param buffer 行数据对象
+     * @return label value
+     */
+    private String readTokenAsLabelValue(StrBuffer buffer) {
+<span class="fc" id="L362">        StringBuilder builder = new StringBuilder();</span>
+<span class="fc" id="L363">        boolean escaped = false;</span>
+<span class="pc bpc" id="L364" title="1 of 2 branches missed.">        while (!buffer.isEmpty()) {</span>
+<span class="fc" id="L365">            char c = buffer.read();</span>
+            // 处理 '\\' 转义
+<span class="fc bfc" id="L367" title="All 2 branches covered.">            if (escaped) {</span>
+<span class="pc bpc" id="L368" title="2 of 3 branches missed.">                switch (c) {</span>
+                    case QUOTES:
+                    case '\\':
+<span class="fc" id="L371">                        builder.append(c);</span>
+<span class="fc" id="L372">                        break;</span>
+                    case 'n':
+<span class="nc" id="L374">                        builder.append('\n');</span>
+<span class="nc" id="L375">                        break;</span>
+                    default:
+<span class="nc" id="L377">                        throw new ParseException(&quot;parse label value error&quot;);</span>
+                }
+<span class="fc" id="L379">                escaped = false;</span>
+            } else {
+<span class="pc bpc" id="L381" title="1 of 4 branches missed.">                switch (c) {</span>
+                    case QUOTES:
+<span class="fc" id="L383">                        return builder.toString();</span>
+                    case ENTER:
+<span class="nc" id="L385">                        throw new ParseException(&quot;parse label value error, next line&quot;);</span>
+                    case '\\':
+<span class="fc" id="L387">                        escaped = true;</span>
+<span class="fc" id="L388">                        break;</span>
+                    default:
+<span class="fc" id="L390">                        builder.append(c);</span>
+                }
+            }
+<span class="fc" id="L393">        }</span>
+<span class="nc" id="L394">        return builder.toString();</span>
+    }
+
+    /**
+     * 是否符合metric name首字符规则
+     *
+     * @param c metric字符
+     * @return true/false
+     */
+    private boolean isValidMetricNameStart(char c) {
+<span class="pc bpc" id="L404" title="3 of 4 branches missed.">        return isValidLabelNameStart(c) || c == ':';</span>
+    }
+
+    /**
+     * 是否符合metric name除首字符其他字符规则
+     *
+     * @param c metric字符
+     * @return true/false
+     */
+    private boolean isValidMetricNameContinuation(char c) {
+<span class="pc bpc" id="L414" title="1 of 4 branches missed.">        return isValidLabelNameContinuation(c) || c == ':';</span>
+    }
+
+    /**
+     * 是否符合label name首字符规则
+     *
+     * @param c metric字符
+     * @return true/false
+     */
+    private boolean isValidLabelNameStart(char c) {
+<span class="pc bpc" id="L424" title="1 of 10 branches missed.">        return (c &gt;= 'a' &amp;&amp; c &lt;= 'z') || (c &gt;= 'A' &amp;&amp; c &lt;= 'Z') || c == '_';</span>
+    }
+
+    /**
+     * 是否符合label name除首字符其他字符规则
+     *
+     * @param c metric字符
+     * @return true/false
+     */
+    private boolean isValidLabelNameContinuation(char c) {
+<span class="pc bpc" id="L434" title="1 of 6 branches missed.">        return isValidLabelNameStart(c) || (c &gt;= '0' &amp;&amp; c &lt;= '9');</span>
+    }
+
+    /**
+     * 检测是否是有效的utf8编码的字符串
+     *
+     * @param s label value
+     * @return true/false
+     */
+    private boolean isValidLabelValue(String s) {
+<span class="pc bpc" id="L444" title="2 of 4 branches missed.">        return s != null &amp;&amp; s.equals(new String(s.getBytes(StandardCharsets.UTF_8)));</span>
+    }
+
+    private boolean isSum(String s) {
+<span class="pc bpc" id="L448" title="2 of 4 branches missed.">        return s != null &amp;&amp; s.endsWith(SUM_SUFFIX);</span>
+    }
+
+    private boolean isCount(String s) {
+<span class="pc bpc" id="L452" title="2 of 4 branches missed.">        return s != null &amp;&amp; s.endsWith(COUNT_SUFFIX);</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

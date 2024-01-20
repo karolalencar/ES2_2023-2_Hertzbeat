@@ -1,0 +1,851 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MonitorServiceImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.service.impl</a> &gt; <span class="el_source">MonitorServiceImpl.java</span></div><h1>MonitorServiceImpl.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.manager.service.impl;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.alert.dao.AlertDefineBindDao;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.job.Configmap;
+import org.dromara.hertzbeat.common.entity.job.Job;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.manager.Collector;
+import org.dromara.hertzbeat.common.entity.manager.CollectorMonitorBind;
+import org.dromara.hertzbeat.common.entity.manager.Monitor;
+import org.dromara.hertzbeat.common.entity.manager.Param;
+import org.dromara.hertzbeat.common.entity.manager.ParamDefine;
+import org.dromara.hertzbeat.common.entity.manager.Tag;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.support.event.MonitorDeletedEvent;
+import org.dromara.hertzbeat.common.util.*;
+import org.dromara.hertzbeat.manager.dao.CollectorDao;
+import org.dromara.hertzbeat.manager.dao.CollectorMonitorBindDao;
+import org.dromara.hertzbeat.manager.dao.MonitorDao;
+import org.dromara.hertzbeat.manager.dao.ParamDao;
+import org.dromara.hertzbeat.manager.dao.TagMonitorBindDao;
+import org.dromara.hertzbeat.manager.pojo.dto.AppCount;
+import org.dromara.hertzbeat.manager.pojo.dto.MonitorDto;
+import org.dromara.hertzbeat.manager.scheduler.CollectJobScheduling;
+import org.dromara.hertzbeat.manager.service.AppService;
+import org.dromara.hertzbeat.manager.service.ImExportService;
+import org.dromara.hertzbeat.manager.service.MonitorService;
+import org.dromara.hertzbeat.manager.service.TagService;
+import org.dromara.hertzbeat.manager.support.exception.MonitorDatabaseException;
+import org.dromara.hertzbeat.manager.support.exception.MonitorDetectException;
+import org.dromara.hertzbeat.manager.support.exception.MonitorMetricsException;
+import org.dromara.hertzbeat.warehouse.service.WarehouseService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpHeaders;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
+
+import javax.annotation.Resource;
+import javax.servlet.http.HttpServletResponse;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * 监控管理服务实现
+ *
+ * @author tomsun28
+ */
+@Service
+@Transactional(rollbackFor = Exception.class)
+<span class="fc" id="L80">@Slf4j</span>
+public class MonitorServiceImpl implements MonitorService {
+<span class="fc" id="L82">    private static final Long MONITOR_ID_TMP = 1000000000L;</span>
+
+    public static final String HTTP = &quot;http://&quot;;
+    public static final String HTTPS = &quot;https://&quot;;
+    public static final String BLANK = &quot;&quot;;
+    public static final String PATTERN_HTTP = &quot;(?i)http://&quot;;
+    public static final String PATTERN_HTTPS = &quot;(?i)https://&quot;;
+
+    @Autowired
+    private AppService appService;
+
+    @Autowired
+    private TagService tagService;
+
+    @Autowired
+    private CollectJobScheduling collectJobScheduling;
+
+    @Autowired
+    private MonitorDao monitorDao;
+
+    @Autowired
+    private ParamDao paramDao;
+
+    @Autowired
+    private CollectorDao collectorDao;
+
+    @Autowired
+    private CollectorMonitorBindDao collectorMonitorBindDao;
+
+    @Autowired
+    private AlertDefineBindDao alertDefineBindDao;
+
+    @Autowired
+    private TagMonitorBindDao tagMonitorBindDao;
+
+    @Autowired
+    private ApplicationContext applicationContext;
+
+    @Autowired
+    private WarehouseService warehouseService;
+
+<span class="fc" id="L123">    private final Map&lt;String, ImExportService&gt; imExportServiceMap = new HashMap&lt;&gt;();</span>
+
+<span class="fc" id="L125">    public MonitorServiceImpl(List&lt;ImExportService&gt; imExportServiceList) {</span>
+<span class="fc" id="L126">        imExportServiceList.forEach(it -&gt; imExportServiceMap.put(it.type(), it));</span>
+<span class="fc" id="L127">    }</span>
+
+    @Override
+    @Transactional(readOnly = true)
+    public void detectMonitor(Monitor monitor, List&lt;Param&gt; params, String collector) throws MonitorDetectException {
+<span class="fc" id="L132">        Long monitorId = monitor.getId();</span>
+<span class="pc bpc" id="L133" title="2 of 4 branches missed.">        if (monitorId == null || monitorId == 0) {</span>
+<span class="nc" id="L134">            monitorId = MONITOR_ID_TMP;</span>
+        }
+<span class="fc" id="L136">        Job appDefine = appService.getAppDefine(monitor.getApp());</span>
+<span class="pc bpc" id="L137" title="1 of 2 branches missed.">        if (CommonConstants.PROMETHEUS.equals(monitor.getApp())) {</span>
+<span class="nc" id="L138">            appDefine.setApp(CommonConstants.PROMETHEUS_APP_PREFIX + monitor.getName());</span>
+        }
+<span class="fc" id="L140">        appDefine.setMonitorId(monitorId);</span>
+<span class="fc" id="L141">        appDefine.setCyclic(false);</span>
+<span class="fc" id="L142">        appDefine.setTimestamp(System.currentTimeMillis());</span>
+<span class="fc" id="L143">        List&lt;Configmap&gt; configmaps = params.stream().map(param -&gt;</span>
+<span class="fc" id="L144">                new Configmap(param.getField(), param.getValue(), param.getType())).collect(Collectors.toList());</span>
+<span class="fc" id="L145">        appDefine.setConfigmap(configmaps);</span>
+        // To detect availability, you only need to collect the set of availability metrics with a priority of 0.
+<span class="fc" id="L147">        List&lt;Metrics&gt; availableMetrics = appDefine.getMetrics().stream()</span>
+<span class="pc bnc" id="L148" title="All 2 branches missed.">                .filter(item -&gt; item.getPriority() == 0).collect(Collectors.toList());</span>
+<span class="fc" id="L149">        appDefine.setMetrics(availableMetrics);</span>
+        List&lt;CollectRep.MetricsData&gt; collectRep;
+<span class="pc bpc" id="L151" title="1 of 2 branches missed.">        if (collector != null) {</span>
+<span class="nc" id="L152">            collectRep = collectJobScheduling.collectSyncJobData(appDefine, collector);</span>
+        } else {
+<span class="fc" id="L154">            collectRep = collectJobScheduling.collectSyncJobData(appDefine);</span>
+        }
+        // If the detection result fails, a detection exception is thrown
+<span class="pc bpc" id="L157" title="1 of 4 branches missed.">        if (collectRep == null || collectRep.isEmpty()) {</span>
+<span class="fc" id="L158">            throw new MonitorDetectException(&quot;Collect Timeout No Response&quot;);</span>
+        }
+<span class="pc bpc" id="L160" title="1 of 2 branches missed.">        if (collectRep.get(0).getCode() != CollectRep.Code.SUCCESS) {</span>
+<span class="fc" id="L161">            throw new MonitorDetectException(collectRep.get(0).getMsg());</span>
+        }
+<span class="nc" id="L163">    }</span>
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void addMonitor(Monitor monitor, List&lt;Param&gt; params, String collector) throws RuntimeException {
+        // Apply for monitor id
+<span class="fc" id="L169">        long monitorId = SnowFlakeIdGenerator.generateId();</span>
+        // Init Set Default Tags: monitorId monitorName app
+<span class="fc" id="L171">        List&lt;Tag&gt; tags = monitor.getTags();</span>
+<span class="fc bfc" id="L172" title="All 2 branches covered.">        if (tags == null) {</span>
+<span class="fc" id="L173">            tags = new LinkedList&lt;&gt;();</span>
+<span class="fc" id="L174">            monitor.setTags(tags);</span>
+        }
+<span class="fc" id="L176">        tags.add(Tag.builder().name(CommonConstants.TAG_MONITOR_ID).value(String.valueOf(monitorId)).type((byte) 0).build());</span>
+<span class="fc" id="L177">        tags.add(Tag.builder().name(CommonConstants.TAG_MONITOR_NAME).value(String.valueOf(monitor.getName())).type((byte) 0).build());</span>
+        // Construct the collection task Job entity     
+<span class="fc" id="L179">        Job appDefine = appService.getAppDefine(monitor.getApp());</span>
+<span class="pc bpc" id="L180" title="1 of 2 branches missed.">        if (CommonConstants.PROMETHEUS.equals(monitor.getApp())) {</span>
+<span class="nc" id="L181">            appDefine.setApp(CommonConstants.PROMETHEUS_APP_PREFIX + monitor.getName());</span>
+        }
+<span class="fc" id="L183">        appDefine.setMonitorId(monitorId);</span>
+<span class="fc" id="L184">        appDefine.setInterval(monitor.getIntervals());</span>
+<span class="fc" id="L185">        appDefine.setCyclic(true);</span>
+<span class="fc" id="L186">        appDefine.setTimestamp(System.currentTimeMillis());</span>
+<span class="fc" id="L187">        List&lt;Configmap&gt; configmaps = params.stream().map(param -&gt; {</span>
+<span class="fc" id="L188">            param.setMonitorId(monitorId);</span>
+<span class="fc" id="L189">            return new Configmap(param.getField(), param.getValue(), param.getType());</span>
+<span class="fc" id="L190">        }).collect(Collectors.toList());</span>
+<span class="fc" id="L191">        appDefine.setConfigmap(configmaps);</span>
+
+<span class="pc bpc" id="L193" title="1 of 2 branches missed.">        long jobId = collector == null ? collectJobScheduling.addAsyncCollectJob(appDefine, null) :</span>
+<span class="pc" id="L194">                collectJobScheduling.addAsyncCollectJob(appDefine, collector);</span>
+
+        try {
+<span class="pc bpc" id="L197" title="1 of 2 branches missed.">            if (collector != null) {</span>
+<span class="nc" id="L198">                CollectorMonitorBind collectorMonitorBind = CollectorMonitorBind.builder()</span>
+<span class="nc" id="L199">                        .collector(collector)</span>
+<span class="nc" id="L200">                        .monitorId(monitorId)</span>
+<span class="nc" id="L201">                        .build();</span>
+<span class="nc" id="L202">                collectorMonitorBindDao.save(collectorMonitorBind);</span>
+            }
+<span class="fc" id="L204">            monitor.setId(monitorId);</span>
+<span class="fc" id="L205">            monitor.setJobId(jobId);</span>
+<span class="fc" id="L206">            monitor.setStatus(CommonConstants.AVAILABLE_CODE);</span>
+<span class="fc" id="L207">            monitorDao.save(monitor);</span>
+<span class="fc" id="L208">            paramDao.saveAll(params);</span>
+<span class="fc" id="L209">        } catch (Exception e) {</span>
+<span class="fc" id="L210">            log.error(&quot;Error while adding monitor: {}&quot;, e.getMessage(), e);</span>
+<span class="fc" id="L211">            collectJobScheduling.cancelAsyncCollectJob(jobId);</span>
+<span class="fc" id="L212">            throw new MonitorDatabaseException(e.getMessage());</span>
+<span class="fc" id="L213">        }</span>
+<span class="fc" id="L214">    }</span>
+
+    @Override
+    public void addNewMonitorOptionalMetrics(List&lt;String&gt; metrics, Monitor monitor, List&lt;Param&gt; params) {
+<span class="fc" id="L218">        long monitorId = SnowFlakeIdGenerator.generateId();</span>
+<span class="fc" id="L219">        List&lt;Tag&gt; tags = monitor.getTags();</span>
+<span class="fc bfc" id="L220" title="All 2 branches covered.">        if (tags == null) {</span>
+<span class="fc" id="L221">            tags = new LinkedList&lt;&gt;();</span>
+<span class="fc" id="L222">            monitor.setTags(tags);</span>
+        }
+<span class="fc" id="L224">        tags.add(Tag.builder().name(CommonConstants.TAG_MONITOR_ID).value(String.valueOf(monitorId)).type((byte) 0).build());</span>
+<span class="fc" id="L225">        tags.add(Tag.builder().name(CommonConstants.TAG_MONITOR_NAME).value(String.valueOf(monitor.getName())).type((byte) 0).build());</span>
+<span class="fc" id="L226">        Job appDefine = appService.getAppDefine(monitor.getApp());</span>
+        //设置用户可选指标
+<span class="fc" id="L228">        List&lt;Metrics&gt; metricsDefine = appDefine.getMetrics();</span>
+<span class="fc" id="L229">        Set&lt;String&gt; metricsDefineNamesSet = metricsDefine.stream()</span>
+<span class="fc" id="L230">                .map(Metrics::getName)</span>
+<span class="fc" id="L231">                .collect(Collectors.toSet());</span>
+<span class="pc bpc" id="L232" title="1 of 4 branches missed.">        if (CollectionUtils.isEmpty(metrics) || !metricsDefineNamesSet.containsAll(metrics)) {</span>
+<span class="fc" id="L233">            throw new MonitorMetricsException(&quot;no select metrics or select illegal metrics&quot;);</span>
+        }
+
+<span class="fc" id="L236">        List&lt;Metrics&gt; realMetrics = metricsDefine.stream().filter(m -&gt; metrics.contains(m.getName())).collect(Collectors.toList());</span>
+<span class="fc" id="L237">        appDefine.setMetrics(realMetrics);</span>
+<span class="fc" id="L238">        appDefine.setMonitorId(monitorId);</span>
+<span class="fc" id="L239">        appDefine.setInterval(monitor.getIntervals());</span>
+<span class="fc" id="L240">        appDefine.setCyclic(true);</span>
+<span class="fc" id="L241">        appDefine.setTimestamp(System.currentTimeMillis());</span>
+<span class="fc" id="L242">        List&lt;Configmap&gt; configmaps = params.stream().map(param -&gt; {</span>
+<span class="fc" id="L243">            param.setMonitorId(monitorId);</span>
+<span class="fc" id="L244">            return new Configmap(param.getField(), param.getValue(), param.getType());</span>
+<span class="fc" id="L245">        }).collect(Collectors.toList());</span>
+<span class="fc" id="L246">        appDefine.setConfigmap(configmaps);</span>
+        // Send the collection task to get the job ID
+        // 下发采集任务得到jobId
+<span class="fc" id="L249">        long jobId = collectJobScheduling.addAsyncCollectJob(appDefine, null);</span>
+        // Brush the library after the download is successful
+        // 下发成功后刷库
+        try {
+<span class="fc" id="L253">            monitor.setId(monitorId);</span>
+<span class="fc" id="L254">            monitor.setJobId(jobId);</span>
+<span class="fc" id="L255">            monitor.setStatus(CommonConstants.AVAILABLE_CODE);</span>
+<span class="nc" id="L256">            monitorDao.save(monitor);</span>
+<span class="nc" id="L257">            paramDao.saveAll(params);</span>
+<span class="fc" id="L258">        } catch (Exception e) {</span>
+<span class="fc" id="L259">            log.error(e.getMessage(), e);</span>
+            // Repository brushing abnormally cancels the previously delivered task
+            // 刷库异常取消之前的下发任务
+<span class="fc" id="L262">            collectJobScheduling.cancelAsyncCollectJob(jobId);</span>
+<span class="fc" id="L263">            throw new MonitorDatabaseException(e.getMessage());</span>
+<span class="nc" id="L264">        }</span>
+<span class="nc" id="L265">    }</span>
+
+    @Override
+    public List&lt;String&gt; getMonitorMetrics(String app) {
+<span class="nc" id="L269">        return appService.getAppDefineMetricNames(app);</span>
+    }
+
+    @Override
+    public void export(List&lt;Long&gt; ids, String type, HttpServletResponse res) throws Exception {
+<span class="nc" id="L274">        var imExportService = imExportServiceMap.get(type);</span>
+<span class="nc bnc" id="L275" title="All 2 branches missed.">        if (imExportService == null) {</span>
+<span class="nc" id="L276">            throw new IllegalArgumentException(&quot;not support export type: &quot; + type);</span>
+        }
+<span class="nc" id="L278">        var fileName = imExportService.getFileName();</span>
+<span class="nc" id="L279">        res.setHeader(&quot;content-type&quot;, &quot;application/octet-stream;charset=UTF-8&quot;);</span>
+<span class="nc" id="L280">        res.setContentType(&quot;application/octet-stream;charset=UTF-8&quot;);</span>
+<span class="nc" id="L281">        res.setHeader(HttpHeaders.CONTENT_DISPOSITION, &quot;attachment;filename=&quot; + URLEncoder.encode(fileName, StandardCharsets.UTF_8));</span>
+<span class="nc" id="L282">        res.setHeader(&quot;Access-Control-Expose-Headers&quot;, &quot;Content-Disposition&quot;);</span>
+<span class="nc" id="L283">        imExportService.exportConfig(res.getOutputStream(), ids);</span>
+<span class="nc" id="L284">    }</span>
+
+    @Override
+    public void importConfig(MultipartFile file) throws Exception {
+<span class="nc" id="L288">        var fileName = file.getOriginalFilename();</span>
+<span class="nc bnc" id="L289" title="All 2 branches missed.">        if (!StringUtils.hasText(fileName)) {</span>
+<span class="nc" id="L290">            return;</span>
+        }
+<span class="nc" id="L292">        var type = &quot;&quot;;</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">        if (fileName.toLowerCase().endsWith(JsonImExportServiceImpl.FILE_SUFFIX)) {</span>
+<span class="nc" id="L294">            type = JsonImExportServiceImpl.TYPE;</span>
+        }
+<span class="nc bnc" id="L296" title="All 2 branches missed.">        if (fileName.toLowerCase().endsWith(ExcelImExportServiceImpl.FILE_SUFFIX)) {</span>
+<span class="nc" id="L297">            type = ExcelImExportServiceImpl.TYPE;</span>
+        }
+<span class="nc bnc" id="L299" title="All 2 branches missed.">        if (fileName.toLowerCase().endsWith(YamlImExportServiceImpl.FILE_SUFFIX)) {</span>
+<span class="nc" id="L300">            type = YamlImExportServiceImpl.TYPE;</span>
+        }
+<span class="nc bnc" id="L302" title="All 2 branches missed.">        if (!imExportServiceMap.containsKey(type)) {</span>
+<span class="nc" id="L303">            throw new RuntimeException(&quot;file &quot; + fileName + &quot; is not supported.&quot;);</span>
+        }
+<span class="nc" id="L305">        var imExportService = imExportServiceMap.get(type);</span>
+<span class="nc" id="L306">        imExportService.importConfig(file.getInputStream());</span>
+<span class="nc" id="L307">    }</span>
+
+
+    @Override
+    @Transactional(readOnly = true)
+    public void validate(MonitorDto monitorDto, Boolean isModify) throws IllegalArgumentException {
+        // The request monitoring parameter matches the monitoring parameter definition mapping check
+        // 请求监控参数与监控参数定义映射校验匹配
+<span class="fc" id="L315">        Monitor monitor = monitorDto.getMonitor();</span>
+<span class="fc" id="L316">        monitor.setHost(monitor.getHost().trim());</span>
+<span class="fc" id="L317">        monitor.setName(monitor.getName().trim());</span>
+<span class="fc" id="L318">        Map&lt;String, Param&gt; paramMap = monitorDto.getParams()</span>
+<span class="fc" id="L319">                .stream()</span>
+<span class="fc" id="L320">                .peek(param -&gt; {</span>
+<span class="fc" id="L321">                    param.setMonitorId(monitor.getId());</span>
+<span class="fc bfc" id="L322" title="All 2 branches covered.">                    String value = param.getValue() == null ? null : param.getValue().trim();</span>
+<span class="fc" id="L323">                    param.setValue(value);</span>
+<span class="fc" id="L324">                })</span>
+<span class="fc" id="L325">                .collect(Collectors.toMap(Param::getField, param -&gt; param));</span>
+        // Check name uniqueness and can not equal app type    
+<span class="pc bpc" id="L327" title="1 of 2 branches missed.">        if (isModify != null) {</span>
+<span class="fc" id="L328">            Optional&lt;Job&gt; defineOptional = appService.getAppDefineOption(monitor.getName());</span>
+<span class="pc bpc" id="L329" title="1 of 2 branches missed.">            if (defineOptional.isPresent()) {</span>
+<span class="nc" id="L330">                throw new IllegalArgumentException(&quot;Monitoring name cannot be the existed monitoring type name!&quot;);</span>
+            }
+<span class="fc" id="L332">            Optional&lt;Monitor&gt; monitorOptional = monitorDao.findMonitorByNameEquals(monitor.getName());</span>
+<span class="pc bpc" id="L333" title="1 of 2 branches missed.">            if (monitorOptional.isPresent()) {</span>
+<span class="fc" id="L334">                Monitor existMonitor = monitorOptional.get();</span>
+<span class="pc bpc" id="L335" title="1 of 2 branches missed.">                if (isModify) {</span>
+<span class="fc bfc" id="L336" title="All 2 branches covered.">                    if (!existMonitor.getId().equals(monitor.getId())) {</span>
+<span class="fc" id="L337">                        throw new IllegalArgumentException(&quot;Monitoring name already exists!&quot;);</span>
+                    }
+                } else {
+<span class="nc" id="L340">                    throw new IllegalArgumentException(&quot;Monitoring name already exists!&quot;);</span>
+                }
+            }
+        }
+<span class="pc bpc" id="L344" title="1 of 2 branches missed.">        if (monitor.getTags() != null) {</span>
+<span class="nc" id="L345">            monitor.setTags(monitor.getTags().stream().distinct().collect(Collectors.toList()));</span>
+        }
+        // the dispatch collector must exist if pin
+<span class="pc bpc" id="L348" title="1 of 2 branches missed.">        if (StringUtils.hasText(monitorDto.getCollector())) {</span>
+<span class="nc" id="L349">            Optional&lt;Collector&gt; optionalCollector = collectorDao.findCollectorByName(monitorDto.getCollector());</span>
+<span class="nc bnc" id="L350" title="All 2 branches missed.">            if (optionalCollector.isEmpty()) {</span>
+<span class="nc" id="L351">                throw new IllegalArgumentException(&quot;The pinned collector does not exist.&quot;);</span>
+            }
+<span class="nc" id="L353">        } else {</span>
+<span class="fc" id="L354">            monitorDto.setCollector(null);</span>
+        }
+        // Parameter definition structure verification  参数定义结构校验
+<span class="fc" id="L357">        List&lt;ParamDefine&gt; paramDefines = appService.getAppParamDefines(monitorDto.getMonitor().getApp());</span>
+<span class="pc bpc" id="L358" title="1 of 2 branches missed.">        if (paramDefines != null) {</span>
+<span class="fc bfc" id="L359" title="All 2 branches covered.">            for (ParamDefine paramDefine : paramDefines) {</span>
+<span class="fc" id="L360">                String field = paramDefine.getField();</span>
+<span class="fc" id="L361">                Param param = paramMap.get(field);</span>
+<span class="pc bpc" id="L362" title="2 of 6 branches missed.">                if (paramDefine.isRequired() &amp;&amp; (param == null || param.getValue() == null)) {</span>
+<span class="fc" id="L363">                    throw new IllegalArgumentException(&quot;Params field &quot; + field + &quot; is required.&quot;);</span>
+                }
+<span class="pc bpc" id="L365" title="3 of 6 branches missed.">                if (param != null &amp;&amp; param.getValue() != null &amp;&amp; !&quot;&quot;.equals(param.getValue())) {</span>
+<span class="pc bpc" id="L366" title="5 of 11 branches missed.">                    switch (paramDefine.getType()) {</span>
+                        case &quot;number&quot;:
+                            double doubleValue;
+                            try {
+<span class="fc" id="L370">                                doubleValue = Double.parseDouble(param.getValue());</span>
+<span class="fc" id="L371">                            } catch (Exception e) {</span>
+<span class="fc" id="L372">                                throw new IllegalArgumentException(&quot;Params field &quot; + field + &quot; type &quot;</span>
+<span class="fc" id="L373">                                        + paramDefine.getType() + &quot; is invalid.&quot;);</span>
+<span class="fc" id="L374">                            }</span>
+<span class="pc bpc" id="L375" title="1 of 2 branches missed.">                            if (paramDefine.getRange() != null) {</span>
+<span class="pc bpc" id="L376" title="1 of 2 branches missed.">                                if (!IntervalExpressionUtil.validNumberIntervalExpress(doubleValue,</span>
+<span class="fc" id="L377">                                        paramDefine.getRange())) {</span>
+<span class="fc" id="L378">                                    throw new IllegalArgumentException(&quot;Params field &quot; + field + &quot; type &quot;</span>
+<span class="fc" id="L379">                                            + paramDefine.getType() + &quot; over range &quot; + paramDefine.getRange());</span>
+                                }
+                            }
+<span class="nc" id="L382">                            param.setType(CommonConstants.PARAM_TYPE_NUMBER);</span>
+<span class="nc" id="L383">                            break;</span>
+                        case &quot;textarea&quot;:
+<span class="nc" id="L385">                            Short textareaLimit = paramDefine.getLimit();</span>
+<span class="nc bnc" id="L386" title="All 4 branches missed.">                            if (textareaLimit != null &amp;&amp; param.getValue().length() &gt; textareaLimit) {</span>
+<span class="nc" id="L387">                                throw new IllegalArgumentException(&quot;Params field &quot; + field + &quot; type &quot;</span>
+<span class="nc" id="L388">                                        + paramDefine.getType() + &quot; over limit &quot; + param.getValue());</span>
+                            }
+                            break;
+                        case &quot;text&quot;:
+<span class="fc" id="L392">                            Short textLimit = paramDefine.getLimit();</span>
+<span class="pc bpc" id="L393" title="2 of 4 branches missed.">                            if (textLimit != null &amp;&amp; param.getValue().length() &gt; textLimit) {</span>
+<span class="fc" id="L394">                                throw new IllegalArgumentException(&quot;Params field &quot; + field + &quot; type &quot;</span>
+<span class="fc" id="L395">                                        + paramDefine.getType() + &quot; over limit &quot; + textLimit);</span>
+                            }
+                            break;
+                        case &quot;host&quot;:
+<span class="fc" id="L399">                            String hostValue = param.getValue();</span>
+<span class="pc bpc" id="L400" title="1 of 2 branches missed.">                            if (hostValue.toLowerCase().contains(HTTP)) {</span>
+<span class="nc" id="L401">                                hostValue = hostValue.replaceAll(PATTERN_HTTP, BLANK);</span>
+                            }
+<span class="pc bpc" id="L403" title="1 of 2 branches missed.">                            if (hostValue.toLowerCase().contains(HTTPS)) {</span>
+<span class="nc" id="L404">                                hostValue = hostValue.replace(PATTERN_HTTPS, BLANK);</span>
+                            }
+<span class="fc bfc" id="L406" title="All 2 branches covered.">                            if (!IpDomainUtil.validateIpDomain(hostValue)) {</span>
+<span class="fc" id="L407">                                throw new IllegalArgumentException(&quot;Params field &quot; + field + &quot; value &quot;</span>
+                                        + hostValue + &quot; is invalid host value.&quot;);
+                            }
+                            break;
+                        case &quot;password&quot;:
+                            // The plaintext password needs to be encrypted for transmission and storage
+                            // 明文密码需加密传输存储
+<span class="nc" id="L414">                            String passwordValue = param.getValue();</span>
+<span class="nc bnc" id="L415" title="All 2 branches missed.">                            if (!AesUtil.isCiphertext(passwordValue)) {</span>
+<span class="nc" id="L416">                                passwordValue = AesUtil.aesEncode(passwordValue);</span>
+<span class="nc" id="L417">                                param.setValue(passwordValue);</span>
+                            }
+<span class="nc" id="L419">                            param.setType(CommonConstants.PARAM_TYPE_PASSWORD);</span>
+<span class="nc" id="L420">                            break;</span>
+                        case &quot;boolean&quot;:
+                            // boolean check
+<span class="fc" id="L423">                            String booleanValue = param.getValue();</span>
+<span class="pc bpc" id="L424" title="1 of 4 branches missed.">                            if (!&quot;true&quot;.equalsIgnoreCase(booleanValue) &amp;&amp; !&quot;false&quot;.equalsIgnoreCase(booleanValue)) {</span>
+<span class="fc" id="L425">                                throw new IllegalArgumentException(&quot;Params field &quot; + field + &quot; value &quot;</span>
+                                        + booleanValue + &quot; is invalid boolean value.&quot;);
+                            }
+                            break;
+                        case &quot;radio&quot;:
+                            // radio single value check  radio单选值校验
+<span class="fc" id="L431">                            List&lt;ParamDefine.Option&gt; options = paramDefine.getOptions();</span>
+<span class="fc" id="L432">                            boolean invalid = true;</span>
+<span class="pc bpc" id="L433" title="1 of 2 branches missed.">                            if (options != null) {</span>
+<span class="fc bfc" id="L434" title="All 2 branches covered.">                                for (ParamDefine.Option option : options) {</span>
+<span class="fc bfc" id="L435" title="All 2 branches covered.">                                    if (param.getValue().equalsIgnoreCase(option.getValue())) {</span>
+<span class="fc" id="L436">                                        invalid = false;</span>
+<span class="fc" id="L437">                                        break;</span>
+                                    }
+<span class="fc" id="L439">                                }</span>
+                            }
+<span class="fc bfc" id="L441" title="All 2 branches covered.">                            if (invalid) {</span>
+<span class="fc" id="L442">                                throw new IllegalArgumentException(&quot;Params field &quot; + field + &quot; value &quot;</span>
+<span class="fc" id="L443">                                        + param.getValue() + &quot; is invalid option value&quot;);</span>
+                            }
+                            break;
+                        case &quot;checkbox&quot;:
+<span class="nc" id="L447">                            List&lt;ParamDefine.Option&gt; checkboxOptions = paramDefine.getOptions();</span>
+<span class="nc" id="L448">                            boolean checkboxInvalid = true;</span>
+<span class="nc bnc" id="L449" title="All 2 branches missed.">                            if (checkboxOptions != null) {</span>
+<span class="nc bnc" id="L450" title="All 2 branches missed.">                                for (ParamDefine.Option option : checkboxOptions) {</span>
+<span class="nc bnc" id="L451" title="All 2 branches missed.">                                    if (param.getValue().equalsIgnoreCase(option.getValue())) {</span>
+<span class="nc" id="L452">                                        checkboxInvalid = false;</span>
+<span class="nc" id="L453">                                        break;</span>
+                                    }
+<span class="nc" id="L455">                                }</span>
+                            }
+<span class="nc bnc" id="L457" title="All 2 branches missed.">                            if (checkboxInvalid) {</span>
+<span class="nc" id="L458">                                throw new IllegalArgumentException(&quot;Params field &quot; + field + &quot; value &quot;</span>
+<span class="nc" id="L459">                                        + param.getValue() + &quot; is invalid checkbox value&quot;);</span>
+                            }
+                            break;
+                        case &quot;metrics-field&quot;:
+                        case &quot;key-value&quot;:
+<span class="nc bnc" id="L464" title="All 2 branches missed.">                            if (JsonUtil.fromJson(param.getValue(), new TypeReference&lt;&gt;() {</span>
+                            }) == null) {
+<span class="nc" id="L466">                                throw new IllegalArgumentException(&quot;Params field &quot; + field + &quot; value &quot;</span>
+<span class="nc" id="L467">                                        + param.getValue() + &quot; is invalid key-value value&quot;);</span>
+                            }
+                            break;
+                        case &quot;array&quot;:
+<span class="nc" id="L471">                            String[] arrays = param.getValue().split(&quot;,&quot;);</span>
+<span class="nc bnc" id="L472" title="All 2 branches missed.">                            if (arrays.length == 0) {</span>
+<span class="nc" id="L473">                                throw new IllegalArgumentException(&quot;Param field&quot; + field + &quot; value &quot;</span>
+<span class="nc" id="L474">                                        + param.getValue() + &quot; is invalid arrays value&quot;);</span>
+                            }
+<span class="nc bnc" id="L476" title="All 4 branches missed.">                            if (param.getValue().startsWith(&quot;[&quot;) &amp;&amp; param.getValue().endsWith(&quot;]&quot;)) {</span>
+<span class="nc" id="L477">                                param.setValue(param.getValue().substring(1, param.getValue().length() - 1));</span>
+                            }
+                            break;
+                        // todo More parameter definitions and actual value format verification
+                        // 更多参数定义与实际值格式校验
+                        default:
+<span class="fc" id="L483">                            throw new IllegalArgumentException(&quot;ParamDefine type &quot; + paramDefine.getType() + &quot; is invalid.&quot;);</span>
+                    }
+                }
+<span class="fc" id="L486">            }</span>
+        }
+<span class="fc" id="L488">    }</span>
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void modifyMonitor(Monitor monitor, List&lt;Param&gt; params, String collector) throws RuntimeException {
+<span class="fc" id="L493">        long monitorId = monitor.getId();</span>
+        // Check to determine whether the monitor corresponding to the monitor id exists
+        // 查判断monitorId对应的此监控是否存在
+<span class="fc" id="L496">        Optional&lt;Monitor&gt; queryOption = monitorDao.findById(monitorId);</span>
+<span class="fc bfc" id="L497" title="All 2 branches covered.">        if (queryOption.isEmpty()) {</span>
+<span class="fc" id="L498">            throw new IllegalArgumentException(&quot;The Monitor &quot; + monitorId + &quot; not exists&quot;);</span>
+        }
+<span class="fc" id="L500">        Monitor preMonitor = queryOption.get();</span>
+<span class="fc bfc" id="L501" title="All 2 branches covered.">        if (!preMonitor.getApp().equals(monitor.getApp())) {</span>
+            // The type of monitoring cannot be modified
+            // 监控的类型不能修改
+<span class="fc" id="L504">            throw new IllegalArgumentException(&quot;Can not modify monitor's app type&quot;);</span>
+        }
+        // Auto Update Default Tags: monitorName
+        // 自动更新默认的Tag： 监控名字
+<span class="fc" id="L508">        List&lt;Tag&gt; tags = monitor.getTags();</span>
+<span class="pc bpc" id="L509" title="1 of 2 branches missed.">        if (tags == null) {</span>
+<span class="fc" id="L510">            tags = new LinkedList&lt;&gt;();</span>
+<span class="fc" id="L511">            monitor.setTags(tags);</span>
+        }
+<span class="pc bpc" id="L513" title="1 of 2 branches missed.">        for (Tag tag : tags) {</span>
+<span class="nc bnc" id="L514" title="All 2 branches missed.">            if (CommonConstants.TAG_MONITOR_NAME.equals(tag.getName())) {</span>
+<span class="nc" id="L515">                tag.setValue(monitor.getName());</span>
+            }
+<span class="nc" id="L517">        }</span>
+<span class="pc bpc" id="L518" title="1 of 2 branches missed.">        if (preMonitor.getStatus() != CommonConstants.UN_MANAGE_CODE) {</span>
+            // Construct the collection task Job entity
+            // 构造采集任务Job实体
+<span class="nc" id="L521">            Job appDefine = appService.getAppDefine(monitor.getApp());</span>
+<span class="nc bnc" id="L522" title="All 2 branches missed.">            if (CommonConstants.PROMETHEUS.equals(monitor.getApp())) {</span>
+<span class="nc" id="L523">                appDefine.setApp(CommonConstants.PROMETHEUS_APP_PREFIX + monitor.getName());</span>
+            }
+<span class="nc" id="L525">            appDefine.setId(preMonitor.getJobId());</span>
+<span class="nc" id="L526">            appDefine.setMonitorId(monitorId);</span>
+<span class="nc" id="L527">            appDefine.setInterval(monitor.getIntervals());</span>
+<span class="nc" id="L528">            appDefine.setCyclic(true);</span>
+<span class="nc" id="L529">            appDefine.setTimestamp(System.currentTimeMillis());</span>
+<span class="nc bnc" id="L530" title="All 2 branches missed.">            if (params != null) {</span>
+<span class="nc" id="L531">                List&lt;Configmap&gt; configmaps = params.stream().map(param -&gt;</span>
+<span class="nc" id="L532">                        new Configmap(param.getField(), param.getValue(), param.getType())).collect(Collectors.toList());</span>
+<span class="nc" id="L533">                appDefine.setConfigmap(configmaps);</span>
+            }
+            long newJobId;
+<span class="nc bnc" id="L536" title="All 2 branches missed.">            if (collector == null) {</span>
+<span class="nc" id="L537">                newJobId = collectJobScheduling.updateAsyncCollectJob(appDefine);</span>
+            } else {
+<span class="nc" id="L539">                newJobId = collectJobScheduling.updateAsyncCollectJob(appDefine, collector);</span>
+            }
+<span class="nc" id="L541">            monitor.setJobId(newJobId);</span>
+        }
+        // After the update is successfully released, refresh the database
+        // 下发更新成功后刷库
+        try {
+<span class="fc" id="L546">            collectorMonitorBindDao.deleteCollectorMonitorBindsByMonitorId(monitorId);</span>
+<span class="pc bpc" id="L547" title="1 of 2 branches missed.">            if (collector != null) {</span>
+<span class="nc" id="L548">                CollectorMonitorBind collectorMonitorBind = CollectorMonitorBind.builder()</span>
+<span class="nc" id="L549">                        .collector(collector).monitorId(monitorId)</span>
+<span class="nc" id="L550">                        .build();</span>
+<span class="nc" id="L551">                collectorMonitorBindDao.save(collectorMonitorBind);</span>
+            }
+<span class="fc" id="L553">            monitor.setStatus(preMonitor.getStatus());</span>
+            // force update gmtUpdate time, due the case: monitor not change, param change. we also think monitor change
+<span class="fc" id="L555">            monitor.setGmtUpdate(LocalDateTime.now());</span>
+<span class="nc" id="L556">            monitorDao.save(monitor);</span>
+<span class="nc bnc" id="L557" title="All 2 branches missed.">            if (params != null) {</span>
+<span class="nc" id="L558">                paramDao.saveAll(params);</span>
+            }
+<span class="fc" id="L560">        } catch (Exception e) {</span>
+<span class="fc" id="L561">            log.error(e.getMessage(), e);</span>
+            // Repository brushing abnormally cancels the previously delivered task
+            // 刷库异常取消之前的下发任务
+<span class="fc" id="L564">            collectJobScheduling.cancelAsyncCollectJob(monitor.getJobId());</span>
+<span class="fc" id="L565">            throw new MonitorDatabaseException(e.getMessage());</span>
+<span class="nc" id="L566">        }</span>
+<span class="nc" id="L567">    }</span>
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteMonitor(long id) throws RuntimeException {
+<span class="fc" id="L572">        Optional&lt;Monitor&gt; monitorOptional = monitorDao.findById(id);</span>
+<span class="pc bpc" id="L573" title="1 of 2 branches missed.">        if (monitorOptional.isPresent()) {</span>
+<span class="fc" id="L574">            Monitor monitor = monitorOptional.get();</span>
+<span class="fc" id="L575">            monitorDao.deleteById(id);</span>
+            // delete tag 删除监控对应的标签
+<span class="fc" id="L577">            tagService.deleteMonitorSystemTags(monitor);</span>
+<span class="fc" id="L578">            paramDao.deleteParamsByMonitorId(id);</span>
+<span class="fc" id="L579">            tagMonitorBindDao.deleteTagMonitorBindsByMonitorId(id);</span>
+<span class="fc" id="L580">            alertDefineBindDao.deleteAlertDefineMonitorBindsByMonitorIdEquals(id);</span>
+<span class="fc" id="L581">            collectorMonitorBindDao.deleteCollectorMonitorBindsByMonitorId(id);</span>
+<span class="fc" id="L582">            collectJobScheduling.cancelAsyncCollectJob(monitor.getJobId());</span>
+<span class="fc" id="L583">            applicationContext.publishEvent(new MonitorDeletedEvent(applicationContext, monitor.getId()));</span>
+        }
+<span class="fc" id="L585">    }</span>
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteMonitors(Set&lt;Long&gt; ids) throws RuntimeException {
+<span class="fc" id="L590">        List&lt;Monitor&gt; monitors = monitorDao.findMonitorsByIdIn(ids);</span>
+<span class="pc bpc" id="L591" title="1 of 2 branches missed.">        if (monitors != null) {</span>
+<span class="fc" id="L592">            monitorDao.deleteAll(monitors);</span>
+<span class="fc" id="L593">            paramDao.deleteParamsByMonitorIdIn(ids);</span>
+<span class="fc" id="L594">            Set&lt;Long&gt; monitorIds = monitors.stream().map(Monitor::getId).collect(Collectors.toSet());</span>
+<span class="fc" id="L595">            tagMonitorBindDao.deleteTagMonitorBindsByMonitorIdIn(monitorIds);</span>
+<span class="fc" id="L596">            alertDefineBindDao.deleteAlertDefineMonitorBindsByMonitorIdIn(monitorIds);</span>
+<span class="fc bfc" id="L597" title="All 2 branches covered.">            for (Monitor monitor : monitors) {</span>
+                // delete tag 删除监控对应的标签
+<span class="fc" id="L599">                tagService.deleteMonitorSystemTags(monitor);</span>
+<span class="fc" id="L600">                collectorMonitorBindDao.deleteCollectorMonitorBindsByMonitorId(monitor.getId());</span>
+<span class="fc" id="L601">                collectJobScheduling.cancelAsyncCollectJob(monitor.getJobId());</span>
+<span class="fc" id="L602">                applicationContext.publishEvent(new MonitorDeletedEvent(applicationContext, monitor.getId()));</span>
+<span class="fc" id="L603">            }</span>
+        }
+<span class="fc" id="L605">    }</span>
+
+    @Override
+    @Transactional(readOnly = true)
+    public MonitorDto getMonitorDto(long id) throws RuntimeException {
+<span class="fc" id="L610">        Optional&lt;Monitor&gt; monitorOptional = monitorDao.findById(id);</span>
+<span class="pc bpc" id="L611" title="1 of 2 branches missed.">        if (monitorOptional.isPresent()) {</span>
+<span class="fc" id="L612">            Monitor monitor = monitorOptional.get();</span>
+<span class="fc" id="L613">            MonitorDto monitorDto = new MonitorDto();</span>
+<span class="fc" id="L614">            monitorDto.setMonitor(monitor);</span>
+<span class="fc" id="L615">            List&lt;Param&gt; params = paramDao.findParamsByMonitorId(id);</span>
+<span class="fc" id="L616">            monitorDto.setParams(params);</span>
+<span class="pc bpc" id="L617" title="1 of 2 branches missed.">            if (DispatchConstants.PROTOCOL_PROMETHEUS.equalsIgnoreCase(monitor.getApp())) {</span>
+<span class="nc" id="L618">                List&lt;CollectRep.MetricsData&gt; metricsDataList = warehouseService.queryMonitorMetricsData(id);</span>
+<span class="nc" id="L619">                List&lt;String&gt; metrics = metricsDataList.stream().map(CollectRep.MetricsData::getMetrics).collect(Collectors.toList());</span>
+<span class="nc" id="L620">                monitorDto.setMetrics(metrics);</span>
+<span class="nc" id="L621">            } else {</span>
+<span class="fc" id="L622">                Job job = appService.getAppDefine(monitor.getApp());</span>
+<span class="fc" id="L623">                List&lt;String&gt; metrics = job.getMetrics().stream()</span>
+<span class="fc" id="L624">                        .filter(Metrics::isVisible)</span>
+<span class="fc" id="L625">                        .map(Metrics::getName).collect(Collectors.toList());</span>
+<span class="fc" id="L626">                monitorDto.setMetrics(metrics);   </span>
+            }
+<span class="fc" id="L628">            Optional&lt;CollectorMonitorBind&gt; bindOptional = collectorMonitorBindDao.findCollectorMonitorBindByMonitorId(monitor.getId());</span>
+<span class="pc" id="L629">            bindOptional.ifPresent(bind -&gt; monitorDto.setCollector(bind.getCollector()));</span>
+<span class="fc" id="L630">            return monitorDto;</span>
+        } else {
+<span class="nc" id="L632">            return null;</span>
+        }
+    }
+
+    @Override
+    public Page&lt;Monitor&gt; getMonitors(Specification&lt;Monitor&gt; specification, PageRequest pageRequest) {
+<span class="fc" id="L638">        return monitorDao.findAll(specification, pageRequest);</span>
+    }
+
+    @Override
+    public void cancelManageMonitors(HashSet&lt;Long&gt; ids) {
+        // Update monitoring status Delete corresponding monitoring periodic task
+        // 更新任务状态  删除对应的监控周期性任务
+        // The jobId is not deleted, and the jobId is reused again after the management is started.
+        // jobId不删除 待启动纳管之后再次复用jobId
+<span class="fc" id="L647">        List&lt;Monitor&gt; managedMonitors = monitorDao.findMonitorsByIdIn(ids)</span>
+<span class="fc" id="L648">                .stream().filter(monitor -&gt;</span>
+<span class="pc bpc" id="L649" title="1 of 2 branches missed.">                        monitor.getStatus() != CommonConstants.UN_MANAGE_CODE)</span>
+<span class="pc" id="L650">                .peek(monitor -&gt; monitor.setStatus(CommonConstants.UN_MANAGE_CODE))</span>
+<span class="fc" id="L651">                .collect(Collectors.toList());</span>
+<span class="pc bpc" id="L652" title="1 of 2 branches missed.">        if (!managedMonitors.isEmpty()) {</span>
+<span class="nc bnc" id="L653" title="All 2 branches missed.">            for (Monitor monitor : managedMonitors) {</span>
+<span class="nc" id="L654">                collectJobScheduling.cancelAsyncCollectJob(monitor.getJobId());</span>
+<span class="nc" id="L655">                monitor.setJobId(null);</span>
+<span class="nc" id="L656">            }</span>
+<span class="nc" id="L657">            monitorDao.saveAll(managedMonitors);</span>
+        }
+<span class="fc" id="L659">    }</span>
+
+    @Override
+    public void enableManageMonitors(HashSet&lt;Long&gt; ids) {
+        // Update monitoring status Add corresponding monitoring periodic task
+        // 更新任务状态 新增对应的监控周期性任务
+<span class="fc" id="L665">        List&lt;Monitor&gt; unManagedMonitors = monitorDao.findMonitorsByIdIn(ids)</span>
+<span class="fc" id="L666">                .stream().filter(monitor -&gt;</span>
+<span class="pc bpc" id="L667" title="1 of 2 branches missed.">                        monitor.getStatus() == CommonConstants.UN_MANAGE_CODE)</span>
+<span class="fc" id="L668">                .peek(monitor -&gt; monitor.setStatus(CommonConstants.AVAILABLE_CODE))</span>
+<span class="fc" id="L669">                .collect(Collectors.toList());</span>
+<span class="pc bpc" id="L670" title="1 of 2 branches missed.">        if (!unManagedMonitors.isEmpty()) {</span>
+<span class="fc bfc" id="L671" title="All 2 branches covered.">            for (Monitor monitor : unManagedMonitors) {</span>
+                // Construct the collection task Job entity
+                // 构造采集任务Job实体
+<span class="fc" id="L674">                Job appDefine = appService.getAppDefine(monitor.getApp());</span>
+<span class="pc bpc" id="L675" title="1 of 2 branches missed.">                if (CommonConstants.PROMETHEUS.equals(monitor.getApp())) {</span>
+<span class="nc" id="L676">                    appDefine.setApp(CommonConstants.PROMETHEUS_APP_PREFIX + monitor.getName());</span>
+                }
+<span class="fc" id="L678">                appDefine.setMonitorId(monitor.getId());</span>
+<span class="fc" id="L679">                appDefine.setInterval(monitor.getIntervals());</span>
+<span class="fc" id="L680">                appDefine.setCyclic(true);</span>
+<span class="fc" id="L681">                appDefine.setTimestamp(System.currentTimeMillis());</span>
+<span class="fc" id="L682">                List&lt;Param&gt; params = paramDao.findParamsByMonitorId(monitor.getId());</span>
+<span class="fc" id="L683">                List&lt;Configmap&gt; configmaps = params.stream().map(param -&gt;</span>
+<span class="fc" id="L684">                        new Configmap(param.getField(), param.getValue(), param.getType())).collect(Collectors.toList());</span>
+<span class="fc" id="L685">                List&lt;ParamDefine&gt; paramDefaultValue = appDefine.getParams().stream()</span>
+<span class="pc" id="L686">                        .filter(item -&gt; StringUtils.hasText(item.getDefaultValue()))</span>
+<span class="fc" id="L687">                        .collect(Collectors.toList());</span>
+<span class="fc" id="L688">                paramDefaultValue.forEach(defaultVar -&gt; {</span>
+<span class="nc bnc" id="L689" title="All 2 branches missed.">                    if (configmaps.stream().noneMatch(item -&gt; item.getKey().equals(defaultVar.getField()))) {</span>
+<span class="nc" id="L690">                        Configmap configmap = new Configmap(defaultVar.getField(), defaultVar.getDefaultValue(), (byte) 1);</span>
+<span class="nc" id="L691">                        configmaps.add(configmap);</span>
+                    }
+<span class="nc" id="L693">                });</span>
+<span class="fc" id="L694">                appDefine.setConfigmap(configmaps);</span>
+                // Issue collection tasks       下发采集任务
+<span class="fc" id="L696">                Optional&lt;CollectorMonitorBind&gt; bindOptional =</span>
+<span class="fc" id="L697">                        collectorMonitorBindDao.findCollectorMonitorBindByMonitorId(monitor.getId());</span>
+<span class="fc" id="L698">                long newJobId = bindOptional.map(bind -&gt;</span>
+<span class="nc" id="L699">                                collectJobScheduling.addAsyncCollectJob(appDefine, bind.getCollector()))</span>
+<span class="fc" id="L700">                        .orElseGet(() -&gt; collectJobScheduling.addAsyncCollectJob(appDefine, null));</span>
+<span class="fc" id="L701">                monitor.setJobId(newJobId);</span>
+<span class="fc" id="L702">                applicationContext.publishEvent(new MonitorDeletedEvent(applicationContext, monitor.getId()));</span>
+<span class="fc" id="L703">            }</span>
+<span class="fc" id="L704">            monitorDao.saveAll(unManagedMonitors);</span>
+        }
+<span class="fc" id="L706">    }</span>
+
+    @Override
+    public List&lt;AppCount&gt; getAllAppMonitorsCount() {
+<span class="fc" id="L710">        List&lt;AppCount&gt; appCounts = monitorDao.findAppsStatusCount();</span>
+<span class="pc bpc" id="L711" title="1 of 2 branches missed.">        if (appCounts == null) {</span>
+<span class="nc" id="L712">            return null;</span>
+        }
+        //Statistical category information, calculate the number of corresponding states for each monitor
+        //统计类别信息，计算每个监控分别对应状态的数量
+<span class="fc" id="L716">        Map&lt;String, AppCount&gt; appCountMap = new HashMap&lt;&gt;(appCounts.size());</span>
+<span class="fc bfc" id="L717" title="All 2 branches covered.">        for (AppCount item : appCounts) {</span>
+<span class="fc" id="L718">            AppCount appCount = appCountMap.getOrDefault(item.getApp(), new AppCount());</span>
+<span class="fc" id="L719">            appCount.setApp(item.getApp());</span>
+<span class="pc bpc" id="L720" title="3 of 4 branches missed.">            switch (item.getStatus()) {</span>
+                case CommonConstants.AVAILABLE_CODE:
+<span class="fc" id="L722">                    appCount.setAvailableSize(appCount.getAvailableSize() + item.getSize());</span>
+<span class="fc" id="L723">                    break;</span>
+                case CommonConstants.UN_AVAILABLE_CODE:
+<span class="nc" id="L725">                    appCount.setUnAvailableSize(appCount.getUnAvailableSize() + item.getSize());</span>
+<span class="nc" id="L726">                    break;</span>
+                case CommonConstants.UN_MANAGE_CODE:
+<span class="nc" id="L728">                    appCount.setUnManageSize(appCount.getUnManageSize() + item.getSize());</span>
+<span class="nc" id="L729">                    break;</span>
+                default:
+                    break;
+            }
+<span class="fc" id="L733">            appCountMap.put(item.getApp(), appCount);</span>
+<span class="fc" id="L734">        }</span>
+        //Traverse the map obtained by statistics and convert it into a List&lt;App Count&gt; result set
+        //遍历统计得到的map，转换成List&lt;App Count&gt;结果集
+<span class="fc" id="L737">        return appCountMap.values().stream().map(item -&gt; {</span>
+<span class="fc" id="L738">            item.setSize(item.getAvailableSize() + item.getUnManageSize() + item.getUnAvailableSize());</span>
+            try {
+<span class="fc" id="L740">                Job job = appService.getAppDefine(item.getApp());</span>
+<span class="fc" id="L741">                item.setCategory(job.getCategory());</span>
+<span class="nc" id="L742">            } catch (Exception ignored) {</span>
+<span class="nc" id="L743">                return null;</span>
+<span class="fc" id="L744">            }</span>
+<span class="fc" id="L745">            return item;</span>
+<span class="fc" id="L746">        }).filter(Objects::nonNull).collect(Collectors.toList());</span>
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void copyMonitors(List&lt;Long&gt; ids) {
+
+<span class="fc" id="L753">        ids.stream().parallel().forEach(id -&gt; {</span>
+            // get monitor and Params according id
+<span class="fc" id="L755">            Optional&lt;Monitor&gt; monitorOpt = monitorDao.findById(id);</span>
+<span class="fc" id="L756">            List&lt;Param&gt; params = paramDao.findParamsByMonitorId(id);</span>
+
+<span class="fc" id="L758">            monitorOpt.ifPresentOrElse(monitor -&gt; {</span>
+                // deep copy original monitor to achieve persist in JPA
+<span class="fc" id="L760">                Monitor newMonitor = JsonUtil.fromJson(JsonUtil.toJson(monitor), Monitor.class);</span>
+<span class="pc bpc" id="L761" title="1 of 2 branches missed.">                if (newMonitor != null) {</span>
+<span class="fc" id="L762">                    copyMonitor(newMonitor, params);   </span>
+                }
+<span class="pc" id="L764">            }, () -&gt; log.warn(&quot;can not find the monitor for id ：{}&quot;, id));</span>
+<span class="fc" id="L765">        });</span>
+<span class="fc" id="L766">    }</span>
+
+    @Override
+    public void updateAppCollectJob(Job job) {
+<span class="nc" id="L770">        List&lt;Monitor&gt; monitors = monitorDao.findMonitorsByAppEquals(job.getApp()).</span>
+<span class="nc bnc" id="L771" title="All 2 branches missed.">                stream().filter(monitor -&gt; monitor.getStatus() != CommonConstants.UN_MANAGE_CODE)</span>
+<span class="nc" id="L772">                .collect(Collectors.toList());</span>
+<span class="nc" id="L773">        List&lt;CollectorMonitorBind&gt; monitorBinds = collectorMonitorBindDao.findCollectorMonitorBindsByMonitorIdIn(</span>
+<span class="nc" id="L774">                monitors.stream().map(Monitor::getId).collect(Collectors.toSet()));</span>
+<span class="nc" id="L775">        Map&lt;Long, String&gt; monitorIdCollectorMap = monitorBinds.stream().collect(</span>
+<span class="nc" id="L776">                Collectors.toMap(CollectorMonitorBind::getMonitorId, CollectorMonitorBind::getCollector));</span>
+<span class="nc bnc" id="L777" title="All 2 branches missed.">        for (Monitor monitor : monitors) {</span>
+            try {
+<span class="nc" id="L779">                Job appDefine = job.clone();</span>
+<span class="nc bnc" id="L780" title="All 8 branches missed.">                if (monitor == null || appDefine == null || monitor.getId() == null || monitor.getJobId() == null) {</span>
+<span class="nc" id="L781">                    log.error(&quot;update monitor job error when template modify, define | id | jobId is null. continue&quot;);</span>
+<span class="nc" id="L782">                    continue;</span>
+                }
+<span class="nc bnc" id="L784" title="All 2 branches missed.">                if (CommonConstants.PROMETHEUS.equals(monitor.getApp())) {</span>
+<span class="nc" id="L785">                    appDefine.setApp(CommonConstants.PROMETHEUS_APP_PREFIX + monitor.getName());</span>
+                }
+<span class="nc" id="L787">                appDefine.setId(monitor.getJobId());</span>
+<span class="nc" id="L788">                appDefine.setMonitorId(monitor.getId());</span>
+<span class="nc" id="L789">                appDefine.setInterval(monitor.getIntervals());</span>
+<span class="nc" id="L790">                appDefine.setCyclic(true);</span>
+<span class="nc" id="L791">                appDefine.setTimestamp(System.currentTimeMillis());</span>
+<span class="nc" id="L792">                List&lt;Param&gt; params = paramDao.findParamsByMonitorId(monitor.getId());</span>
+<span class="nc" id="L793">                List&lt;Configmap&gt; configmaps = params.stream().map(param -&gt; new Configmap(param.getField(),</span>
+<span class="nc" id="L794">                        param.getValue(), param.getType())).collect(Collectors.toList());</span>
+<span class="nc" id="L795">                List&lt;ParamDefine&gt; paramDefaultValue = appDefine.getParams().stream()</span>
+<span class="nc" id="L796">                        .filter(item -&gt; StringUtils.hasText(item.getDefaultValue()))</span>
+<span class="nc" id="L797">                        .collect(Collectors.toList());</span>
+<span class="nc" id="L798">                paramDefaultValue.forEach(defaultVar -&gt; {</span>
+<span class="nc bnc" id="L799" title="All 2 branches missed.">                    if (configmaps.stream().noneMatch(item -&gt; item.getKey().equals(defaultVar.getField()))) {</span>
+<span class="nc" id="L800">                        Configmap configmap = new Configmap(defaultVar.getField(), defaultVar.getDefaultValue(), (byte) 1);</span>
+<span class="nc" id="L801">                        configmaps.add(configmap);</span>
+                    }
+<span class="nc" id="L803">                });</span>
+<span class="nc" id="L804">                appDefine.setConfigmap(configmaps);</span>
+                // if is pinned collector
+<span class="nc" id="L806">                String collector = monitorIdCollectorMap.get(monitor.getId());</span>
+                // 下发采集任务
+<span class="nc" id="L808">                long newJobId = collectJobScheduling.updateAsyncCollectJob(appDefine, collector);</span>
+<span class="nc" id="L809">                monitor.setJobId(newJobId);</span>
+<span class="nc" id="L810">                monitorDao.save(monitor);   </span>
+<span class="nc" id="L811">            } catch (Exception e) {</span>
+<span class="nc" id="L812">                log.error(&quot;update monitor job error when template modify: {}.continue&quot;, e.getMessage(), e);</span>
+<span class="nc" id="L813">            }</span>
+<span class="nc" id="L814">        }</span>
+<span class="nc" id="L815">    }</span>
+
+    @Override
+    public Monitor getMonitor(Long monitorId) {
+<span class="fc" id="L819">        return monitorDao.findById(monitorId).orElse(null);</span>
+    }
+
+    @Override
+    public void updateMonitorStatus(Long monitorId, byte status) {
+<span class="fc" id="L824">        monitorDao.updateMonitorStatus(monitorId, status);</span>
+<span class="fc" id="L825">    }</span>
+
+    @Override
+    public List&lt;Monitor&gt; getAppMonitors(String app) {
+<span class="nc" id="L829">        return monitorDao.findMonitorsByAppEquals(app);</span>
+    }
+
+    private void copyMonitor(Monitor monitor, List&lt;Param&gt; params) {
+<span class="fc" id="L833">        List&lt;Tag&gt; oldTags = monitor.getTags();</span>
+<span class="fc" id="L834">        List&lt;Tag&gt; newTags = filterTags(oldTags);</span>
+
+<span class="fc" id="L836">        monitor.setTags(newTags);</span>
+
+<span class="fc" id="L838">        monitor.setName(String.format(&quot;%s - copy&quot;, monitor.getName()));</span>
+<span class="fc" id="L839">        addMonitor(monitor, params, null);</span>
+<span class="fc" id="L840">    }</span>
+
+    private List&lt;Tag&gt; filterTags(List&lt;Tag&gt; tags) {
+<span class="pc bpc" id="L843" title="3 of 4 branches missed.">        if (tags == null || tags.isEmpty()) {</span>
+<span class="fc" id="L844">            return new LinkedList&lt;&gt;();</span>
+        }
+<span class="nc" id="L846">        return tags.stream()</span>
+<span class="nc bnc" id="L847" title="All 4 branches missed.">                .filter(tag -&gt; !(tag.getName().equals(CommonConstants.TAG_MONITOR_ID) || tag.getName().equals(CommonConstants.TAG_MONITOR_NAME)))</span>
+<span class="nc" id="L848">                .collect(Collectors.toList());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

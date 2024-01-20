@@ -1,0 +1,337 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PrometheusAutoCollectImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.prometheus</a> &gt; <span class="el_source">PrometheusAutoCollectImpl.java</span></div><h1>PrometheusAutoCollectImpl.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.collector.collect.prometheus;
+
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.net.util.Base64;
+import org.apache.http.HttpHeaders;
+import org.apache.http.HttpHost;
+import org.apache.http.HttpStatus;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.AuthCache;
+import org.apache.http.client.ClientProtocolException;
+import org.apache.http.client.CredentialsProvider;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.client.methods.RequestBuilder;
+import org.apache.http.client.protocol.HttpClientContext;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.auth.DigestScheme;
+import org.apache.http.impl.client.BasicAuthCache;
+import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.protocol.HttpContext;
+import org.apache.http.util.EntityUtils;
+import org.dromara.hertzbeat.collector.collect.common.http.CommonHttpClient;
+import org.dromara.hertzbeat.collector.collect.prometheus.parser.MetricFamily;
+import org.dromara.hertzbeat.collector.collect.prometheus.parser.TextParser;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.collector.util.CollectUtil;
+import org.dromara.hertzbeat.common.constants.CollectorConstants;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.job.protocol.PrometheusProtocol;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+import org.dromara.hertzbeat.common.util.IpDomainUtil;
+import org.springframework.util.StringUtils;
+
+import javax.net.ssl.SSLException;
+import java.io.IOException;
+import java.io.InterruptedIOException;
+import java.net.ConnectException;
+import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import static org.dromara.hertzbeat.common.constants.SignConstants.RIGHT_DASH;
+
+
+/**
+ * prometheus auto collect
+ * @author tomsun28
+ */
+<span class="nc" id="L72">@Slf4j</span>
+public class PrometheusAutoCollectImpl {
+    
+<span class="nc" id="L75">    private final Set&lt;Integer&gt; defaultSuccessStatusCodes = Stream.of(HttpStatus.SC_OK, HttpStatus.SC_CREATED,</span>
+<span class="nc" id="L76">            HttpStatus.SC_ACCEPTED, HttpStatus.SC_MULTIPLE_CHOICES, HttpStatus.SC_MOVED_PERMANENTLY,</span>
+<span class="nc" id="L77">            HttpStatus.SC_MOVED_TEMPORARILY).collect(Collectors.toSet());</span>
+    
+<span class="nc" id="L79">    public PrometheusAutoCollectImpl() {</span>
+<span class="nc" id="L80">    }</span>
+    
+    public List&lt;CollectRep.MetricsData&gt; collect(CollectRep.MetricsData.Builder builder,
+                                                Metrics metrics) {
+        try {
+<span class="nc" id="L85">            validateParams(metrics);</span>
+<span class="nc" id="L86">        } catch (Exception e) {</span>
+<span class="nc" id="L87">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L88">            builder.setMsg(e.getMessage());</span>
+<span class="nc" id="L89">            return null;</span>
+<span class="nc" id="L90">        }</span>
+<span class="nc" id="L91">        HttpContext httpContext = createHttpContext(metrics.getPrometheus());</span>
+<span class="nc" id="L92">        HttpUriRequest request = createHttpRequest(metrics.getPrometheus());</span>
+        try {
+<span class="nc" id="L94">            CloseableHttpResponse response = CommonHttpClient.getHttpClient()</span>
+<span class="nc" id="L95">                                                     .execute(request, httpContext);</span>
+<span class="nc" id="L96">            int statusCode = response.getStatusLine().getStatusCode();</span>
+<span class="nc" id="L97">            boolean isSuccessInvoke = defaultSuccessStatusCodes.contains(statusCode);</span>
+<span class="nc" id="L98">            log.debug(&quot;http response status: {}&quot;, statusCode);</span>
+<span class="nc bnc" id="L99" title="All 2 branches missed.">            if (!isSuccessInvoke) {</span>
+<span class="nc" id="L100">                builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L101">                builder.setMsg(&quot;StatusCode &quot; + statusCode);</span>
+<span class="nc" id="L102">                return null;</span>
+            }
+            // todo 这里直接将InputStream转为了String, 对于prometheus exporter大数据来说, 会生成大对象, 可能会严重影响JVM内存空间
+            // todo 方法一、使用InputStream进行解析, 代码改动大; 方法二、手动触发gc, 可以参考dubbo for long i
+<span class="nc" id="L106">            String resp = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);</span>
+<span class="nc" id="L107">            long collectTime = System.currentTimeMillis();</span>
+<span class="nc" id="L108">            builder.setTime(collectTime);</span>
+<span class="nc bnc" id="L109" title="All 4 branches missed.">            if (resp == null || &quot;&quot;.equals(resp)) {</span>
+<span class="nc" id="L110">                log.error(&quot;http response content is empty, status: {}.&quot;, statusCode);</span>
+<span class="nc" id="L111">                builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L112">                builder.setMsg(&quot;http response content is empty&quot;);</span>
+            } else {
+                try {
+<span class="nc" id="L115">                    return parseResponseByPrometheusExporter(resp, metrics.getAliasFields(), builder);</span>
+<span class="nc" id="L116">                } catch (Exception e) {</span>
+<span class="nc" id="L117">                    log.info(&quot;parse error: {}.&quot;, e.getMessage(), e);</span>
+<span class="nc" id="L118">                    builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L119">                    builder.setMsg(&quot;parse response data error:&quot; + e.getMessage());</span>
+                }   
+            }
+<span class="nc" id="L122">        } catch (ClientProtocolException e1) {</span>
+<span class="nc" id="L123">            String errorMsg = CommonUtil.getMessageFromThrowable(e1);</span>
+<span class="nc" id="L124">            log.error(errorMsg);</span>
+<span class="nc" id="L125">            builder.setCode(CollectRep.Code.UN_CONNECTABLE);</span>
+<span class="nc" id="L126">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L127">        } catch (UnknownHostException e2) {</span>
+<span class="nc" id="L128">            String errorMsg = CommonUtil.getMessageFromThrowable(e2);</span>
+<span class="nc" id="L129">            log.info(errorMsg);</span>
+<span class="nc" id="L130">            builder.setCode(CollectRep.Code.UN_REACHABLE);</span>
+<span class="nc" id="L131">            builder.setMsg(&quot;unknown host:&quot; + errorMsg);</span>
+<span class="nc" id="L132">        } catch (InterruptedIOException | ConnectException | SSLException e3) {</span>
+<span class="nc" id="L133">            String errorMsg = CommonUtil.getMessageFromThrowable(e3);</span>
+<span class="nc" id="L134">            log.info(errorMsg);</span>
+<span class="nc" id="L135">            builder.setCode(CollectRep.Code.UN_CONNECTABLE);</span>
+<span class="nc" id="L136">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L137">        } catch (IOException e4) {</span>
+<span class="nc" id="L138">            String errorMsg = CommonUtil.getMessageFromThrowable(e4);</span>
+<span class="nc" id="L139">            log.info(errorMsg);</span>
+<span class="nc" id="L140">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L141">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L142">        } catch (Exception e) {</span>
+<span class="nc" id="L143">            String errorMsg = CommonUtil.getMessageFromThrowable(e);</span>
+<span class="nc" id="L144">            log.error(errorMsg, e);</span>
+<span class="nc" id="L145">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L146">            builder.setMsg(errorMsg);</span>
+        } finally {
+<span class="nc bnc" id="L148" title="All 2 branches missed.">            if (request != null) {</span>
+<span class="nc" id="L149">                request.abort();</span>
+            }
+        }
+<span class="nc" id="L152">        return Collections.singletonList(builder.build());</span>
+    }
+    
+    public String supportProtocol() {
+<span class="nc" id="L156">        return DispatchConstants.PROTOCOL_PROMETHEUS;</span>
+    }
+    
+    private void validateParams(Metrics metrics) throws Exception {
+<span class="nc bnc" id="L160" title="All 4 branches missed.">        if (metrics == null || metrics.getPrometheus() == null) {</span>
+<span class="nc" id="L161">            throw new Exception(&quot;Prometheus collect must has prometheus params&quot;);</span>
+        }
+<span class="nc" id="L163">        PrometheusProtocol protocol = metrics.getPrometheus();</span>
+<span class="nc bnc" id="L164" title="All 2 branches missed.">        if (protocol.getPath() == null</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">                    || &quot;&quot;.equals(protocol.getPath())</span>
+<span class="nc bnc" id="L166" title="All 2 branches missed.">                    || !protocol.getPath().startsWith(RIGHT_DASH)) {</span>
+<span class="nc bnc" id="L167" title="All 2 branches missed.">            protocol.setPath(protocol.getPath() == null ? RIGHT_DASH : RIGHT_DASH + protocol.getPath().trim());</span>
+        }
+<span class="nc" id="L169">    }</span>
+    
+    private List&lt;CollectRep.MetricsData&gt; parseResponseByPrometheusExporter(String resp, List&lt;String&gt; aliasFields,
+                                                                           CollectRep.MetricsData.Builder builder) {
+<span class="nc" id="L173">        Map&lt;String, MetricFamily&gt; metricFamilyMap = TextParser.textToMetricFamilies(resp);</span>
+<span class="nc" id="L174">        List&lt;CollectRep.MetricsData&gt; metricsDataList = new LinkedList&lt;&gt;();</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">        for (Map.Entry&lt;String, MetricFamily&gt; entry : metricFamilyMap.entrySet()) {</span>
+<span class="nc" id="L176">            builder.clearMetrics();</span>
+<span class="nc" id="L177">            builder.clearFields();</span>
+<span class="nc" id="L178">            builder.clearValues();</span>
+<span class="nc" id="L179">            String metricsName = entry.getKey();</span>
+<span class="nc" id="L180">            builder.setMetrics(metricsName);</span>
+<span class="nc" id="L181">            MetricFamily metricFamily = entry.getValue();</span>
+<span class="nc bnc" id="L182" title="All 2 branches missed.">            if (!metricFamily.getMetricList().isEmpty()) {</span>
+<span class="nc" id="L183">                List&lt;String&gt; metricsFields = new LinkedList&lt;&gt;();</span>
+<span class="nc bnc" id="L184" title="All 2 branches missed.">                for (int index = 0; index &lt; metricFamily.getMetricList().size(); index++) {</span>
+<span class="nc" id="L185">                    MetricFamily.Metric metric = metricFamily.getMetricList().get(index);</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">                    if (index == 0) {</span>
+<span class="nc" id="L187">                        metric.getLabels().forEach(label -&gt; {</span>
+<span class="nc" id="L188">                            metricsFields.add(label.getName());</span>
+<span class="nc" id="L189">                            builder.addFields(CollectRep.Field.newBuilder().setName(label.getName())</span>
+<span class="nc" id="L190">                                    .setType(CommonConstants.TYPE_STRING).setLabel(true).build());</span>
+<span class="nc" id="L191">                        });</span>
+<span class="nc" id="L192">                        builder.addFields(CollectRep.Field.newBuilder().setName(&quot;value&quot;)</span>
+<span class="nc" id="L193">                                .setType(CommonConstants.TYPE_NUMBER).setLabel(false).build());</span>
+                    }
+<span class="nc" id="L195">                    Map&lt;String, String&gt; labelMap = metric.getLabels()</span>
+<span class="nc" id="L196">                            .stream()</span>
+<span class="nc" id="L197">                            .collect(Collectors.toMap(MetricFamily.Label::getName, MetricFamily.Label::getValue));</span>
+<span class="nc" id="L198">                    CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L199" title="All 2 branches missed.">                    for (String field : metricsFields) {</span>
+<span class="nc" id="L200">                        String fieldValue = labelMap.get(field);</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">                        valueRowBuilder.addColumns(fieldValue == null ? CommonConstants.NULL_VALUE : fieldValue);</span>
+<span class="nc" id="L202">                    }</span>
+<span class="nc" id="L203">                    valueRowBuilder.addColumns(String.valueOf(metric.getValue()));</span>
+<span class="nc" id="L204">                    builder.addValues(valueRowBuilder.build());</span>
+                }
+<span class="nc" id="L206">                metricsDataList.add(builder.build());</span>
+            }
+<span class="nc" id="L208">        }</span>
+<span class="nc" id="L209">        return metricsDataList;</span>
+    }
+    
+    /**
+     * create httpContext
+     *
+     * @param protocol prometheus protocol
+     * @return context
+     */
+    public HttpContext createHttpContext(PrometheusProtocol protocol) {
+<span class="nc" id="L219">        PrometheusProtocol.Authorization auth = protocol.getAuthorization();</span>
+<span class="nc bnc" id="L220" title="All 4 branches missed.">        if (auth != null &amp;&amp; DispatchConstants.DIGEST_AUTH.equals(auth.getType())) {</span>
+<span class="nc" id="L221">            HttpClientContext clientContext = new HttpClientContext();</span>
+<span class="nc bnc" id="L222" title="All 2 branches missed.">            if (StringUtils.hasText(auth.getDigestAuthUsername())</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">                        &amp;&amp; StringUtils.hasText(auth.getDigestAuthPassword())) {</span>
+<span class="nc" id="L224">                CredentialsProvider provider = new BasicCredentialsProvider();</span>
+<span class="nc" id="L225">                UsernamePasswordCredentials credentials</span>
+<span class="nc" id="L226">                        = new UsernamePasswordCredentials(auth.getDigestAuthUsername(), auth.getDigestAuthPassword());</span>
+<span class="nc" id="L227">                provider.setCredentials(AuthScope.ANY, credentials);</span>
+<span class="nc" id="L228">                AuthCache authCache = new BasicAuthCache();</span>
+<span class="nc" id="L229">                authCache.put(new HttpHost(protocol.getHost(), Integer.parseInt(protocol.getPort())), new DigestScheme());</span>
+<span class="nc" id="L230">                clientContext.setCredentialsProvider(provider);</span>
+<span class="nc" id="L231">                clientContext.setAuthCache(authCache);</span>
+<span class="nc" id="L232">                return clientContext;</span>
+            }
+        }
+<span class="nc" id="L235">        return null;</span>
+    }
+
+    /**
+     * create http request
+     * @param protocol http params
+     * @return http uri request
+     */
+    public HttpUriRequest createHttpRequest(PrometheusProtocol protocol) {
+<span class="nc" id="L244">        RequestBuilder requestBuilder = RequestBuilder.get();</span>
+        // params
+<span class="nc" id="L246">        Map&lt;String, String&gt; params = protocol.getParams();</span>
+<span class="nc bnc" id="L247" title="All 4 branches missed.">        if (params != null &amp;&amp; !params.isEmpty()) {</span>
+<span class="nc bnc" id="L248" title="All 2 branches missed.">            for (Map.Entry&lt;String, String&gt; param : params.entrySet()) {</span>
+<span class="nc bnc" id="L249" title="All 2 branches missed.">                if (StringUtils.hasText(param.getValue())) {</span>
+<span class="nc" id="L250">                    requestBuilder.addParameter(param.getKey(), param.getValue());</span>
+                }
+<span class="nc" id="L252">            }</span>
+        }
+        // The default request header can be overridden if customized
+        // keep-alive
+<span class="nc" id="L256">        requestBuilder.addHeader(HttpHeaders.CONNECTION, &quot;keep-alive&quot;);</span>
+<span class="nc" id="L257">        requestBuilder.addHeader(HttpHeaders.USER_AGENT, &quot;Mozilla/5.0 (Windows NT 6.1; WOW64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.76 Safari/537.36&quot;);</span>
+        // headers  The custom request header is overwritten here
+<span class="nc" id="L259">        Map&lt;String, String&gt; headers = protocol.getHeaders();</span>
+<span class="nc bnc" id="L260" title="All 4 branches missed.">        if (headers != null &amp;&amp; !headers.isEmpty()) {</span>
+<span class="nc bnc" id="L261" title="All 2 branches missed.">            for (Map.Entry&lt;String, String&gt; header : headers.entrySet()) {</span>
+<span class="nc bnc" id="L262" title="All 2 branches missed.">                if (StringUtils.hasText(header.getValue())) {</span>
+<span class="nc" id="L263">                    requestBuilder.addHeader(CollectUtil.replaceUriSpecialChar(header.getKey()),</span>
+<span class="nc" id="L264">                            CollectUtil.replaceUriSpecialChar(header.getValue()));</span>
+                }
+<span class="nc" id="L266">            }</span>
+        }
+        // add accept
+<span class="nc" id="L269">        requestBuilder.addHeader(HttpHeaders.ACCEPT, &quot;*/*&quot;);</span>
+        
+<span class="nc bnc" id="L271" title="All 2 branches missed.">        if (protocol.getAuthorization() != null) {</span>
+<span class="nc" id="L272">            PrometheusProtocol.Authorization authorization = protocol.getAuthorization();</span>
+<span class="nc bnc" id="L273" title="All 2 branches missed.">            if (DispatchConstants.BEARER_TOKEN.equalsIgnoreCase(authorization.getType())) {</span>
+<span class="nc" id="L274">                String value = DispatchConstants.BEARER + &quot; &quot; + authorization.getBearerTokenToken();</span>
+<span class="nc" id="L275">                requestBuilder.addHeader(HttpHeaders.AUTHORIZATION, value);</span>
+<span class="nc bnc" id="L276" title="All 2 branches missed.">            } else if (DispatchConstants.BASIC_AUTH.equals(authorization.getType())) {</span>
+<span class="nc bnc" id="L277" title="All 2 branches missed.">                if (StringUtils.hasText(authorization.getBasicAuthUsername())</span>
+<span class="nc bnc" id="L278" title="All 2 branches missed.">                            &amp;&amp; StringUtils.hasText(authorization.getBasicAuthPassword())) {</span>
+<span class="nc" id="L279">                    String authStr = authorization.getBasicAuthUsername() + &quot;:&quot; + authorization.getBasicAuthPassword();</span>
+<span class="nc" id="L280">                    String encodedAuth = new String(Base64.encodeBase64(authStr.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8);</span>
+<span class="nc" id="L281">                    requestBuilder.addHeader(HttpHeaders.AUTHORIZATION, DispatchConstants.BASIC + &quot; &quot; + encodedAuth);</span>
+                }
+            }
+        }
+
+        // if it has payload, would override post params
+<span class="nc bnc" id="L287" title="All 2 branches missed.">        if (StringUtils.hasLength(protocol.getPayload())) {</span>
+<span class="nc" id="L288">            requestBuilder.setEntity(new StringEntity(protocol.getPayload(), StandardCharsets.UTF_8));</span>
+        }
+        
+        // uri
+<span class="nc" id="L292">        String uri = CollectUtil.replaceUriSpecialChar(protocol.getPath());</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">        if (IpDomainUtil.isHasSchema(protocol.getHost())) {</span>
+            
+<span class="nc" id="L295">            requestBuilder.setUri(protocol.getHost() + &quot;:&quot; + protocol.getPort() + uri);</span>
+        } else {
+<span class="nc" id="L297">            String ipAddressType = IpDomainUtil.checkIpAddressType(protocol.getHost());</span>
+<span class="nc bnc" id="L298" title="All 2 branches missed.">            String baseUri = CollectorConstants.IPV6.equals(ipAddressType)</span>
+<span class="nc" id="L299">                                     ? String.format(&quot;[%s]:%s%s&quot;, protocol.getHost(), protocol.getPort(), uri)</span>
+<span class="nc" id="L300">                                     : String.format(&quot;%s:%s%s&quot;, protocol.getHost(), protocol.getPort(), uri);</span>
+<span class="nc" id="L301">            boolean ssl = Boolean.parseBoolean(protocol.getSsl());</span>
+<span class="nc bnc" id="L302" title="All 2 branches missed.">            if (ssl) {</span>
+<span class="nc" id="L303">                requestBuilder.setUri(CollectorConstants.HTTPS_HEADER + baseUri);</span>
+            } else {
+<span class="nc" id="L305">                requestBuilder.setUri(CollectorConstants.HTTP_HEADER + baseUri);</span>
+            }
+        }
+        
+        // custom timeout
+<span class="nc" id="L310">        int timeout = CollectUtil.getTimeout(protocol.getTimeout(), 0);</span>
+<span class="nc bnc" id="L311" title="All 2 branches missed.">        if (timeout &gt; 0) {</span>
+<span class="nc" id="L312">            RequestConfig requestConfig = RequestConfig.custom()</span>
+<span class="nc" id="L313">                                                  .setConnectTimeout(timeout)</span>
+<span class="nc" id="L314">                                                  .setSocketTimeout(timeout)</span>
+<span class="nc" id="L315">                                                  .setRedirectsEnabled(true)</span>
+<span class="nc" id="L316">                                                  .build();</span>
+<span class="nc" id="L317">            requestBuilder.setConfig(requestConfig);</span>
+        }
+<span class="nc" id="L319">        return requestBuilder.build();</span>
+    }
+
+    /**
+     * get collect instance
+     * @return instance
+     */
+    public static PrometheusAutoCollectImpl getInstance() {
+<span class="nc" id="L327">        return PrometheusAutoCollectImpl.SingleInstance.INSTANCE;</span>
+    }
+    
+    /**
+     * static instance
+     */
+    private static class SingleInstance {
+<span class="nc" id="L334">        private static final PrometheusAutoCollectImpl INSTANCE = new PrometheusAutoCollectImpl();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AbstractAlertNotifyHandlerImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.component.alerter.impl</a> &gt; <span class="el_source">AbstractAlertNotifyHandlerImpl.java</span></div><h1>AbstractAlertNotifyHandlerImpl.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.manager.component.alerter.impl;
+
+import freemarker.cache.StringTemplateLoader;
+import freemarker.template.Configuration;
+import freemarker.template.TemplateException;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.alert.AlerterProperties;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.alerter.Alert;
+import org.dromara.hertzbeat.common.entity.manager.NoticeTemplate;
+import org.dromara.hertzbeat.common.support.event.SystemConfigChangeEvent;
+import org.dromara.hertzbeat.common.util.ResourceBundleUtil;
+import org.dromara.hertzbeat.manager.component.alerter.AlertNotifyHandler;
+import org.dromara.hertzbeat.manager.service.NoticeConfigService;
+import org.springframework.context.event.EventListener;
+import org.springframework.ui.freemarker.FreeMarkerTemplateUtils;
+import org.springframework.web.client.RestTemplate;
+
+import javax.annotation.Resource;
+import java.io.IOException;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.ResourceBundle;
+
+/**
+ * @author &lt;a href=&quot;mailto:gcwm99@gmail.com&quot;&gt;gcdd1993&lt;/a&gt;
+ * @version 2.1
+ * Created by Musk.Chen on 2023/1/16
+ */
+<span class="fc" id="L51">@Slf4j</span>
+<span class="fc" id="L52">abstract class AbstractAlertNotifyHandlerImpl implements AlertNotifyHandler {</span>
+
+    private static final String NUMBER_FORMAT = &quot;0&quot;;
+<span class="fc" id="L55">    protected static final DateTimeFormatter DTF = DateTimeFormatter.ofPattern(&quot;yyyy-MM-dd HH:mm:ss&quot;);</span>
+<span class="fc" id="L56">    protected ResourceBundle bundle = ResourceBundleUtil.getBundle(&quot;alerter&quot;);</span>
+    @Resource
+    protected RestTemplate restTemplate;
+    @Resource
+    protected AlerterProperties alerterProperties;
+    @Resource
+    protected NoticeConfigService noticeConfigService;
+
+
+    protected String renderContent(NoticeTemplate noticeTemplate, Alert alert) throws TemplateException, IOException {
+<span class="nc" id="L66">        StringTemplateLoader stringLoader = new StringTemplateLoader();</span>
+        freemarker.template.Template templateRes;
+<span class="nc" id="L68">        Configuration cfg = new Configuration(Configuration.VERSION_2_3_0);</span>
+<span class="nc" id="L69">        cfg.setNumberFormat(NUMBER_FORMAT);</span>
+<span class="nc" id="L70">        Map&lt;String, Object&gt; model = new HashMap&lt;&gt;(16);</span>
+<span class="nc" id="L71">        model.put(&quot;title&quot;, bundle.getString(&quot;alerter.notify.title&quot;));</span>
+
+<span class="nc bnc" id="L73" title="All 2 branches missed.">        if (alert.getTags() != null) {</span>
+<span class="nc" id="L74">            String monitorId = alert.getTags().get(CommonConstants.TAG_MONITOR_ID);</span>
+<span class="nc bnc" id="L75" title="All 2 branches missed.">            if (monitorId != null) {</span>
+<span class="nc" id="L76">                model.put(&quot;monitorId&quot;, monitorId);</span>
+            }
+<span class="nc" id="L78">            String monitorName = alert.getTags().get(CommonConstants.TAG_MONITOR_NAME);</span>
+<span class="nc bnc" id="L79" title="All 2 branches missed.">            if (monitorName != null) {</span>
+<span class="nc" id="L80">                model.put(&quot;monitorName&quot;, monitorName);</span>
+            }
+<span class="nc" id="L82">            String thresholdId = alert.getTags().get(CommonConstants.TAG_THRESHOLD_ID);</span>
+<span class="nc bnc" id="L83" title="All 2 branches missed.">            if (thresholdId != null) {</span>
+<span class="nc" id="L84">                model.put(&quot;thresholdId&quot;, thresholdId);</span>
+            }
+        }
+        
+<span class="nc" id="L88">        model.put(&quot;alarmId&quot;, alert.getId());</span>
+<span class="nc" id="L89">        model.put(&quot;status&quot;, alert.getStatus());</span>
+<span class="nc" id="L90">        model.put(&quot;monitorIdLabel&quot;, bundle.getString(&quot;alerter.notify.monitorId&quot;));</span>
+<span class="nc" id="L91">        model.put(&quot;monitorNameLabel&quot;, bundle.getString(&quot;alerter.notify.monitorName&quot;));</span>
+<span class="nc" id="L92">        model.put(&quot;target&quot;, alert.getTarget());</span>
+<span class="nc" id="L93">        model.put(&quot;targetLabel&quot;, bundle.getString(&quot;alerter.notify.target&quot;));</span>
+<span class="nc" id="L94">        model.put(&quot;priorityLabel&quot;, bundle.getString(&quot;alerter.notify.priority&quot;));</span>
+<span class="nc" id="L95">        model.put(&quot;priority&quot;, bundle.getString(&quot;alerter.priority.&quot; + alert.getPriority()));</span>
+<span class="nc" id="L96">        model.put(&quot;priorityValue&quot;, alert.getPriority());</span>
+<span class="nc" id="L97">        model.put(&quot;triggerTimeLabel&quot;, bundle.getString(&quot;alerter.notify.triggerTime&quot;));</span>
+<span class="nc" id="L98">        model.put(&quot;triggerTime&quot;, DTF.format(Instant.ofEpochMilli(alert.getLastAlarmTime()).atZone(ZoneId.systemDefault()).toLocalDateTime()));</span>
+<span class="nc" id="L99">        model.put(&quot;timesLabel&quot;, bundle.getString(&quot;alerter.notify.times&quot;));</span>
+<span class="nc" id="L100">        model.put(&quot;times&quot;, alert.getTimes());</span>
+<span class="nc" id="L101">        model.put(&quot;contentLabel&quot;, bundle.getString(&quot;alerter.notify.content&quot;));</span>
+<span class="nc" id="L102">        model.put(&quot;content&quot;, alert.getContent());</span>
+<span class="nc" id="L103">        model.put(&quot;tagsLabel&quot;, bundle.getString(&quot;alerter.notify.tags&quot;));</span>
+<span class="nc" id="L104">        model.put(&quot;tags&quot;, alert.getTags());</span>
+<span class="nc bnc" id="L105" title="All 2 branches missed.">        if (noticeTemplate == null) {</span>
+<span class="nc" id="L106">            noticeTemplate = noticeConfigService.getDefaultNoticeTemplateByType(type());</span>
+        }
+<span class="nc bnc" id="L108" title="All 2 branches missed.">        if (noticeTemplate == null) {</span>
+<span class="nc" id="L109">            log.error(&quot;alert does not have mapping default notice template. type: {}.&quot;, type());</span>
+<span class="nc" id="L110">            throw new NullPointerException(type() + &quot; does not have mapping default notice template&quot;);</span>
+        }
+        // TODO 单实例复用缓存 考虑多线程问题
+<span class="nc" id="L113">        String templateName = &quot;freeMakerTemplate&quot;;</span>
+<span class="nc" id="L114">        stringLoader.putTemplate(templateName, noticeTemplate.getContent());</span>
+<span class="nc" id="L115">        cfg.setTemplateLoader(stringLoader);</span>
+<span class="nc" id="L116">        templateRes = cfg.getTemplate(templateName, Locale.CHINESE);</span>
+<span class="nc" id="L117">        String template = FreeMarkerTemplateUtils.processTemplateIntoString(templateRes, model);</span>
+<span class="nc" id="L118">        return template.replaceAll(&quot;((\r\n)|\n)[\\s\t ]*(\\1)+&quot;, &quot;$1&quot;);</span>
+    }
+
+    @EventListener(SystemConfigChangeEvent.class)
+    public void onEvent(SystemConfigChangeEvent event) {
+<span class="nc" id="L123">        log.info(&quot;{} receive system config change event: {}.&quot;, this.getClass().getName(), event.getSource());</span>
+<span class="nc" id="L124">        this.bundle = ResourceBundleUtil.getBundle(&quot;alerter&quot;);</span>
+<span class="nc" id="L125">    }</span>
+
+}
+
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

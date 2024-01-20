@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>KafkaCommonDataQueue.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.queue.impl</a> &gt; <span class="el_source">KafkaCommonDataQueue.java</span></div><h1>KafkaCommonDataQueue.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.common.queue.impl;
+
+import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.LongDeserializer;
+import org.apache.kafka.common.serialization.LongSerializer;
+import org.dromara.hertzbeat.common.config.CommonProperties;
+import org.dromara.hertzbeat.common.entity.alerter.Alert;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.queue.CommonDataQueue;
+import org.dromara.hertzbeat.common.serialize.AlertDeserializer;
+import org.dromara.hertzbeat.common.serialize.AlertSerializer;
+import org.dromara.hertzbeat.common.serialize.KafkaMetricsDataDeserializer;
+import org.dromara.hertzbeat.common.serialize.KafkaMetricsDataSerializer;
+import org.springframework.beans.factory.DisposableBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Configuration;
+
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.locks.ReentrantLock;
+
+
+/**
+ * common data queue implement kafka
+ * @author tablerow
+ *
+ */
+@Configuration
+@ConditionalOnProperty(prefix = &quot;common.queue&quot;, name = &quot;type&quot;, havingValue = &quot;kafka&quot;)
+<span class="nc" id="L38">@Slf4j</span>
+public class KafkaCommonDataQueue implements CommonDataQueue, DisposableBean {
+
+    private KafkaProducer&lt;Long, CollectRep.MetricsData&gt; metricsDataProducer;
+    private KafkaProducer&lt;Long, Alert&gt; alertDataProducer;
+    private KafkaConsumer&lt;Long, Alert&gt; alertDataConsumer;
+    private KafkaConsumer&lt;Long, CollectRep.MetricsData&gt; metricsDataToAlertConsumer;
+    private KafkaConsumer&lt;Long, CollectRep.MetricsData&gt; metricsDataToPersistentStorageConsumer;
+    private KafkaConsumer&lt;Long, CollectRep.MetricsData&gt; metricsDataToRealTimeStorageConsumer;
+<span class="nc" id="L47">    private final ReentrantLock lock1 = new ReentrantLock();</span>
+<span class="nc" id="L48">    private final ReentrantLock lock2 = new ReentrantLock();</span>
+<span class="nc" id="L49">    private final ReentrantLock lock3 = new ReentrantLock();</span>
+<span class="nc" id="L50">    private final ReentrantLock lock4 = new ReentrantLock();</span>
+    private final LinkedBlockingQueue&lt;Alert&gt; alertDataQueue;
+    private final LinkedBlockingQueue&lt;CollectRep.MetricsData&gt; metricsDataToAlertQueue;
+    private final LinkedBlockingQueue&lt;CollectRep.MetricsData&gt; metricsDataToPersistentStorageQueue;
+    private final LinkedBlockingQueue&lt;CollectRep.MetricsData&gt; metricsDataToRealTimeStorageQueue;
+    private final CommonProperties.KafkaProperties kafka;
+    
+<span class="nc" id="L57">    public KafkaCommonDataQueue(CommonProperties properties) {</span>
+<span class="nc bnc" id="L58" title="All 6 branches missed.">        if (properties == null || properties.getQueue() == null || properties.getQueue().getKafka() == null) {</span>
+<span class="nc" id="L59">            log.error(&quot;init error, please config common.queue.kafka props in application.yml&quot;);</span>
+<span class="nc" id="L60">            throw new IllegalArgumentException(&quot;please config common.queue.kafka props&quot;);</span>
+        }
+<span class="nc" id="L62">        this.kafka = properties.getQueue().getKafka();</span>
+<span class="nc" id="L63">        alertDataQueue = new LinkedBlockingQueue&lt;&gt;();</span>
+<span class="nc" id="L64">        metricsDataToAlertQueue = new LinkedBlockingQueue&lt;&gt;();</span>
+<span class="nc" id="L65">        metricsDataToPersistentStorageQueue = new LinkedBlockingQueue&lt;&gt;();</span>
+<span class="nc" id="L66">        metricsDataToRealTimeStorageQueue = new LinkedBlockingQueue&lt;&gt;();</span>
+<span class="nc" id="L67">        initDataQueue();</span>
+<span class="nc" id="L68">    }</span>
+    
+    private void initDataQueue(){
+        try {
+<span class="nc" id="L72">            Map&lt;String, Object&gt; producerConfig = new HashMap&lt;&gt;(3);</span>
+<span class="nc" id="L73">            producerConfig.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getServers());</span>
+<span class="nc" id="L74">            producerConfig.put(ProducerConfig.ACKS_CONFIG, &quot;all&quot;);</span>
+<span class="nc" id="L75">            producerConfig.put(ProducerConfig.RETRIES_CONFIG, 3);</span>
+<span class="nc" id="L76">            metricsDataProducer = new KafkaProducer&lt;&gt;(producerConfig, new LongSerializer(), new KafkaMetricsDataSerializer());</span>
+<span class="nc" id="L77">            alertDataProducer = new KafkaProducer&lt;&gt;(producerConfig, new LongSerializer(), new AlertSerializer());</span>
+
+<span class="nc" id="L79">            Map&lt;String, Object&gt; consumerConfig = new HashMap&lt;&gt;(4);</span>
+<span class="nc" id="L80">            consumerConfig.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.getServers());</span>
+<span class="nc" id="L81">            consumerConfig.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, &quot;50&quot;);</span>
+<span class="nc" id="L82">            consumerConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);</span>
+            // 15 minute
+<span class="nc" id="L84">            consumerConfig.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, &quot;900000&quot;);</span>
+<span class="nc" id="L85">            consumerConfig.put(&quot;group.id&quot;, &quot;default-consumer&quot;);</span>
+
+<span class="nc" id="L87">            Map&lt;String, Object&gt; alertConsumerConfig = new HashMap&lt;&gt;(consumerConfig);</span>
+<span class="nc" id="L88">            alertConsumerConfig.put(&quot;group.id&quot;, &quot;alert-consumer&quot;);</span>
+<span class="nc" id="L89">            alertDataConsumer = new KafkaConsumer&lt;&gt;(alertConsumerConfig, new LongDeserializer(), new AlertDeserializer());</span>
+<span class="nc" id="L90">            alertDataConsumer.subscribe(Collections.singletonList(kafka.getAlertsDataTopic()));</span>
+            
+<span class="nc" id="L92">            Map&lt;String, Object&gt; metricsToAlertConsumerConfig = new HashMap&lt;&gt;(consumerConfig);</span>
+<span class="nc" id="L93">            metricsToAlertConsumerConfig.put(&quot;group.id&quot;, &quot;metrics-alert-consumer&quot;);</span>
+<span class="nc" id="L94">            metricsDataToAlertConsumer = new KafkaConsumer&lt;&gt;(metricsToAlertConsumerConfig, new LongDeserializer(), new KafkaMetricsDataDeserializer());</span>
+<span class="nc" id="L95">            metricsDataToAlertConsumer.subscribe(Collections.singletonList(kafka.getMetricsDataTopic()));</span>
+            
+<span class="nc" id="L97">            Map&lt;String, Object&gt; metricsToPersistentConsumerConfig = new HashMap&lt;&gt;(consumerConfig);</span>
+<span class="nc" id="L98">            metricsToPersistentConsumerConfig.put(&quot;group.id&quot;, &quot;metrics-persistent-consumer&quot;);</span>
+<span class="nc" id="L99">            metricsDataToPersistentStorageConsumer = new KafkaConsumer&lt;&gt;(metricsToPersistentConsumerConfig, new LongDeserializer(), new KafkaMetricsDataDeserializer());</span>
+<span class="nc" id="L100">            metricsDataToPersistentStorageConsumer.subscribe(Collections.singletonList(kafka.getMetricsDataTopic()));</span>
+            
+<span class="nc" id="L102">            Map&lt;String, Object&gt; metricsToRealTimeConsumerConfig = new HashMap&lt;&gt;(consumerConfig);</span>
+<span class="nc" id="L103">            metricsToRealTimeConsumerConfig.put(&quot;group.id&quot;, &quot;metrics-memory-consumer&quot;);</span>
+<span class="nc" id="L104">            metricsDataToRealTimeStorageConsumer = new KafkaConsumer&lt;&gt;(metricsToRealTimeConsumerConfig, new LongDeserializer(), new KafkaMetricsDataDeserializer());</span>
+<span class="nc" id="L105">            metricsDataToRealTimeStorageConsumer.subscribe(Collections.singletonList(kafka.getMetricsDataTopic()));</span>
+<span class="nc" id="L106">        } catch (Exception e) {</span>
+<span class="nc" id="L107">            log.error(&quot;please config common.queue.kafka props correctly&quot;, e);</span>
+<span class="nc" id="L108">            throw e;</span>
+<span class="nc" id="L109">        }</span>
+<span class="nc" id="L110">    }</span>
+
+    @Override
+    public void sendAlertsData(Alert alert) {
+<span class="nc bnc" id="L114" title="All 2 branches missed.">        if (alertDataProducer != null) {</span>
+<span class="nc" id="L115">            alertDataProducer.send(new ProducerRecord&lt;&gt;(kafka.getAlertsDataTopic(), alert));</span>
+        } else {
+<span class="nc" id="L117">            log.error(&quot;kafkaAlertProducer is not enable&quot;);</span>
+        }
+<span class="nc" id="L119">    }</span>
+
+    @Override
+    public Alert pollAlertsData() throws InterruptedException {
+<span class="nc" id="L123">        Alert alert = alertDataQueue.poll();</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">        if (alert != null) {</span>
+<span class="nc" id="L125">            return alert;</span>
+        }
+<span class="nc" id="L127">        lock1.lockInterruptibly();</span>
+        try {
+<span class="nc" id="L129">            ConsumerRecords&lt;Long, Alert&gt; records = alertDataConsumer.poll(Duration.ofSeconds(1));</span>
+<span class="nc" id="L130">            int index = 0;</span>
+<span class="nc bnc" id="L131" title="All 2 branches missed.">            for (ConsumerRecord&lt;Long, Alert&gt; record : records) {</span>
+<span class="nc bnc" id="L132" title="All 2 branches missed.">                if (index == 0) {</span>
+<span class="nc" id="L133">                    alert = record.value();</span>
+                } else {
+<span class="nc" id="L135">                    alertDataQueue.offer(record.value());</span>
+                }
+<span class="nc" id="L137">                index++;</span>
+<span class="nc" id="L138">            }</span>
+<span class="nc" id="L139">            alertDataConsumer.commitAsync();</span>
+<span class="nc" id="L140">        } catch (Exception e){</span>
+<span class="nc" id="L141">            log.error(e.getMessage());</span>
+        } finally {
+<span class="nc" id="L143">            lock1.unlock();</span>
+        }
+<span class="nc" id="L145">        return alert;</span>
+    }
+
+    @Override
+    public CollectRep.MetricsData pollMetricsDataToAlerter() throws InterruptedException {
+<span class="nc" id="L150">        CollectRep.MetricsData metricsData = metricsDataToAlertQueue.poll();</span>
+<span class="nc bnc" id="L151" title="All 2 branches missed.">        if (metricsData != null) {</span>
+<span class="nc" id="L152">            return metricsData;</span>
+        }
+<span class="nc" id="L154">        lock2.lockInterruptibly();</span>
+        try {
+<span class="nc" id="L156">            ConsumerRecords&lt;Long, CollectRep.MetricsData&gt; records = metricsDataToAlertConsumer.poll(Duration.ofSeconds(1));</span>
+<span class="nc" id="L157">            int index = 0;</span>
+<span class="nc bnc" id="L158" title="All 2 branches missed.">            for (ConsumerRecord&lt;Long, CollectRep.MetricsData&gt; record : records) {</span>
+<span class="nc bnc" id="L159" title="All 2 branches missed.">                if (index == 0) {</span>
+<span class="nc" id="L160">                    metricsData = record.value();</span>
+                } else {
+<span class="nc" id="L162">                    metricsDataToAlertQueue.offer(record.value());</span>
+                }
+<span class="nc" id="L164">                index++;</span>
+<span class="nc" id="L165">            }</span>
+<span class="nc" id="L166">            metricsDataToAlertConsumer.commitAsync();</span>
+<span class="nc" id="L167">        } catch (Exception e){</span>
+<span class="nc" id="L168">            log.error(e.getMessage());</span>
+        } finally {
+<span class="nc" id="L170">            lock2.unlock();</span>
+        }
+<span class="nc" id="L172">        return metricsData;</span>
+    }
+
+    @Override
+    public CollectRep.MetricsData pollMetricsDataToPersistentStorage() throws InterruptedException {
+<span class="nc" id="L177">        CollectRep.MetricsData persistentStorageMetricsData = metricsDataToPersistentStorageQueue.poll();</span>
+<span class="nc bnc" id="L178" title="All 2 branches missed.">        if (persistentStorageMetricsData != null) {</span>
+<span class="nc" id="L179">            return persistentStorageMetricsData;</span>
+        }
+<span class="nc" id="L181">        lock3.lockInterruptibly();</span>
+        try {
+<span class="nc" id="L183">            ConsumerRecords&lt;Long, CollectRep.MetricsData&gt; records = metricsDataToPersistentStorageConsumer.poll(Duration.ofSeconds(1));</span>
+<span class="nc" id="L184">            int index = 0;</span>
+<span class="nc bnc" id="L185" title="All 2 branches missed.">            for (ConsumerRecord&lt;Long, CollectRep.MetricsData&gt; record : records) {</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">                if (index == 0) {</span>
+<span class="nc" id="L187">                    persistentStorageMetricsData = record.value();</span>
+                } else {
+<span class="nc" id="L189">                    metricsDataToPersistentStorageQueue.offer(record.value());</span>
+                }
+<span class="nc" id="L191">                index++;</span>
+<span class="nc" id="L192">            }</span>
+<span class="nc" id="L193">            metricsDataToPersistentStorageConsumer.commitAsync();</span>
+<span class="nc" id="L194">        } catch (Exception e){</span>
+<span class="nc" id="L195">            log.error(e.getMessage());</span>
+        } finally {
+<span class="nc" id="L197">            lock3.unlock();</span>
+        }
+<span class="nc" id="L199">        return persistentStorageMetricsData;</span>
+    }
+
+    @Override
+    public CollectRep.MetricsData pollMetricsDataToRealTimeStorage() throws InterruptedException {
+<span class="nc" id="L204">        CollectRep.MetricsData realTimeMetricsData = metricsDataToRealTimeStorageQueue.poll();</span>
+<span class="nc bnc" id="L205" title="All 2 branches missed.">        if (realTimeMetricsData != null) {</span>
+<span class="nc" id="L206">            return realTimeMetricsData;</span>
+        }
+<span class="nc" id="L208">        lock4.lockInterruptibly();</span>
+        try {
+<span class="nc" id="L210">            ConsumerRecords&lt;Long, CollectRep.MetricsData&gt; records = metricsDataToRealTimeStorageConsumer.poll(Duration.ofSeconds(1));</span>
+<span class="nc" id="L211">            int index = 0;</span>
+<span class="nc bnc" id="L212" title="All 2 branches missed.">            for (ConsumerRecord&lt;Long, CollectRep.MetricsData&gt; record : records) {</span>
+<span class="nc bnc" id="L213" title="All 2 branches missed.">                if (index == 0) {</span>
+<span class="nc" id="L214">                    realTimeMetricsData = record.value();</span>
+                } else {
+<span class="nc" id="L216">                    metricsDataToRealTimeStorageQueue.offer(record.value());</span>
+                }
+<span class="nc" id="L218">                index++;</span>
+<span class="nc" id="L219">            }</span>
+<span class="nc" id="L220">            metricsDataToRealTimeStorageConsumer.commitAsync();</span>
+<span class="nc" id="L221">        } catch (Exception e){</span>
+<span class="nc" id="L222">            log.error(e.getMessage());</span>
+        } finally {
+<span class="nc" id="L224">            lock4.unlock();</span>
+        }
+<span class="nc" id="L226">        return realTimeMetricsData;</span>
+    }
+
+    @Override
+    public void sendMetricsData(CollectRep.MetricsData metricsData) {
+<span class="nc bnc" id="L231" title="All 2 branches missed.">        if (metricsDataProducer != null) {</span>
+<span class="nc" id="L232">            metricsDataProducer.send(new ProducerRecord&lt;&gt;(kafka.getMetricsDataTopic(), metricsData));</span>
+        } else {
+<span class="nc" id="L234">            log.error(&quot;metricsDataProducer is not enabled&quot;);</span>
+        }
+<span class="nc" id="L236">    }</span>
+
+    @Override
+    public void destroy() throws Exception {
+<span class="nc bnc" id="L240" title="All 2 branches missed.">        if (metricsDataProducer != null) {</span>
+<span class="nc" id="L241">            metricsDataProducer.close();</span>
+        }
+<span class="nc bnc" id="L243" title="All 2 branches missed.">        if (alertDataProducer != null) {</span>
+<span class="nc" id="L244">            alertDataProducer.close();</span>
+        }
+<span class="nc bnc" id="L246" title="All 2 branches missed.">        if (alertDataConsumer != null) {</span>
+<span class="nc" id="L247">            alertDataConsumer.close();</span>
+        }
+<span class="nc bnc" id="L249" title="All 2 branches missed.">        if (metricsDataToAlertConsumer != null) {</span>
+<span class="nc" id="L250">            metricsDataToAlertConsumer.close();</span>
+        }
+<span class="nc bnc" id="L252" title="All 2 branches missed.">        if (metricsDataToPersistentStorageConsumer != null) {</span>
+<span class="nc" id="L253">            metricsDataToPersistentStorageConsumer.close();</span>
+        }
+<span class="nc bnc" id="L255" title="All 2 branches missed.">        if (metricsDataToRealTimeStorageConsumer != null) {</span>
+<span class="nc" id="L256">            metricsDataToRealTimeStorageConsumer.close();</span>
+        }
+<span class="nc" id="L258">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

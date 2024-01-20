@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>EmailNoticeSender.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.pojo.dto</a> &gt; <span class="el_source">EmailNoticeSender.java</span></div><h1>EmailNoticeSender.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.manager.pojo.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import javax.validation.constraints.*;
+
+
+/**
+ * 邮件账号配置dto
+ * @author zqr
+ */
+<span class="nc bnc" id="L14" title="All 54 branches missed.">@Data</span>
+<span class="nc" id="L15">@NoArgsConstructor</span>
+<span class="nc" id="L16">@AllArgsConstructor</span>
+public class EmailNoticeSender {
+    
+	@NotNull(message = &quot;类型不能为空|Type cannot be empty&quot;)
+<span class="nc" id="L20">	private Integer type;</span>
+    
+	@NotBlank(message = &quot;邮件主机不能为空|Mail host cannot be empty&quot;)
+<span class="nc" id="L23">	private String emailHost;</span>
+	
+	@NotBlank(message = &quot;用户名不能为空|Username cannot be empty&quot;)
+	@Email
+<span class="nc" id="L27">	private String emailUsername;</span>
+	
+	@NotBlank(message = &quot;密码不能为空|Password cannot be empty&quot;)
+<span class="nc" id="L30">	private String emailPassword;</span>
+	
+	@NotNull(message = &quot;邮件端口不能为空|Mail port cannot be null&quot;)
+	@Max(message = &quot;邮件端口不得大于65535|Mail port must be less than or equal to 65535&quot;, value = 65535)
+	@Min(message = &quot;邮件端口不得小于1|Mail port must be greater than or equal to 1&quot;, value = 1)
+<span class="nc" id="L35">	private Integer emailPort;</span>
+
+<span class="nc" id="L37">	private boolean emailSsl = true;</span>
+	
+<span class="nc" id="L39">	private boolean enable = true;</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>
