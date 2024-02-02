@@ -1,0 +1,450 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CollectorAndJobScheduler.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.scheduler</a> &gt; <span class="el_source">CollectorAndJobScheduler.java</span></div><h1>CollectorAndJobScheduler.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.manager.scheduler;
+
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.collector.dispatch.entrance.internal.CollectJobService;
+import org.dromara.hertzbeat.collector.dispatch.entrance.internal.CollectResponseEventListener;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.dto.CollectorInfo;
+import org.dromara.hertzbeat.common.entity.job.Configmap;
+import org.dromara.hertzbeat.common.entity.job.Job;
+import org.dromara.hertzbeat.common.entity.manager.Collector;
+import org.dromara.hertzbeat.common.entity.manager.CollectorMonitorBind;
+import org.dromara.hertzbeat.common.entity.manager.Monitor;
+import org.dromara.hertzbeat.common.entity.manager.Param;
+import org.dromara.hertzbeat.common.entity.manager.ParamDefine;
+import org.dromara.hertzbeat.common.entity.message.ClusterMsg;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.util.JsonUtil;
+import org.dromara.hertzbeat.common.util.SnowFlakeIdGenerator;
+import org.dromara.hertzbeat.manager.dao.CollectorDao;
+import org.dromara.hertzbeat.manager.dao.CollectorMonitorBindDao;
+import org.dromara.hertzbeat.manager.dao.MonitorDao;
+import org.dromara.hertzbeat.manager.dao.ParamDao;
+import org.dromara.hertzbeat.manager.scheduler.netty.ManageServer;
+import org.dromara.hertzbeat.manager.service.AppService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+/**
+ * collector service
+ *
+ * @author tom
+ */
+@Component
+@AutoConfigureAfter(value = {SchedulerProperties.class})
+<span class="fc" id="L49">@Slf4j</span>
+<span class="fc" id="L50">public class CollectorAndJobScheduler implements CollectorScheduling, CollectJobScheduling {</span>
+
+<span class="fc" id="L52">    private final Map&lt;Long, Job&gt; jobContentCache = new ConcurrentHashMap&lt;&gt;(16);</span>
+
+<span class="fc" id="L54">    private final Map&lt;Long, CollectResponseEventListener&gt; eventListeners = new ConcurrentHashMap&lt;&gt;(16);</span>
+
+    @Autowired
+    private CollectorDao collectorDao;
+
+    @Autowired
+    private CollectorMonitorBindDao collectorMonitorBindDao;
+
+    @Autowired
+    private ConsistentHash consistentHash;
+
+    @Autowired
+    private CollectJobService collectJobService;
+
+    @Autowired
+    private AppService appService;
+
+    @Autowired
+    private MonitorDao monitorDao;
+
+    @Autowired
+    private ParamDao paramDao;
+
+    private ManageServer manageServer;
+
+    @Override
+    public void collectorGoOnline(String identity, CollectorInfo collectorInfo) {
+<span class="fc" id="L81">        Optional&lt;Collector&gt; collectorOptional = collectorDao.findCollectorByName(identity);</span>
+        Collector collector;
+<span class="pc bpc" id="L83" title="1 of 2 branches missed.">        if (collectorOptional.isPresent()) {</span>
+<span class="fc" id="L84">            collector = collectorOptional.get();</span>
+<span class="pc bpc" id="L85" title="1 of 2 branches missed.">            if (collector.getStatus() == CommonConstants.COLLECTOR_STATUS_ONLINE) {</span>
+<span class="nc" id="L86">                return;</span>
+            }
+<span class="fc" id="L88">            collector.setStatus(CommonConstants.COLLECTOR_STATUS_ONLINE);</span>
+<span class="pc bpc" id="L89" title="1 of 2 branches missed.">            if (collectorInfo != null) {</span>
+<span class="fc" id="L90">                collector.setIp(collectorInfo.getIp());</span>
+<span class="fc" id="L91">                collector.setMode(collectorInfo.getMode());   </span>
+            }
+        } else {
+<span class="nc bnc" id="L94" title="All 2 branches missed.">            if (collectorInfo == null) {</span>
+<span class="nc" id="L95">                log.error(&quot;collectorInfo can not null when collector not existed&quot;);</span>
+<span class="nc" id="L96">                return;</span>
+            }
+<span class="nc" id="L98">            collector = Collector.builder().name(identity).ip(collectorInfo.getIp())</span>
+<span class="nc" id="L99">                    .mode(collectorInfo.getMode())</span>
+<span class="nc" id="L100">                    .status(CommonConstants.COLLECTOR_STATUS_ONLINE).build();</span>
+        }
+<span class="fc" id="L102">        collectorDao.save(collector);</span>
+<span class="fc" id="L103">        ConsistentHash.Node node = new ConsistentHash.Node(identity, collector.getMode(),</span>
+<span class="fc" id="L104">                collector.getIp(), System.currentTimeMillis(), null);</span>
+<span class="fc" id="L105">        consistentHash.addNode(node);</span>
+<span class="fc" id="L106">        reBalanceCollectorAssignJobs();</span>
+        // 读取数据库此collector下的固定采集任务并下发
+<span class="fc" id="L108">        List&lt;CollectorMonitorBind&gt; binds = collectorMonitorBindDao.findCollectorMonitorBindsByCollector(identity);</span>
+<span class="pc bpc" id="L109" title="1 of 2 branches missed.">        for (CollectorMonitorBind bind : binds) {</span>
+<span class="nc" id="L110">            Optional&lt;Monitor&gt; monitorOptional = monitorDao.findById(bind.getMonitorId());</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">            if (monitorOptional.isPresent()) {</span>
+<span class="nc" id="L112">                Monitor monitor = monitorOptional.get();</span>
+<span class="nc bnc" id="L113" title="All 2 branches missed.">                if (monitor.getStatus() == CommonConstants.UN_MANAGE_CODE) {</span>
+<span class="nc" id="L114">                    continue;</span>
+                }
+                try {
+                    // 构造采集任务Job实体
+<span class="nc" id="L118">                    Job appDefine = appService.getAppDefine(monitor.getApp());</span>
+<span class="nc bnc" id="L119" title="All 2 branches missed.">                    if (CommonConstants.PROMETHEUS.equals(monitor.getApp())) {</span>
+<span class="nc" id="L120">                        appDefine.setApp(CommonConstants.PROMETHEUS_APP_PREFIX + monitor.getName());</span>
+                    }
+<span class="nc" id="L122">                    appDefine.setMonitorId(monitor.getId());</span>
+<span class="nc" id="L123">                    appDefine.setInterval(monitor.getIntervals());</span>
+<span class="nc" id="L124">                    appDefine.setCyclic(true);</span>
+<span class="nc" id="L125">                    appDefine.setTimestamp(System.currentTimeMillis());</span>
+<span class="nc" id="L126">                    List&lt;Param&gt; params = paramDao.findParamsByMonitorId(monitor.getId());</span>
+<span class="nc" id="L127">                    List&lt;Configmap&gt; configmaps = params.stream()</span>
+<span class="nc" id="L128">                            .map(param -&gt; new Configmap(param.getField(), param.getValue(),</span>
+<span class="nc" id="L129">                                    param.getType())).collect(Collectors.toList());</span>
+<span class="nc" id="L130">                    List&lt;ParamDefine&gt; paramDefaultValue = appDefine.getParams().stream()</span>
+<span class="nc" id="L131">                            .filter(item -&gt; StringUtils.hasText(item.getDefaultValue()))</span>
+<span class="nc" id="L132">                            .collect(Collectors.toList());</span>
+<span class="nc" id="L133">                    paramDefaultValue.forEach(defaultVar -&gt; {</span>
+<span class="nc bnc" id="L134" title="All 2 branches missed.">                        if (configmaps.stream().noneMatch(item -&gt; item.getKey().equals(defaultVar.getField()))) {</span>
+                            // todo type
+<span class="nc" id="L136">                            Configmap configmap = new Configmap(defaultVar.getField(), defaultVar.getDefaultValue(), (byte) 1);</span>
+<span class="nc" id="L137">                            configmaps.add(configmap);</span>
+                        }
+<span class="nc" id="L139">                    });</span>
+<span class="nc" id="L140">                    appDefine.setConfigmap(configmaps);</span>
+<span class="nc" id="L141">                    long jobId = addAsyncCollectJob(appDefine, identity);</span>
+<span class="nc" id="L142">                    monitor.setJobId(jobId);</span>
+<span class="nc" id="L143">                    monitorDao.save(monitor);</span>
+<span class="nc" id="L144">                } catch (Exception e) {</span>
+<span class="nc" id="L145">                    log.error(&quot;insert pinned monitor job: {} in collector: {} error,continue next monitor&quot;, monitor, identity, e);</span>
+<span class="nc" id="L146">                }</span>
+            }
+<span class="nc" id="L148">        }</span>
+<span class="fc" id="L149">    }</span>
+
+    @Override
+    public void collectorGoOffline(String identity) {
+<span class="nc" id="L153">        Optional&lt;Collector&gt; collectorOptional = collectorDao.findCollectorByName(identity);</span>
+<span class="nc bnc" id="L154" title="All 2 branches missed.">        if (collectorOptional.isPresent()) {</span>
+<span class="nc" id="L155">            log.info(&quot;the collector: {} is going offline now.&quot;, identity);</span>
+<span class="nc" id="L156">            Collector collector = collectorOptional.get();</span>
+<span class="nc" id="L157">            collector.setStatus(CommonConstants.COLLECTOR_STATUS_OFFLINE);</span>
+<span class="nc" id="L158">            collectorDao.save(collector);</span>
+<span class="nc" id="L159">            consistentHash.removeNode(identity);</span>
+<span class="nc" id="L160">            reBalanceCollectorAssignJobs();</span>
+        }
+<span class="nc" id="L162">    }</span>
+
+    @Override
+    public void reBalanceCollectorAssignJobs() {
+<span class="fc" id="L166">        consistentHash.getAllNodes().entrySet().parallelStream().forEach(entry -&gt; {</span>
+<span class="fc" id="L167">            String collectorName = entry.getKey();</span>
+<span class="fc" id="L168">            AssignJobs assignJobs = entry.getValue().getAssignJobs();</span>
+<span class="pc bpc" id="L169" title="1 of 2 branches missed.">            if (assignJobs != null) {</span>
+<span class="pc bpc" id="L170" title="1 of 2 branches missed.">                if (CommonConstants.MAIN_COLLECTOR_NODE.equals(collectorName)) {</span>
+<span class="pc bpc" id="L171" title="1 of 2 branches missed.">                    if (!assignJobs.getAddingJobs().isEmpty()) {</span>
+<span class="nc" id="L172">                        Set&lt;Long&gt; addedJobIds = new HashSet&lt;&gt;(8);</span>
+<span class="nc bnc" id="L173" title="All 2 branches missed.">                        for (Long addingJobId : assignJobs.getAddingJobs()) {</span>
+<span class="nc" id="L174">                            Job job = jobContentCache.get(addingJobId);</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">                            if (job == null) {</span>
+<span class="nc" id="L176">                                log.error(&quot;assigning job {} content is null.&quot;, addingJobId);</span>
+<span class="nc" id="L177">                                continue;</span>
+                            }
+<span class="nc" id="L179">                            addedJobIds.add(addingJobId);</span>
+<span class="nc" id="L180">                            collectJobService.addAsyncCollectJob(job);</span>
+<span class="nc" id="L181">                        }</span>
+<span class="nc" id="L182">                        assignJobs.addAssignJobs(addedJobIds);</span>
+<span class="nc" id="L183">                        assignJobs.removeAddingJobs(addedJobIds);</span>
+                    }
+<span class="pc bpc" id="L185" title="1 of 2 branches missed.">                    if (!assignJobs.getRemovingJobs().isEmpty()) {</span>
+<span class="nc" id="L186">                        assignJobs.getRemovingJobs().forEach(jobId -&gt; collectJobService.cancelAsyncCollectJob(jobId));</span>
+<span class="nc" id="L187">                        assignJobs.clearRemovingJobs();</span>
+                    }
+                } else {
+<span class="nc bnc" id="L190" title="All 2 branches missed.">                    if (!assignJobs.getAddingJobs().isEmpty()) {</span>
+<span class="nc" id="L191">                        Set&lt;Long&gt; addedJobIds = new HashSet&lt;&gt;(8);</span>
+<span class="nc bnc" id="L192" title="All 2 branches missed.">                        for (Long addingJobId : assignJobs.getAddingJobs()) {</span>
+<span class="nc" id="L193">                            Job job = jobContentCache.get(addingJobId);</span>
+<span class="nc bnc" id="L194" title="All 2 branches missed.">                            if (job == null) {</span>
+<span class="nc" id="L195">                                log.error(&quot;assigning job {} content is null.&quot;, addingJobId);</span>
+<span class="nc" id="L196">                                continue;</span>
+                            }
+<span class="nc" id="L198">                            addedJobIds.add(addingJobId);</span>
+<span class="nc" id="L199">                            ClusterMsg.Message message = ClusterMsg.Message.newBuilder()</span>
+<span class="nc" id="L200">                                    .setDirection(ClusterMsg.Direction.REQUEST)</span>
+<span class="nc" id="L201">                                    .setType(ClusterMsg.MessageType.ISSUE_CYCLIC_TASK)</span>
+<span class="nc" id="L202">                                    .setMsg(JsonUtil.toJson(job))</span>
+<span class="nc" id="L203">                                    .build();</span>
+<span class="nc" id="L204">                            this.manageServer.sendMsg(collectorName, message);</span>
+<span class="nc" id="L205">                        }</span>
+<span class="nc" id="L206">                        assignJobs.addAssignJobs(addedJobIds);</span>
+<span class="nc" id="L207">                        assignJobs.removeAddingJobs(addedJobIds);</span>
+                    }
+<span class="nc bnc" id="L209" title="All 2 branches missed.">                    if (!assignJobs.getRemovingJobs().isEmpty()) {</span>
+<span class="nc" id="L210">                        ClusterMsg.Message message = ClusterMsg.Message.newBuilder()</span>
+<span class="nc" id="L211">                                .setDirection(ClusterMsg.Direction.REQUEST)</span>
+<span class="nc" id="L212">                                .setType(ClusterMsg.MessageType.DELETE_CYCLIC_TASK)</span>
+<span class="nc" id="L213">                                .setMsg(JsonUtil.toJson(assignJobs.getRemovingJobs()))</span>
+<span class="nc" id="L214">                                .build();</span>
+<span class="nc" id="L215">                        this.manageServer.sendMsg(collectorName, message);</span>
+<span class="nc" id="L216">                        assignJobs.clearRemovingJobs();</span>
+                    }
+                }
+            }
+<span class="fc" id="L220">        });</span>
+<span class="fc" id="L221">    }</span>
+
+    @Override
+    public boolean offlineCollector(String identity) {
+<span class="nc" id="L225">        ClusterMsg.Message message = ClusterMsg.Message.newBuilder()</span>
+<span class="nc" id="L226">                .setType(ClusterMsg.MessageType.GO_OFFLINE)</span>
+<span class="nc" id="L227">                .setDirection(ClusterMsg.Direction.REQUEST)</span>
+<span class="nc" id="L228">                .setIdentity(identity)</span>
+<span class="nc" id="L229">                .build();</span>
+<span class="nc" id="L230">        ClusterMsg.Message response = this.manageServer.sendMsgSync(identity, message);</span>
+<span class="nc bnc" id="L231" title="All 4 branches missed.">        if (response == null || !String.valueOf(CommonConstants.SUCCESS_CODE).equals(response.getMsg())) {</span>
+<span class="nc" id="L232">            return false;</span>
+        }
+<span class="nc" id="L234">        log.info(&quot;send offline collector message to {} success&quot;, identity);</span>
+<span class="nc" id="L235">        this.collectorGoOffline(identity);</span>
+<span class="nc" id="L236">        return true;</span>
+    }
+
+    @Override
+    public boolean onlineCollector(String identity) {
+<span class="nc" id="L241">        Optional&lt;Collector&gt; collectorOptional = collectorDao.findCollectorByName(identity);</span>
+<span class="nc bnc" id="L242" title="All 2 branches missed.">        if (collectorOptional.isEmpty()) {</span>
+<span class="nc" id="L243">            return false;</span>
+        }
+<span class="nc" id="L245">        Collector collector = collectorOptional.get();</span>
+<span class="nc" id="L246">        ClusterMsg.Message message = ClusterMsg.Message.newBuilder()</span>
+<span class="nc" id="L247">                .setType(ClusterMsg.MessageType.GO_ONLINE)</span>
+<span class="nc" id="L248">                .setDirection(ClusterMsg.Direction.REQUEST)</span>
+<span class="nc" id="L249">                .setIdentity(identity)</span>
+<span class="nc" id="L250">                .build();</span>
+<span class="nc" id="L251">        ClusterMsg.Message response = this.manageServer.sendMsgSync(identity, message);</span>
+<span class="nc bnc" id="L252" title="All 4 branches missed.">        if (response == null || !String.valueOf(CommonConstants.SUCCESS_CODE).equals(response.getMsg())) {</span>
+<span class="nc" id="L253">            return false;</span>
+        }
+<span class="nc" id="L255">        log.info(&quot;send online collector message to {} success&quot;, identity);</span>
+<span class="nc" id="L256">        CollectorInfo collectorInfo = CollectorInfo.builder()</span>
+<span class="nc" id="L257">                .name(collector.getName())</span>
+<span class="nc" id="L258">                .ip(collector.getIp())</span>
+<span class="nc" id="L259">                .mode(collector.getMode())</span>
+<span class="nc" id="L260">                .build();</span>
+<span class="nc" id="L261">        this.collectorGoOnline(identity, collectorInfo);</span>
+<span class="nc" id="L262">        return true;</span>
+    }
+
+    @Override
+    public List&lt;CollectRep.MetricsData&gt; collectSyncJobData(Job job) {
+        // todo dispatchKey ip+port or id
+<span class="nc" id="L268">        String dispatchKey = String.valueOf(job.getMonitorId());</span>
+<span class="nc" id="L269">        ConsistentHash.Node node = consistentHash.preDispatchJob(dispatchKey);</span>
+<span class="nc bnc" id="L270" title="All 2 branches missed.">        if (node == null) {</span>
+<span class="nc" id="L271">            log.error(&quot;there is no collector online to assign job.&quot;);</span>
+<span class="nc" id="L272">            CollectRep.MetricsData metricsData = CollectRep.MetricsData.newBuilder()</span>
+<span class="nc" id="L273">                    .setCode(CollectRep.Code.FAIL)</span>
+<span class="nc" id="L274">                    .setMsg(&quot;no collector online to assign job&quot;)</span>
+<span class="nc" id="L275">                    .build();</span>
+<span class="nc" id="L276">            return Collections.singletonList(metricsData);</span>
+        }
+<span class="nc bnc" id="L278" title="All 2 branches missed.">        if (CommonConstants.MAIN_COLLECTOR_NODE.equals(node.getIdentity())) {</span>
+<span class="nc" id="L279">            return collectJobService.collectSyncJobData(job);</span>
+        } else {
+<span class="nc" id="L281">            List&lt;CollectRep.MetricsData&gt; metricsData = new LinkedList&lt;&gt;();</span>
+<span class="nc" id="L282">            CountDownLatch countDownLatch = new CountDownLatch(1);</span>
+
+<span class="nc" id="L284">            ClusterMsg.Message message = ClusterMsg.Message.newBuilder()</span>
+<span class="nc" id="L285">                    .setType(ClusterMsg.MessageType.ISSUE_ONE_TIME_TASK)</span>
+<span class="nc" id="L286">                    .setDirection(ClusterMsg.Direction.REQUEST)</span>
+<span class="nc" id="L287">                    .setMsg(JsonUtil.toJson(job))</span>
+<span class="nc" id="L288">                    .build();</span>
+<span class="nc" id="L289">            boolean result = this.manageServer.sendMsg(node.getIdentity(), message);</span>
+
+<span class="nc bnc" id="L291" title="All 2 branches missed.">            if (result) {</span>
+<span class="nc" id="L292">                CollectResponseEventListener listener = new CollectResponseEventListener() {</span>
+                    @Override
+                    public void response(List&lt;CollectRep.MetricsData&gt; responseMetrics) {
+<span class="nc bnc" id="L295" title="All 2 branches missed.">                        if (responseMetrics != null) {</span>
+<span class="nc" id="L296">                            metricsData.addAll(responseMetrics);</span>
+                        }
+<span class="nc" id="L298">                        countDownLatch.countDown();</span>
+<span class="nc" id="L299">                    }</span>
+                };
+<span class="nc" id="L301">                eventListeners.put(job.getMonitorId(), listener);</span>
+            }
+            try {
+<span class="nc" id="L304">                countDownLatch.await(120, TimeUnit.SECONDS);</span>
+<span class="nc" id="L305">            } catch (Exception e) {</span>
+<span class="nc" id="L306">                log.info(&quot;The sync task runs for 120 seconds with no response and returns&quot;);</span>
+<span class="nc" id="L307">            }</span>
+<span class="nc" id="L308">            return metricsData;</span>
+        }
+    }
+
+    @Override
+    public List&lt;CollectRep.MetricsData&gt; collectSyncJobData(Job job, String collector) {
+<span class="nc" id="L314">        ConsistentHash.Node node = consistentHash.getNode(collector);</span>
+<span class="nc bnc" id="L315" title="All 2 branches missed.">        if (node == null) {</span>
+<span class="nc" id="L316">            log.error(&quot;there is no collector online to assign job.&quot;);</span>
+<span class="nc" id="L317">            CollectRep.MetricsData metricsData = CollectRep.MetricsData.newBuilder()</span>
+<span class="nc" id="L318">                    .setCode(CollectRep.Code.FAIL)</span>
+<span class="nc" id="L319">                    .setMsg(&quot;the collector is offline and cannot assign job&quot;)</span>
+<span class="nc" id="L320">                    .build();</span>
+<span class="nc" id="L321">            return Collections.singletonList(metricsData);</span>
+        }
+<span class="nc bnc" id="L323" title="All 2 branches missed.">        if (CommonConstants.MAIN_COLLECTOR_NODE.equals(node.getIdentity())) {</span>
+<span class="nc" id="L324">            return collectJobService.collectSyncJobData(job);</span>
+        } else {
+<span class="nc" id="L326">            List&lt;CollectRep.MetricsData&gt; metricsData = new LinkedList&lt;&gt;();</span>
+<span class="nc" id="L327">            ClusterMsg.Message message = ClusterMsg.Message.newBuilder()</span>
+<span class="nc" id="L328">                    .setType(ClusterMsg.MessageType.ISSUE_ONE_TIME_TASK)</span>
+<span class="nc" id="L329">                    .setDirection(ClusterMsg.Direction.REQUEST)</span>
+<span class="nc" id="L330">                    .setMsg(JsonUtil.toJson(job))</span>
+<span class="nc" id="L331">                    .build();</span>
+<span class="nc" id="L332">            boolean result = this.manageServer.sendMsg(node.getIdentity(), message);</span>
+<span class="nc bnc" id="L333" title="All 2 branches missed.">            if (result) {</span>
+<span class="nc" id="L334">                CountDownLatch countDownLatch = new CountDownLatch(1);</span>
+<span class="nc" id="L335">                CollectResponseEventListener listener = new CollectResponseEventListener() {</span>
+                    @Override
+                    public void response(List&lt;CollectRep.MetricsData&gt; responseMetrics) {
+<span class="nc bnc" id="L338" title="All 2 branches missed.">                        if (responseMetrics != null) {</span>
+<span class="nc" id="L339">                            metricsData.addAll(responseMetrics);</span>
+                        }
+<span class="nc" id="L341">                        countDownLatch.countDown();</span>
+<span class="nc" id="L342">                    }</span>
+                };
+<span class="nc" id="L344">                eventListeners.put(job.getMonitorId(), listener);</span>
+                try {
+<span class="nc" id="L346">                    countDownLatch.await(120, TimeUnit.SECONDS);</span>
+<span class="nc" id="L347">                } catch (Exception e) {</span>
+<span class="nc" id="L348">                    log.info(&quot;The sync task runs for 120 seconds with no response and returns&quot;);</span>
+<span class="nc" id="L349">                }</span>
+            }
+<span class="nc" id="L351">            return metricsData;</span>
+        }
+    }
+
+    @Override
+    public long addAsyncCollectJob(Job job, String collector) {
+<span class="nc" id="L357">        long jobId = SnowFlakeIdGenerator.generateId();</span>
+<span class="nc" id="L358">        job.setId(jobId);</span>
+<span class="nc" id="L359">        jobContentCache.put(jobId, job);</span>
+        ConsistentHash.Node node;
+<span class="nc bnc" id="L361" title="All 2 branches missed.">        if (collector == null) {</span>
+            // todo dispatchKey ip+port or id
+<span class="nc" id="L363">            String dispatchKey = String.valueOf(job.getMonitorId());</span>
+<span class="nc" id="L364">            node = consistentHash.dispatchJob(dispatchKey, jobId);</span>
+<span class="nc bnc" id="L365" title="All 2 branches missed.">            if (node == null) {</span>
+<span class="nc" id="L366">                log.error(&quot;there is no collector online to assign job.&quot;);</span>
+<span class="nc" id="L367">                return jobId;</span>
+            }
+<span class="nc" id="L369">        } else {</span>
+<span class="nc" id="L370">            node = consistentHash.getNode(collector);</span>
+<span class="nc bnc" id="L371" title="All 2 branches missed.">            if (node == null) {</span>
+<span class="nc" id="L372">                log.error(&quot;there is no collector name: {} online to assign job.&quot;, collector);</span>
+<span class="nc" id="L373">                return jobId;</span>
+            }
+<span class="nc" id="L375">            node.getAssignJobs().addPinnedJob(jobId);</span>
+        }
+<span class="nc bnc" id="L377" title="All 2 branches missed.">        if (CommonConstants.MAIN_COLLECTOR_NODE.equals(node.getIdentity())) {</span>
+<span class="nc" id="L378">            collectJobService.addAsyncCollectJob(job);</span>
+        } else {
+<span class="nc" id="L380">            ClusterMsg.Message message = ClusterMsg.Message.newBuilder()</span>
+<span class="nc" id="L381">                    .setType(ClusterMsg.MessageType.ISSUE_CYCLIC_TASK)</span>
+<span class="nc" id="L382">                    .setDirection(ClusterMsg.Direction.REQUEST)</span>
+<span class="nc" id="L383">                    .setMsg(JsonUtil.toJson(job))</span>
+<span class="nc" id="L384">                    .build();</span>
+<span class="nc" id="L385">            this.manageServer.sendMsg(node.getIdentity(), message);</span>
+        }
+<span class="nc" id="L387">        return jobId;</span>
+    }
+
+    @Override
+    public long updateAsyncCollectJob(Job modifyJob) {
+        // delete and add
+<span class="nc" id="L393">        long preJobId = modifyJob.getId();</span>
+<span class="nc" id="L394">        long newJobId = addAsyncCollectJob(modifyJob, null);</span>
+<span class="nc" id="L395">        jobContentCache.remove(preJobId);</span>
+<span class="nc" id="L396">        cancelAsyncCollectJob(preJobId);</span>
+<span class="nc" id="L397">        return newJobId;</span>
+    }
+
+    @Override
+    public long updateAsyncCollectJob(Job modifyJob, String collector) {
+        // delete and add
+<span class="nc" id="L403">        long preJobId = modifyJob.getId();</span>
+<span class="nc" id="L404">        long newJobId = addAsyncCollectJob(modifyJob, collector);</span>
+<span class="nc" id="L405">        jobContentCache.remove(preJobId);</span>
+<span class="nc" id="L406">        cancelAsyncCollectJob(preJobId);</span>
+<span class="nc" id="L407">        return newJobId;</span>
+    }
+
+    @Override
+    public void cancelAsyncCollectJob(Long jobId) {
+<span class="nc bnc" id="L412" title="All 2 branches missed.">        for (ConsistentHash.Node node : consistentHash.getAllNodes().values()) {</span>
+<span class="nc" id="L413">            AssignJobs assignJobs = node.getAssignJobs();</span>
+<span class="nc bnc" id="L414" title="All 2 branches missed.">            if (assignJobs.getPinnedJobs().remove(jobId)</span>
+<span class="nc bnc" id="L415" title="All 4 branches missed.">                    || assignJobs.getJobs().remove(jobId) || assignJobs.getAddingJobs().remove(jobId)) {</span>
+<span class="nc" id="L416">                node.removeVirtualNodeJob(jobId);</span>
+<span class="nc bnc" id="L417" title="All 2 branches missed.">                if (CommonConstants.MAIN_COLLECTOR_NODE.equals(node.getIdentity())) {</span>
+<span class="nc" id="L418">                    collectJobService.cancelAsyncCollectJob(jobId);</span>
+                } else {
+<span class="nc" id="L420">                    ClusterMsg.Message deleteMessage = ClusterMsg.Message.newBuilder()</span>
+<span class="nc" id="L421">                            .setType(ClusterMsg.MessageType.DELETE_CYCLIC_TASK)</span>
+<span class="nc" id="L422">                            .setDirection(ClusterMsg.Direction.REQUEST)</span>
+<span class="nc" id="L423">                            .setMsg(JsonUtil.toJson(List.of(jobId)))</span>
+<span class="nc" id="L424">                            .build();</span>
+<span class="nc" id="L425">                    this.manageServer.sendMsg(node.getIdentity(), deleteMessage);</span>
+                }
+<span class="nc" id="L427">                break;</span>
+            }
+<span class="nc" id="L429">        }</span>
+<span class="nc" id="L430">    }</span>
+
+    @Override
+    public void collectSyncJobResponse(List&lt;CollectRep.MetricsData&gt; metricsDataList) {
+<span class="nc bnc" id="L434" title="All 2 branches missed.">        if (metricsDataList.isEmpty()) {</span>
+<span class="nc" id="L435">            return;</span>
+        }
+<span class="nc" id="L437">        CollectRep.MetricsData metricsData = metricsDataList.get(0);</span>
+<span class="nc" id="L438">        long monitorId = metricsData.getId();</span>
+<span class="nc" id="L439">        CollectResponseEventListener eventListener = eventListeners.remove(monitorId);</span>
+<span class="nc bnc" id="L440" title="All 2 branches missed.">        if (eventListener != null) {</span>
+<span class="nc" id="L441">            eventListener.response(metricsDataList);</span>
+        }
+<span class="nc" id="L443">    }</span>
+
+    public void setManageServer(ManageServer manageServer) {
+<span class="fc" id="L446">        this.manageServer = manageServer;</span>
+<span class="fc" id="L447">    }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

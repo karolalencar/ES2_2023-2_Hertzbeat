@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>NtpCollectImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.ntp</a> &gt; <span class="el_source">NtpCollectImpl.java</span></div><h1>NtpCollectImpl.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.collect.ntp;
+
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.net.ntp.NTPUDPClient;
+import org.apache.commons.net.ntp.NtpV3Packet;
+import org.apache.commons.net.ntp.TimeInfo;
+import org.apache.commons.net.ntp.TimeStamp;
+import org.dromara.hertzbeat.collector.collect.AbstractCollect;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.collector.util.CollectUtil;
+import org.dromara.hertzbeat.common.constants.CollectorConstants;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.job.protocol.NtpProtocol;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.SocketException;
+import java.net.UnknownHostException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ * @author dongfeng
+ */
+<span class="nc" id="L32">@Slf4j</span>
+public class NtpCollectImpl extends AbstractCollect {
+<span class="nc" id="L34">    public NtpCollectImpl() {</span>
+<span class="nc" id="L35">    }</span>
+
+    @Override
+    public void collect(CollectRep.MetricsData.Builder builder, long monitorId, String app, Metrics metrics) {
+<span class="nc" id="L39">        long startTime = System.currentTimeMillis();</span>
+<span class="nc bnc" id="L40" title="All 4 branches missed.">        if (metrics == null || metrics.getNtp() == null) {</span>
+<span class="nc" id="L41">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L42">            builder.setMsg(&quot;NTP collect must have NTP params&quot;);</span>
+<span class="nc" id="L43">            return;</span>
+        }
+<span class="nc" id="L45">        NtpProtocol ntpProtocol = metrics.getNtp();</span>
+<span class="nc" id="L46">        String host = ntpProtocol.getHost();</span>
+<span class="nc" id="L47">        int timeout = CollectUtil.getTimeout(ntpProtocol.getTimeout());</span>
+
+<span class="nc" id="L49">        NTPUDPClient client = null;</span>
+
+        try {
+<span class="nc" id="L52">            client = new NTPUDPClient();</span>
+<span class="nc" id="L53">            client.setDefaultTimeout(timeout);</span>
+<span class="nc" id="L54">            client.open();</span>
+<span class="nc" id="L55">            InetAddress serverAddress = InetAddress.getByName(host);</span>
+<span class="nc" id="L56">            TimeInfo timeInfo = client.getTime(serverAddress);</span>
+<span class="nc" id="L57">            long responseTime = System.currentTimeMillis() - startTime;</span>
+
+<span class="nc" id="L59">            timeInfo.computeDetails();</span>
+
+            // 获取ntp服务器信息
+<span class="nc" id="L62">            Map&lt;String, String&gt; resultMap = getNTPInfo(timeInfo);</span>
+<span class="nc" id="L63">            resultMap.put(CollectorConstants.RESPONSE_TIME, Long.toString(responseTime));</span>
+
+<span class="nc" id="L65">            List&lt;String&gt; aliasFields = metrics.getAliasFields();</span>
+<span class="nc" id="L66">            CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L67" title="All 2 branches missed.">            for (String field : aliasFields) {</span>
+<span class="nc" id="L68">                String fieldValue = resultMap.get(field);</span>
+<span class="nc" id="L69">                valueRowBuilder.addColumns(Objects.requireNonNullElse(fieldValue, CommonConstants.NULL_VALUE));</span>
+<span class="nc" id="L70">            }</span>
+<span class="nc" id="L71">            builder.addValues(valueRowBuilder.build());</span>
+<span class="nc" id="L72">            client.close();</span>
+<span class="nc" id="L73">        } catch (SocketException socketException) {</span>
+<span class="nc" id="L74">            String errorMsg = CommonUtil.getMessageFromThrowable(socketException);</span>
+<span class="nc" id="L75">            log.debug(errorMsg);</span>
+<span class="nc" id="L76">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L77">            builder.setMsg(&quot;NTPUDPClient open is fail: &quot; + errorMsg);</span>
+<span class="nc" id="L78">        } catch (UnknownHostException unknownHostException) {</span>
+<span class="nc" id="L79">            String errorMsg = CommonUtil.getMessageFromThrowable(unknownHostException);</span>
+<span class="nc" id="L80">            log.debug(errorMsg);</span>
+<span class="nc" id="L81">            builder.setCode(CollectRep.Code.UN_CONNECTABLE);</span>
+<span class="nc" id="L82">            builder.setMsg(&quot;NTPServerAddress is unknownHost: &quot; + errorMsg);</span>
+<span class="nc" id="L83">        } catch (IOException ioException) {</span>
+<span class="nc" id="L84">            String errorMsg = CommonUtil.getMessageFromThrowable(ioException);</span>
+<span class="nc" id="L85">            log.info(errorMsg);</span>
+<span class="nc" id="L86">            builder.setCode(CollectRep.Code.UN_CONNECTABLE);</span>
+<span class="nc" id="L87">            builder.setMsg(&quot;Receive timed out: &quot; + timeout + &quot;ms&quot;);</span>
+<span class="nc" id="L88">        } catch (Exception e) {</span>
+<span class="nc" id="L89">            String errorMsg = CommonUtil.getMessageFromThrowable(e);</span>
+<span class="nc" id="L90">            log.warn(errorMsg, e);</span>
+<span class="nc" id="L91">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L92">            builder.setMsg(errorMsg);</span>
+        } finally {
+<span class="nc bnc" id="L94" title="All 2 branches missed.">            if (client != null) {</span>
+                try {
+<span class="nc" id="L96">                    client.close();</span>
+<span class="nc" id="L97">                } catch (Exception e) {</span>
+<span class="nc" id="L98">                    log.warn(e.getMessage());</span>
+<span class="nc" id="L99">                }</span>
+            }
+        }
+<span class="nc" id="L102">    }</span>
+
+    private Map&lt;String, String&gt; getNTPInfo(TimeInfo timeInfo) {
+<span class="nc" id="L105">        Map&lt;String, String&gt; valueMap = new HashMap&lt;&gt;(16);</span>
+
+<span class="nc" id="L107">        TimeStamp timeStamp = timeInfo.getMessage().getTransmitTimeStamp();</span>
+<span class="nc" id="L108">        Date date = timeStamp.getDate();</span>
+
+<span class="nc" id="L110">        NtpV3Packet message = timeInfo.getMessage();</span>
+<span class="nc" id="L111">        SimpleDateFormat simpleDateFormat = new SimpleDateFormat(&quot;yyyy/MM/dd HH:mm:ss&quot;);</span>
+<span class="nc" id="L112">        valueMap.put(&quot;time&quot;, Long.toString(timeStamp.getTime()));</span>
+<span class="nc" id="L113">        valueMap.put(&quot;date&quot;, simpleDateFormat.format(date));</span>
+<span class="nc" id="L114">        valueMap.put(&quot;offset&quot;, Long.toString(timeInfo.getOffset()));</span>
+<span class="nc" id="L115">        valueMap.put(&quot;delay&quot;, Long.toString(timeInfo.getDelay()));</span>
+<span class="nc" id="L116">        valueMap.put(&quot;version&quot;, Integer.toString(message.getVersion()));</span>
+<span class="nc" id="L117">        valueMap.put(&quot;mode&quot;, Integer.toString(message.getMode()));</span>
+<span class="nc" id="L118">        valueMap.put(&quot;stratum&quot;, Integer.toString(message.getStratum()));</span>
+<span class="nc" id="L119">        valueMap.put(&quot;referenceId&quot;, String.valueOf(message.getReferenceId()));</span>
+<span class="nc" id="L120">        valueMap.put(&quot;precision&quot;, Integer.toString(message.getPrecision()));</span>
+<span class="nc" id="L121">        return valueMap;</span>
+    }
+
+    @Override
+    public String supportProtocol() {
+<span class="nc" id="L126">        return DispatchConstants.PROTOCOL_NTP;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

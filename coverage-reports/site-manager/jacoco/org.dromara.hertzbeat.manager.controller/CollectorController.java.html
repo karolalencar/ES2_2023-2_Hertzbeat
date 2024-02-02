@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CollectorController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.controller</a> &gt; <span class="el_source">CollectorController.java</span></div><h1>CollectorController.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.manager.controller;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.dto.CollectorSummary;
+import org.dromara.hertzbeat.common.entity.dto.Message;
+import org.dromara.hertzbeat.common.entity.manager.Collector;
+import org.dromara.hertzbeat.common.util.IpDomainUtil;
+import org.dromara.hertzbeat.manager.scheduler.netty.ManageServer;
+import org.dromara.hertzbeat.manager.service.CollectorService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import javax.persistence.criteria.Predicate;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
+
+/**
+ * collector API
+ * @author tom
+ */
+@Tag(name = &quot;Collector Manage API | 采集器信息管理API&quot;)
+@RestController()
+@RequestMapping(value = &quot;/api/collector&quot;, produces = {APPLICATION_JSON_VALUE})
+<span class="fc" id="L52">public class CollectorController {</span>
+
+    @Autowired
+    private CollectorService collectorService;
+    
+    @Autowired(required = false)
+    private ManageServer manageServer;
+
+    @GetMapping
+    @Operation(summary = &quot;Get a list of collectors based on query filter items&quot;,
+            description = &quot;根据查询过滤项获取采集器列表&quot;)
+    public ResponseEntity&lt;Message&lt;Page&lt;CollectorSummary&gt;&gt;&gt; getCollectors(
+            @Parameter(description = &quot;collector name&quot;, example = &quot;tom&quot;) @RequestParam(required = false) final String name,
+            @Parameter(description = &quot;List current page | 列表当前分页&quot;, example = &quot;0&quot;) @RequestParam(defaultValue = &quot;0&quot;) int pageIndex,
+            @Parameter(description = &quot;Number of list pagination | 列表分页数量&quot;, example = &quot;8&quot;) @RequestParam(required = false) Integer pageSize) {
+<span class="nc bnc" id="L67" title="All 2 branches missed.">        if (pageSize == null) {</span>
+<span class="nc" id="L68">            pageSize = Integer.MAX_VALUE;</span>
+        }
+<span class="nc" id="L70">        Specification&lt;Collector&gt; specification = (root, query, criteriaBuilder) -&gt; {</span>
+<span class="nc" id="L71">            Predicate predicate = criteriaBuilder.conjunction();</span>
+<span class="nc bnc" id="L72" title="All 4 branches missed.">            if (name != null &amp;&amp; !name.isEmpty()) {</span>
+<span class="nc" id="L73">                Predicate predicateName = criteriaBuilder.like(root.get(&quot;name&quot;), &quot;%&quot; + name + &quot;%&quot;);</span>
+<span class="nc" id="L74">                predicate = criteriaBuilder.and(predicateName);</span>
+            }
+<span class="nc" id="L76">            return predicate;</span>
+        };
+<span class="nc" id="L78">        PageRequest pageRequest = PageRequest.of(pageIndex, pageSize);</span>
+<span class="nc" id="L79">        Page&lt;CollectorSummary&gt; receivers = collectorService.getCollectors(specification, pageRequest);</span>
+<span class="nc" id="L80">        Message&lt;Page&lt;CollectorSummary&gt;&gt; message = Message.success(receivers);</span>
+<span class="nc" id="L81">        return ResponseEntity.ok(message);</span>
+    }
+
+    @PutMapping(&quot;/online&quot;)
+    @Operation(summary = &quot;Online collectors&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; onlineCollector(
+            @Parameter(description = &quot;collector name&quot;, example = &quot;demo-collector&quot;)
+            @RequestParam(required = false) List&lt;String&gt; collectors) {
+<span class="nc bnc" id="L89" title="All 2 branches missed.">        if (collectors != null) {</span>
+<span class="nc" id="L90">            collectors.forEach(collector -&gt;</span>
+<span class="nc" id="L91">                                       this.manageServer.getCollectorAndJobScheduler().onlineCollector(collector));</span>
+        }
+<span class="nc" id="L93">        return ResponseEntity.ok(Message.success(&quot;Online success&quot;));</span>
+    }
+
+    @PutMapping(&quot;/offline&quot;)
+    @Operation(summary = &quot;Offline collectors&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; offlineCollector(
+            @Parameter(description = &quot;collector name&quot;, example = &quot;demo-collector&quot;) 
+            @RequestParam(required = false) List&lt;String&gt; collectors) {
+<span class="nc bnc" id="L101" title="All 2 branches missed.">        if (collectors != null) {</span>
+<span class="nc" id="L102">            collectors.forEach(collector -&gt; this.manageServer.getCollectorAndJobScheduler().offlineCollector(collector));</span>
+        }
+<span class="nc" id="L104">        return ResponseEntity.ok(Message.success(&quot;Offline success&quot;));</span>
+    }
+
+    @DeleteMapping
+    @Operation(summary = &quot;Delete collectors&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; deleteCollector(
+            @Parameter(description = &quot;collector name | 采集器名称&quot;, example = &quot;demo-collector&quot;)
+            @RequestParam(required = false) List&lt;String&gt; collectors) {
+<span class="nc" id="L112">        this.collectorService.deleteRegisteredCollector(collectors);</span>
+<span class="nc" id="L113">        return ResponseEntity.ok(Message.success(&quot;Delete success&quot;));</span>
+    }
+
+    @PostMapping(&quot;/generate/{collector}&quot;)
+    @Operation(summary = &quot;Generate deploy collector info&quot;)
+    public ResponseEntity&lt;Message&lt;Map&lt;String, String&gt;&gt;&gt; generateCollectorDeployInfo(
+            @Parameter(description = &quot;collector name&quot;, example = &quot;demo-collector&quot;)
+            @PathVariable() String collector) {
+<span class="nc bnc" id="L121" title="All 2 branches missed.">        if (this.collectorService.hasCollector(collector)) {</span>
+<span class="nc" id="L122">            return ResponseEntity.ok(Message.fail(CommonConstants.FAIL_CODE, &quot;There already has same collector name.&quot;));</span>
+        }
+<span class="nc" id="L124">        String host = IpDomainUtil.getLocalhostIp();</span>
+<span class="nc" id="L125">        Map&lt;String, String&gt; maps = new HashMap&lt;&gt;(6);</span>
+<span class="nc" id="L126">        maps.put(&quot;identity&quot;, collector);</span>
+<span class="nc" id="L127">        maps.put(&quot;host&quot;, host);</span>
+<span class="nc" id="L128">        return ResponseEntity.ok(Message.success(maps));</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

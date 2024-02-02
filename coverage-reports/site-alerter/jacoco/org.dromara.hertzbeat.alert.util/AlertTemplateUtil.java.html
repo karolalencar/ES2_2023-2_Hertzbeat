@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AlertTemplateUtil.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-alerter</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.alert.util</a> &gt; <span class="el_source">AlertTemplateUtil.java</span></div><h1>AlertTemplateUtil.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.alert.util;
+
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * Alarm template keyword matching replacement engine tool
+ * 告警模版关键字匹配替换引擎工具
+ * @author tom
+ */
+<span class="fc" id="L31">@Slf4j</span>
+<span class="nc" id="L32">public class AlertTemplateUtil {</span>
+
+    /**
+     * Match the variable ${key}
+     * 匹配 ${key} 的变量
+     * eg: Alert, the instance: ${instance} metrics: ${metrics} is over flow.
+     */
+<span class="fc" id="L39">    private static final Pattern PATTERN = Pattern.compile(&quot;\\$\\{(\\w+)\\}&quot;);</span>
+
+    public static String render(String template, Map&lt;String, Object&gt; replaceData) {
+<span class="fc bfc" id="L42" title="All 2 branches covered.">        if (template == null) {</span>
+<span class="fc" id="L43">            return null;  </span>
+        }
+        try {
+<span class="fc" id="L46">            Matcher matcher = PATTERN.matcher(template);</span>
+<span class="fc" id="L47">            StringBuilder builder = new StringBuilder();</span>
+<span class="fc bfc" id="L48" title="All 2 branches covered.">            while (matcher.find()) {</span>
+<span class="fc" id="L49">                Object objectValue = replaceData.getOrDefault(matcher.group(1), &quot;NullValue&quot;);</span>
+<span class="fc" id="L50">                String value = objectValue.toString();</span>
+<span class="fc" id="L51">                matcher.appendReplacement(builder, Matcher.quoteReplacement(value));</span>
+<span class="fc" id="L52">            }</span>
+<span class="fc" id="L53">            matcher.appendTail(builder);</span>
+<span class="fc" id="L54">            return builder.toString();</span>
+<span class="fc" id="L55">        } catch (Exception e) {</span>
+<span class="fc" id="L56">            log.error(e.getMessage(), e);</span>
+<span class="fc" id="L57">            return template;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

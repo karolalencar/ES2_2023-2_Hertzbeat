@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AlertDefineMonitorBind.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.entity.alerter</a> &gt; <span class="el_source">AlertDefineMonitorBind.java</span></div><h1>AlertDefineMonitorBind.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.common.entity.alerter;
+
+import org.dromara.hertzbeat.common.entity.manager.Monitor;
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.NotFound;
+import org.hibernate.annotations.NotFoundAction;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import javax.persistence.*;
+import java.time.LocalDateTime;
+
+import static io.swagger.v3.oas.annotations.media.Schema.AccessMode.READ_ONLY;
+import static io.swagger.v3.oas.annotations.media.Schema.AccessMode.READ_WRITE;
+
+
+/**
+ * Alarm Threshold Relate Monitor Entity
+ * @author tom
+ */
+@Entity
+@Table(name = &quot;hzb_alert_define_monitor_bind&quot;, indexes = {
+        @Index(name = &quot;index_alert_define_monitor&quot;, columnList = &quot;alertDefineId&quot;),
+        @Index(name = &quot;index_alert_define_monitor&quot;, columnList = &quot;monitor_id&quot;)
+})
+<span class="nc bnc" id="L48" title="All 54 branches missed.">@Data</span>
+<span class="nc" id="L49">@Builder</span>
+<span class="nc" id="L50">@AllArgsConstructor</span>
+<span class="nc" id="L51">@NoArgsConstructor</span>
+@Schema(description = &quot;Alarm Threshold Relate Monitor Entity&quot;)
+@EntityListeners(AuditingEntityListener.class)
+public class AlertDefineMonitorBind {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Schema(title = &quot;id&quot;, example = &quot;74384&quot;, accessMode = READ_ONLY)
+<span class="nc" id="L59">    private Long id;</span>
+
+    @Schema(title = &quot;Alarm Define Id&quot;, example = &quot;87432674384&quot;, accessMode = READ_WRITE)
+<span class="nc" id="L62">    private Long alertDefineId;</span>
+
+    @Schema(title = &quot;Monitor Id&quot;, example = &quot;87432674336&quot;, accessMode = READ_WRITE)
+    @Column(name = &quot;monitor_id&quot;)
+<span class="nc" id="L66">    private Long monitorId;</span>
+
+    @Schema(title = &quot;Record create time&quot;, example = &quot;1612198922000&quot;, accessMode = READ_ONLY)
+    @CreatedDate
+<span class="nc" id="L70">    private LocalDateTime gmtCreate;</span>
+
+    @Schema(title = &quot;Record modify time&quot;, example = &quot;1612198444000&quot;, accessMode = READ_ONLY)
+    @LastModifiedDate
+<span class="nc" id="L74">    private LocalDateTime gmtUpdate;</span>
+
+    @OneToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = &quot;monitor_id&quot;, referencedColumnName = &quot;id&quot;, foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT),
+            insertable = false, updatable = false)
+    @NotFound(action = NotFoundAction.IGNORE)
+<span class="nc" id="L80">    private Monitor monitor;</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

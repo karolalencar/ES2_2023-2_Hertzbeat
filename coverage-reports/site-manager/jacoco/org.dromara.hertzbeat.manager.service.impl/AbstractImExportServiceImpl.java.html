@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AbstractImExportServiceImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.service.impl</a> &gt; <span class="el_source">AbstractImExportServiceImpl.java</span></div><h1>AbstractImExportServiceImpl.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.manager.service.impl;
+
+import cn.afterturn.easypoi.excel.annotation.*;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.manager.Monitor;
+import org.dromara.hertzbeat.common.entity.manager.Param;
+import org.dromara.hertzbeat.common.entity.manager.Tag;
+import org.dromara.hertzbeat.manager.pojo.dto.MonitorDto;
+import org.dromara.hertzbeat.manager.service.ImExportService;
+import org.dromara.hertzbeat.manager.service.MonitorService;
+import org.dromara.hertzbeat.manager.service.TagService;
+import org.springframework.beans.BeanUtils;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.util.CollectionUtils;
+
+import javax.annotation.Resource;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.time.LocalDate;
+import java.util.HashSet;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * @author &lt;a href=&quot;mailto:gcwm99@gmail.com&quot;&gt;gcdd1993&lt;/a&gt;
+ * Created by gcdd1993 on 2023/3/31
+ */
+<span class="fc" id="L47">@Slf4j</span>
+<span class="fc" id="L48">abstract class AbstractImExportServiceImpl implements ImExportService {</span>
+
+    @Resource
+    @Lazy
+    private MonitorService monitorService;
+
+    @Resource
+    private TagService tagService;
+
+    @Override
+    public void importConfig(InputStream is) {
+<span class="nc" id="L59">        var formList = parseImport(is)</span>
+<span class="nc" id="L60">                .stream()</span>
+<span class="nc" id="L61">                .map(this::convert)</span>
+<span class="nc" id="L62">                .collect(Collectors.toUnmodifiableList());</span>
+<span class="nc bnc" id="L63" title="All 2 branches missed.">        if (!CollectionUtils.isEmpty(formList)) {</span>
+<span class="nc" id="L64">            formList.forEach(monitorDto -&gt; {</span>
+<span class="nc" id="L65">                monitorService.validate(monitorDto, false);</span>
+<span class="nc bnc" id="L66" title="All 2 branches missed.">                if (monitorDto.isDetected()) {</span>
+<span class="nc" id="L67">                    monitorService.detectMonitor(monitorDto.getMonitor(), monitorDto.getParams(), monitorDto.getCollector());</span>
+                }
+<span class="nc" id="L69">                monitorService.addMonitor(monitorDto.getMonitor(), monitorDto.getParams(), monitorDto.getCollector());</span>
+<span class="nc" id="L70">            });</span>
+        }
+<span class="nc" id="L72">    }</span>
+
+    @Override
+    public void exportConfig(OutputStream os, List&lt;Long&gt; configList) {
+<span class="nc" id="L76">        var monitorList = configList.stream()</span>
+<span class="nc" id="L77">                .map(it -&gt; monitorService.getMonitorDto(it))</span>
+<span class="nc" id="L78">                .map(this::convert)</span>
+<span class="nc" id="L79">                .collect(Collectors.toUnmodifiableList());</span>
+<span class="nc" id="L80">        writeOs(monitorList, os);</span>
+<span class="nc" id="L81">    }</span>
+
+    /**
+     * Parsing an input stream into a form
+     * 将输入流解析为表单
+     *
+     * @param is 输入流
+     * @return 表单
+     */
+    abstract List&lt;ExportMonitorDTO&gt; parseImport(InputStream is);
+
+    /**
+     * Export Configuration to Output Stream
+     * 导出配置到输出流
+     *
+     * @param monitorList 配置列表
+     * @param os          输出流
+     */
+    abstract void writeOs(List&lt;ExportMonitorDTO&gt; monitorList, OutputStream os);
+
+    private ExportMonitorDTO convert(MonitorDto dto) {
+<span class="nc" id="L102">        var exportMonitor = new ExportMonitorDTO();</span>
+<span class="nc" id="L103">        var monitor = new MonitorDTO();</span>
+<span class="nc" id="L104">        BeanUtils.copyProperties(dto.getMonitor(), monitor);</span>
+<span class="nc bnc" id="L105" title="All 2 branches missed.">        if (!CollectionUtils.isEmpty(dto.getMonitor().getTags())) {</span>
+<span class="nc" id="L106">            monitor.setTags(dto.getMonitor().getTags().stream()</span>
+<span class="nc" id="L107">                    .map(Tag::getId).collect(Collectors.toUnmodifiableList()));</span>
+        }
+<span class="nc" id="L109">        exportMonitor.setMonitor(monitor);</span>
+<span class="nc" id="L110">        exportMonitor.setParams(dto.getParams().stream()</span>
+<span class="nc" id="L111">                .map(it -&gt; {</span>
+<span class="nc" id="L112">                    var param = new ParamDTO();</span>
+<span class="nc" id="L113">                    BeanUtils.copyProperties(it, param);</span>
+<span class="nc" id="L114">                    return param;</span>
+                })
+<span class="nc" id="L116">                .collect(Collectors.toUnmodifiableList()));</span>
+<span class="nc" id="L117">        exportMonitor.setMetrics(dto.getMetrics());</span>
+<span class="nc" id="L118">        exportMonitor.setDetected(false);</span>
+<span class="nc" id="L119">        exportMonitor.getMonitor().setCollector(dto.getCollector());</span>
+<span class="nc" id="L120">        return exportMonitor;</span>
+    }
+
+    private MonitorDto convert(ExportMonitorDTO exportMonitor) {
+<span class="nc" id="L124">        var monitorDto = new MonitorDto();</span>
+<span class="nc" id="L125">        monitorDto.setDetected(exportMonitor.getDetected());</span>
+<span class="nc" id="L126">        var monitor = new Monitor();</span>
+<span class="nc" id="L127">        log.debug(&quot;exportMonitor.monitor{}&quot;, exportMonitor.monitor);</span>
+<span class="nc" id="L128">        BeanUtils.copyProperties(exportMonitor.monitor, monitor);</span>
+<span class="nc" id="L129">        monitor.setTags(tagService.listTag(new HashSet&lt;&gt;(exportMonitor.monitor.tags))</span>
+<span class="nc" id="L130">                .stream().</span>
+<span class="nc bnc" id="L131" title="All 4 branches missed.">                filter(tag -&gt; !(tag.getName().equals(CommonConstants.TAG_MONITOR_ID) || tag.getName().equals(CommonConstants.TAG_MONITOR_NAME)))</span>
+<span class="nc" id="L132">                .collect(Collectors.toList()));</span>
+<span class="nc" id="L133">        monitorDto.setMonitor(monitor);</span>
+<span class="nc" id="L134">        monitorDto.setCollector(exportMonitor.getMonitor().getCollector());</span>
+<span class="nc" id="L135">        monitorDto.setMetrics(exportMonitor.metrics);</span>
+<span class="nc" id="L136">        monitorDto.setParams(exportMonitor.params.stream()</span>
+<span class="nc" id="L137">                .map(it -&gt; {</span>
+<span class="nc" id="L138">                    var param = new Param();</span>
+<span class="nc" id="L139">                    BeanUtils.copyProperties(it, param);</span>
+<span class="nc" id="L140">                    return param;</span>
+                })
+<span class="nc" id="L142">                .collect(Collectors.toUnmodifiableList()));</span>
+<span class="nc" id="L143">        return monitorDto;</span>
+    }
+
+    protected String
+    fileNamePrefix() {
+<span class="nc" id="L148">        return &quot;hertzbeat_monitor_&quot; + LocalDate.now();</span>
+    }
+
+<span class="nc bnc" id="L151" title="All 38 branches missed.">    @Data</span>
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @ExcelTarget(value = &quot;ExportMonitorDTO&quot;)
+    protected static class ExportMonitorDTO {
+        @ExcelEntity(name = &quot;Monitor&quot;)
+<span class="nc" id="L157">        private MonitorDTO monitor;</span>
+        @ExcelCollection(name = &quot;Params&quot;)
+<span class="nc" id="L159">        private List&lt;ParamDTO&gt; params;</span>
+        @ExcelCollection(name = &quot;Metrics&quot;)
+<span class="nc" id="L161">        private List&lt;String&gt; metrics;</span>
+        @ExcelCollection(name = &quot;detected&quot;)
+<span class="nc" id="L163">        private Boolean detected;</span>
+    }
+
+
+<span class="nc bnc" id="L167" title="All 70 branches missed.">    @Data</span>
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @ExcelTarget(value = &quot;MonitorDTO&quot;)
+    protected static class MonitorDTO {
+        @Excel(name = &quot;Name&quot;)
+<span class="nc" id="L173">        private String name;</span>
+        @Excel(name = &quot;App&quot;)
+<span class="nc" id="L175">        private String app;</span>
+        @Excel(name = &quot;Host&quot;)
+<span class="nc" id="L177">        private String host;</span>
+        @Excel(name = &quot;Intervals&quot;)
+<span class="nc" id="L179">        private Integer intervals;</span>
+        @Excel(name = &quot;Status&quot;)
+<span class="nc" id="L181">        private Byte status;</span>
+        @Excel(name = &quot;Description&quot;)
+<span class="nc" id="L183">        private String description;</span>
+        @Excel(name = &quot;Tags&quot;)
+<span class="nc" id="L185">        private List&lt;Long&gt; tags;</span>
+        @Excel(name = &quot;Collector&quot;)
+<span class="nc" id="L187">        private String collector;</span>
+    }
+
+
+<span class="nc bnc" id="L191" title="All 30 branches missed.">    @Data</span>
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    @ExcelTarget(value = &quot;ParamDTO&quot;)
+    protected static class ParamDTO {
+        @Excel(name = &quot;Field&quot;)
+<span class="nc" id="L197">        private String field;</span>
+        @Excel(name = &quot;Type&quot;)
+<span class="nc" id="L199">        private Byte type;</span>
+        @Excel(name = &quot;Value&quot;)
+<span class="nc" id="L201">        private String value;</span>
+    }
+
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

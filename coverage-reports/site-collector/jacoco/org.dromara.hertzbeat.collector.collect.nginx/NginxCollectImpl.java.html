@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>NginxCollectImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.nginx</a> &gt; <span class="el_source">NginxCollectImpl.java</span></div><h1>NginxCollectImpl.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.collect.nginx;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.http.HttpHeaders;
+import org.apache.http.HttpHost;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.client.methods.RequestBuilder;
+import org.apache.http.client.protocol.HttpClientContext;
+import org.apache.http.protocol.HttpContext;
+import org.apache.http.util.EntityUtils;
+import org.dromara.hertzbeat.collector.collect.AbstractCollect;
+import org.dromara.hertzbeat.collector.collect.common.http.CommonHttpClient;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.collector.util.CollectUtil;
+import org.dromara.hertzbeat.common.constants.CollectorConstants;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.job.protocol.NginxProtocol;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+import org.dromara.hertzbeat.common.util.IpDomainUtil;
+
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import static org.dromara.hertzbeat.common.constants.SignConstants.RIGHT_DASH;
+
+/**
+ * nginx collect
+ *
+ * @author a-little-fool
+ */
+<span class="fc" id="L47">@Slf4j</span>
+public class NginxCollectImpl extends AbstractCollect {
+
+    private final static int SUCCESS_CODE = 200;
+    private final static String NGINX_STATUS_NAME = &quot;nginx_status&quot;;
+    private final static String REQ_STATUS_NAME = &quot;req_status&quot;;
+    private final static String AVAILABLE = &quot;available&quot;;
+    private final static String CONNECTIONS = &quot;connections&quot;;
+    private final static String ACTIVE = &quot;active&quot;;
+    private final static String GET = &quot;get&quot;;
+    private final static String FIELD_SPLIT = &quot;_&quot;;
+    private final static String REGEX_KEYS = &quot;server\\s+(\\w+)\\s+(\\w+)\\s+(\\w+)&quot;;
+    private final static String REGEX_VALUES = &quot;(\\d+) (\\d+) (\\d+)&quot;;
+    private final static String REGEX_SERVER = &quot;(\\w+): (\\d+)&quot;;
+    private final static String REGEX_SPLIT = &quot;\\r?\\n&quot;;
+    private final static String REGEX_LINE_SPLIT = &quot;\\s+&quot;;
+
+
+<span class="fc" id="L65">    public NginxCollectImpl() {</span>
+
+<span class="fc" id="L67">    }</span>
+
+    @Override
+    public void collect(CollectRep.MetricsData.Builder builder, long monitorId, String app, Metrics metrics) {
+<span class="fc" id="L71">        long startTime = System.currentTimeMillis();</span>
+
+        // 校验参数
+        try {
+<span class="fc" id="L75">            validateParams(metrics);</span>
+<span class="nc" id="L76">        } catch (Exception e) {</span>
+<span class="nc" id="L77">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L78">            builder.setMsg(e.getMessage());</span>
+<span class="nc" id="L79">            return;</span>
+<span class="fc" id="L80">        }</span>
+
+<span class="fc" id="L82">        HttpContext httpContext = createHttpContext(metrics.getNginx());</span>
+<span class="fc" id="L83">        HttpUriRequest request = createHttpRequest(metrics.getNginx());</span>
+        try {
+            // 发起http请求，获取响应数据
+<span class="fc" id="L86">            CloseableHttpResponse response = CommonHttpClient.getHttpClient()</span>
+<span class="nc" id="L87">                    .execute(request, httpContext);</span>
+<span class="nc" id="L88">            int statusCode = response.getStatusLine().getStatusCode();</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">            if (statusCode != SUCCESS_CODE) {</span>
+<span class="nc" id="L90">                builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L91">                builder.setMsg(&quot;StatusCode &quot; + statusCode);</span>
+<span class="nc" id="L92">                return;</span>
+            }
+<span class="nc" id="L94">            String resp = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);</span>
+
+<span class="nc" id="L96">            Long responseTime = System.currentTimeMillis() - startTime;</span>
+            // 根据metrics name选择调用不同解析方法
+<span class="nc bnc" id="L98" title="All 4 branches missed.">            if (NGINX_STATUS_NAME.equals(metrics.getName()) || AVAILABLE.equals(metrics.getName())) {</span>
+<span class="nc" id="L99">                parseNginxStatusResponse(builder, resp, metrics, responseTime);</span>
+<span class="nc bnc" id="L100" title="All 2 branches missed.">            } else if (REQ_STATUS_NAME.equals(metrics.getName())) {</span>
+<span class="nc" id="L101">                parseReqStatusResponse(builder, resp, metrics, responseTime);</span>
+            }
+<span class="fc" id="L103">        } catch (Exception e) {</span>
+<span class="fc" id="L104">            String errorMsg = CommonUtil.getMessageFromThrowable(e);</span>
+<span class="fc" id="L105">            log.info(errorMsg);</span>
+<span class="fc" id="L106">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="fc" id="L107">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L108">        }</span>
+
+<span class="fc" id="L110">    }</span>
+
+    @Override
+    public String supportProtocol() {
+<span class="nc" id="L114">        return DispatchConstants.PROTOCOL_NGINX;</span>
+    }
+
+    private void validateParams(Metrics metrics) throws Exception {
+        final NginxProtocol nginxProtocol;
+
+<span class="pc bpc" id="L120" title="3 of 6 branches missed.">        if (metrics == null || (nginxProtocol = metrics.getNginx()) == null || nginxProtocol.isInValid()) {</span>
+<span class="nc" id="L121">            throw new Exception(&quot;Nginx collect must has nginx params&quot;);</span>
+        }
+        
+<span class="pc bpc" id="L124" title="1 of 2 branches missed.">        if (nginxProtocol.getUrl() == null</span>
+<span class="pc bpc" id="L125" title="1 of 2 branches missed.">                || &quot;&quot;.equals(nginxProtocol.getUrl())</span>
+<span class="pc bpc" id="L126" title="1 of 2 branches missed.">                || !nginxProtocol.getUrl().startsWith(RIGHT_DASH)) {</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">            nginxProtocol.setUrl(nginxProtocol.getUrl() == null ? RIGHT_DASH : RIGHT_DASH + nginxProtocol.getUrl().trim());</span>
+        }
+<span class="fc" id="L129">    }</span>
+
+    private HttpContext createHttpContext(NginxProtocol nginxProtocol) {
+<span class="fc" id="L132">        HttpHost host = new HttpHost(nginxProtocol.getHost(), Integer.parseInt(nginxProtocol.getPort()));</span>
+<span class="fc" id="L133">        HttpClientContext httpClientContext = new HttpClientContext();</span>
+<span class="fc" id="L134">        httpClientContext.setTargetHost(host);</span>
+<span class="fc" id="L135">        return httpClientContext;</span>
+    }
+
+    private HttpUriRequest createHttpRequest(NginxProtocol nginxProtocol) {
+<span class="fc" id="L139">        RequestBuilder requestBuilder = RequestBuilder.get();</span>
+        // uri
+<span class="fc" id="L141">        String uri = CollectUtil.replaceUriSpecialChar(nginxProtocol.getUrl());</span>
+<span class="pc bpc" id="L142" title="1 of 2 branches missed.">        if (IpDomainUtil.isHasSchema(nginxProtocol.getHost())) {</span>
+<span class="nc" id="L143">            requestBuilder.setUri(nginxProtocol.getHost() + &quot;:&quot; + nginxProtocol.getPort() + uri);</span>
+        } else {
+<span class="fc" id="L145">            String ipAddressType = IpDomainUtil.checkIpAddressType(nginxProtocol.getHost());</span>
+<span class="pc bpc" id="L146" title="1 of 2 branches missed.">            String baseUri = CollectorConstants.IPV6.equals(ipAddressType)</span>
+<span class="nc" id="L147">                    ? String.format(&quot;[%s]:%s&quot;, nginxProtocol.getHost(), nginxProtocol.getPort() + uri)</span>
+<span class="fc" id="L148">                    : String.format(&quot;%s:%s&quot;, nginxProtocol.getHost(), nginxProtocol.getPort() + uri);</span>
+
+<span class="fc" id="L150">            requestBuilder.setUri(CollectorConstants.HTTP_HEADER + baseUri);</span>
+        }
+
+<span class="fc" id="L153">        requestBuilder.addHeader(HttpHeaders.CONNECTION, &quot;keep-alive&quot;);</span>
+<span class="fc" id="L154">        requestBuilder.addHeader(HttpHeaders.USER_AGENT, &quot;Mozilla/5.0 (Windows NT 6.1; WOW64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.76 Safari/537.36&quot;);</span>
+
+<span class="fc" id="L156">        requestBuilder.addHeader(HttpHeaders.ACCEPT, &quot;text/plain&quot;);</span>
+
+<span class="fc" id="L158">        int timeout = Integer.parseInt(nginxProtocol.getTimeout());</span>
+<span class="pc bpc" id="L159" title="1 of 2 branches missed.">        if (timeout &gt; 0) {</span>
+<span class="fc" id="L160">            RequestConfig requestConfig = RequestConfig.custom()</span>
+<span class="fc" id="L161">                    .setConnectTimeout(timeout)</span>
+<span class="fc" id="L162">                    .setSocketTimeout(timeout)</span>
+<span class="fc" id="L163">                    .setRedirectsEnabled(true)</span>
+<span class="fc" id="L164">                    .build();</span>
+<span class="fc" id="L165">            requestBuilder.setConfig(requestConfig);</span>
+        }
+<span class="fc" id="L167">        return requestBuilder.build();</span>
+    }
+
+    /**
+     * 解析nginx自带ngx_http_stub_status_module模块暴露信息
+     *
+     * @param builder
+     * @param resp
+     * @param metrics
+     * @param responseTime
+     */
+    private void parseNginxStatusResponse(CollectRep.MetricsData.Builder builder, String resp, Metrics metrics,
+                                          Long responseTime) {
+        /** example
+         * Active connections: 2
+         * server accepts handled requests
+         *  4 4 2
+         * Reading: 0 Writing: 1 Waiting: 1
+         */
+<span class="nc" id="L186">        List&lt;String&gt; aliasFields = metrics.getAliasFields();</span>
+<span class="nc" id="L187">        Map&lt;String, Object&gt; metricMap = regexNginxStatusMatch(resp, metrics.getAliasFields().size());</span>
+        // 返回数据
+<span class="nc" id="L189">        CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L190" title="All 2 branches missed.">        for (String alias : aliasFields) {</span>
+<span class="nc" id="L191">            Object value = metricMap.get(alias);</span>
+<span class="nc bnc" id="L192" title="All 2 branches missed.">            if (value != null) {</span>
+<span class="nc" id="L193">                valueRowBuilder.addColumns(String.valueOf(value));</span>
+            } else {
+<span class="nc bnc" id="L195" title="All 2 branches missed.">                if (CollectorConstants.RESPONSE_TIME.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L196">                    valueRowBuilder.addColumns(responseTime.toString());</span>
+                } else {
+<span class="nc" id="L198">                    valueRowBuilder.addColumns(CommonConstants.NULL_VALUE);</span>
+                }
+            }
+<span class="nc" id="L201">        }</span>
+<span class="nc" id="L202">        builder.addValues(valueRowBuilder.build());</span>
+<span class="nc" id="L203">    }</span>
+
+    /**
+     * 解析ngx_http_reqstat_module模块暴露信息
+     *
+     * @param builder
+     * @param resp
+     * @param metrics
+     * @param responseTime
+     */
+    private void parseReqStatusResponse(CollectRep.MetricsData.Builder builder, String resp, Metrics metrics,
+                                        Long responseTime) {
+        /** example
+         * zone_name       key     max_active      max_bw  traffic requests        active  bandwidth
+         * imgstore_appid  43    27      6M      63G     374063  0        0
+         * imgstore_appid  53    329     87M     2058G   7870529 50      25M
+         * server_addr     10.128.1.17     2        8968   24M     1849    0        0
+         * server_addr     127.0.0.1       1       6M      5G      912     1        0
+         * server_addr     180.96.x.1   3358    934M    27550G  141277391       891     356M
+         * server_addr     180.96.x.2   78      45M     220G    400704  0        0
+         * server_addr     180.96.x.3   242     58M     646G    2990547 42      7M
+         * server_name     d.123.sogou.com 478     115M    2850G   30218726        115     39M
+         * server_name     dl.pinyin.sogou.com     913     312M    8930G   35345453        225     97M
+         * server_name     download.ie.sogou.com   964     275M    7462G   7979817 297     135M
+         */
+<span class="nc" id="L228">        List&lt;ReqSatusResponse&gt; reqSatusResponses = regexReqStatusMatch(resp);</span>
+<span class="nc" id="L229">        List&lt;String&gt; aliasFields = metrics.getAliasFields();</span>
+
+<span class="nc bnc" id="L231" title="All 2 branches missed.">        for (ReqSatusResponse reqSatusResponse : reqSatusResponses) {</span>
+<span class="nc" id="L232">            CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">            for (String alias : aliasFields) {</span>
+<span class="nc bnc" id="L234" title="All 2 branches missed.">                if (CollectorConstants.RESPONSE_TIME.equals(alias)) {</span>
+<span class="nc" id="L235">                    valueRowBuilder.addColumns(String.valueOf(responseTime));</span>
+                } else {
+                    try {
+<span class="nc" id="L238">                        String methodName = reqSatusResponse.getFieldMethodName(alias);</span>
+<span class="nc" id="L239">                        Object value = reflect(reqSatusResponse, methodName);</span>
+<span class="nc bnc" id="L240" title="All 2 branches missed.">                        value = value == null ? CommonConstants.NULL_VALUE : value;</span>
+<span class="nc" id="L241">                        valueRowBuilder.addColumns(String.valueOf(value));</span>
+<span class="nc" id="L242">                    } catch (Exception e) {</span>
+<span class="nc" id="L243">                        String errorMsg = CommonUtil.getMessageFromThrowable(e);</span>
+<span class="nc" id="L244">                        log.error(errorMsg);</span>
+<span class="nc" id="L245">                        builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L246">                        builder.setMsg(errorMsg);</span>
+<span class="nc" id="L247">                    }</span>
+                }
+<span class="nc" id="L249">            }</span>
+<span class="nc" id="L250">            builder.addValues(valueRowBuilder.build());</span>
+<span class="nc" id="L251">        }</span>
+<span class="nc" id="L252">    }</span>
+
+    private Object reflect(ReqSatusResponse reqSatusResponse, String methodName) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+<span class="nc" id="L255">        Class&lt;?&gt; clazz = reqSatusResponse.getClass();</span>
+<span class="nc" id="L256">        Method method = clazz.getMethod(methodName);</span>
+<span class="nc" id="L257">        return method.invoke(reqSatusResponse);</span>
+    }
+
+    private Map&lt;String, Object&gt; regexNginxStatusMatch(String resp, Integer aliasFieldsSize) {
+<span class="nc" id="L261">        Map&lt;String, Object&gt; metricsMap = new HashMap&lt;&gt;(aliasFieldsSize);</span>
+        // 正则提取监控信息
+<span class="nc" id="L263">        Pattern pattern = Pattern.compile(REGEX_SERVER);</span>
+<span class="nc" id="L264">        Matcher matcher = pattern.matcher(resp);</span>
+<span class="nc bnc" id="L265" title="All 2 branches missed.">        while (matcher.find()) {</span>
+<span class="nc" id="L266">            String key = StringUtils.lowerCase(matcher.group(1));</span>
+<span class="nc" id="L267">            String value = matcher.group(2);</span>
+<span class="nc bnc" id="L268" title="All 2 branches missed.">            metricsMap.put(CONNECTIONS.equals(key) ? ACTIVE : key, value);</span>
+<span class="nc" id="L269">        }</span>
+<span class="nc" id="L270">        Pattern pattern1 = Pattern.compile(REGEX_KEYS);</span>
+<span class="nc" id="L271">        Matcher matcher1 = pattern1.matcher(resp);</span>
+<span class="nc" id="L272">        Pattern pattern2 = Pattern.compile(REGEX_VALUES);</span>
+<span class="nc" id="L273">        Matcher matcher2 = pattern2.matcher(resp);</span>
+<span class="nc bnc" id="L274" title="All 4 branches missed.">        if (matcher1.find() &amp;&amp; matcher2.find()) {</span>
+<span class="nc bnc" id="L275" title="All 2 branches missed.">            for (int i = 0; i &lt; matcher1.groupCount(); i++) {</span>
+<span class="nc" id="L276">                metricsMap.put(matcher1.group(i + 1), matcher2.group(i + 1));</span>
+            }
+        }
+<span class="nc" id="L279">        return metricsMap;</span>
+    }
+
+    private List&lt;ReqSatusResponse&gt; regexReqStatusMatch(String resp) {
+<span class="nc" id="L283">        List&lt;ReqSatusResponse&gt; reqSatusResponses = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L285">        String[] lines = resp.split(REGEX_SPLIT);</span>
+<span class="nc bnc" id="L286" title="All 2 branches missed.">        for (int i = 1; i &lt; lines.length; i++) {</span>
+<span class="nc" id="L287">            String[] values = lines[i].split(REGEX_LINE_SPLIT);</span>
+<span class="nc" id="L288">            ReqSatusResponse reqSatusResponse = ReqSatusResponse.builder()</span>
+<span class="nc" id="L289">                    .zoneName(values[0])</span>
+<span class="nc" id="L290">                    .key(values[1])</span>
+<span class="nc" id="L291">                    .maxActive(values[2])</span>
+<span class="nc" id="L292">                    .maxBw(values[3])</span>
+<span class="nc" id="L293">                    .traffic(values[4])</span>
+<span class="nc" id="L294">                    .requests(values[5])</span>
+<span class="nc" id="L295">                    .active(values[6])</span>
+<span class="nc" id="L296">                    .bandwidth(values[7])</span>
+<span class="nc" id="L297">                    .build();</span>
+<span class="nc" id="L298">            reqSatusResponses.add(reqSatusResponse);</span>
+        }
+<span class="nc" id="L300">        return reqSatusResponses;</span>
+    }
+
+<span class="nc bnc" id="L303" title="All 70 branches missed.">    @Data</span>
+<span class="nc" id="L304">    @Builder</span>
+<span class="nc" id="L305">    @AllArgsConstructor</span>
+<span class="nc" id="L306">    @NoArgsConstructor</span>
+    static class ReqSatusResponse {
+<span class="nc" id="L308">        private String zoneName; // zone_name</span>
+
+<span class="nc" id="L310">        private String maxActive; // max_active</span>
+
+<span class="nc" id="L312">        private String key; // key</span>
+
+<span class="nc" id="L314">        private String maxBw; // max_bw</span>
+
+<span class="nc" id="L316">        private String traffic; // traffic</span>
+
+<span class="nc" id="L318">        private String requests; // requests</span>
+
+<span class="nc" id="L320">        private String active; // active</span>
+
+<span class="nc" id="L322">        private String bandwidth; // bandwidth</span>
+
+        public String getFieldMethodName(String name) {
+<span class="nc" id="L325">            String[] words = name.split(FIELD_SPLIT);</span>
+<span class="nc" id="L326">            StringBuilder result = new StringBuilder();</span>
+<span class="nc bnc" id="L327" title="All 2 branches missed.">            for (String word : words) {</span>
+<span class="nc" id="L328">                result.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));</span>
+            }
+<span class="nc" id="L330">            return GET + result;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

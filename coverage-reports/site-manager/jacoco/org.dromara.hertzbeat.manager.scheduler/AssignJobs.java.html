@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AssignJobs.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.scheduler</a> &gt; <span class="el_source">AssignJobs.java</span></div><h1>AssignJobs.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.manager.scheduler;
+
+import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * 分配的采集任务列表
+ * @author tom
+ */
+<span class="fc" id="L13">@Slf4j</span>
+<span class="nc bnc" id="L14" title="All 38 branches missed.">@Data</span>
+public class AssignJobs {
+    /**
+     * current assign jobIds
+     */
+<span class="nc" id="L19">    private Set&lt;Long&gt; jobs;</span>
+    
+    /**
+     * jobs to be adding
+     */
+<span class="fc" id="L24">    private Set&lt;Long&gt; addingJobs;</span>
+    
+    /**
+     * jobs to be removed
+     */
+<span class="fc" id="L29">    private Set&lt;Long&gt; removingJobs;</span>
+    
+    /**
+     * jobs has pinned in this collector
+     */
+<span class="nc" id="L34">    private Set&lt;Long&gt; pinnedJobs;</span>
+
+<span class="fc" id="L36">    public AssignJobs() {</span>
+<span class="fc" id="L37">        jobs = ConcurrentHashMap.newKeySet(16);</span>
+<span class="fc" id="L38">        addingJobs = ConcurrentHashMap.newKeySet(16);</span>
+<span class="fc" id="L39">        removingJobs = ConcurrentHashMap.newKeySet(16);</span>
+<span class="fc" id="L40">        pinnedJobs = ConcurrentHashMap.newKeySet(16);</span>
+<span class="fc" id="L41">    }</span>
+
+    public void addAssignJob(Long jobId) {
+<span class="nc" id="L44">        jobs.add(jobId);</span>
+<span class="nc" id="L45">    }</span>
+    
+    public void addAddingJob(Long jobId) {
+<span class="nc" id="L48">        addingJobs.add(jobId);</span>
+<span class="nc" id="L49">    }</span>
+    
+    public void addRemovingJob(Long jobId) {
+<span class="nc" id="L52">        removingJobs.add(jobId);</span>
+<span class="nc" id="L53">    }</span>
+    
+    public void addPinnedJob(Long jobId) {
+<span class="nc" id="L56">        pinnedJobs.add(jobId);</span>
+<span class="nc" id="L57">    }</span>
+
+    public void addAssignJobs(Set&lt;Long&gt; jobSet) {
+<span class="nc bnc" id="L60" title="All 4 branches missed.">        if (jobSet != null &amp;&amp; !jobSet.isEmpty()) {</span>
+<span class="nc" id="L61">            jobs.addAll(jobSet);</span>
+        }
+<span class="nc" id="L63">    }</span>
+    
+    public void addAddingJobs(Set&lt;Long&gt; jobSet) {
+<span class="nc bnc" id="L66" title="All 4 branches missed.">        if (jobSet != null &amp;&amp; !jobSet.isEmpty()) {</span>
+<span class="nc" id="L67">            addingJobs.addAll(jobSet);</span>
+        }
+<span class="nc" id="L69">    }</span>
+    
+    public void addRemovingJobs(Set&lt;Long&gt; jobSet) {
+<span class="nc bnc" id="L72" title="All 4 branches missed.">        if (jobSet != null &amp;&amp; !jobSet.isEmpty()) {</span>
+<span class="nc" id="L73">            removingJobs.addAll(jobSet);</span>
+        }
+<span class="nc" id="L75">    }</span>
+    
+    public void addPinnedJobs(Set&lt;Long&gt; jobSet) {
+<span class="nc bnc" id="L78" title="All 4 branches missed.">        if (jobSet != null &amp;&amp; !jobSet.isEmpty()) {</span>
+<span class="nc" id="L79">            pinnedJobs.addAll(jobSet);</span>
+        }
+<span class="nc" id="L81">    }</span>
+
+    public void removeAssignJobs(Set&lt;Long&gt; jobIds) {
+<span class="nc bnc" id="L84" title="All 6 branches missed.">        if (jobs == null || jobIds == null || jobIds.isEmpty()) {</span>
+<span class="nc" id="L85">            return;</span>
+        }
+<span class="nc" id="L87">        jobs.removeAll(jobIds);</span>
+<span class="nc" id="L88">    }</span>
+    
+    public void removeAddingJobs(Set&lt;Long&gt; jobIds) {
+<span class="nc bnc" id="L91" title="All 6 branches missed.">        if (addingJobs == null || jobIds == null || jobIds.isEmpty()) {</span>
+<span class="nc" id="L92">            return;</span>
+        }
+<span class="nc" id="L94">        addingJobs.removeAll(jobIds);</span>
+<span class="nc" id="L95">    }</span>
+    
+    public void clearRemovingJobs() {
+<span class="nc bnc" id="L98" title="All 2 branches missed.">        if (removingJobs == null) {</span>
+<span class="nc" id="L99">            return;</span>
+        }
+<span class="nc" id="L101">        removingJobs.clear();</span>
+<span class="nc" id="L102">    }</span>
+
+    /**
+     * 判断是否存在对应的jobId
+     * @param jobId jobId
+     * @return 若存在返回true,并把jobId从assignJobs remove掉
+     */
+    public boolean containAndRemoveJob(Long jobId) {
+<span class="nc bnc" id="L110" title="All 2 branches missed.">        if (jobs.isEmpty()) {</span>
+<span class="nc" id="L111">            return false;</span>
+        }
+<span class="nc" id="L113">        return jobs.remove(jobId);</span>
+    }
+    
+    public void removeAddingJob(Long jobId) {
+<span class="nc bnc" id="L117" title="All 4 branches missed.">        if (addingJobs == null || jobId == null) {</span>
+<span class="nc" id="L118">            return;</span>
+        }
+<span class="nc" id="L120">        addingJobs.remove(jobId);</span>
+<span class="nc" id="L121">    }</span>
+    
+    public void removeRemovingJob(Long jobId) {
+<span class="nc bnc" id="L124" title="All 4 branches missed.">        if (removingJobs == null || jobId == null) {</span>
+<span class="nc" id="L125">            return;</span>
+        }
+<span class="nc" id="L127">        removingJobs.remove(jobId);</span>
+<span class="nc" id="L128">    }</span>
+    
+    public void removePinnedJob(Long jobId) {
+<span class="nc bnc" id="L131" title="All 4 branches missed.">        if (pinnedJobs == null || jobId == null) {</span>
+<span class="nc" id="L132">            return;</span>
+        }
+<span class="nc" id="L134">        pinnedJobs.remove(jobId);</span>
+<span class="nc" id="L135">    }</span>
+
+    /**
+     * 清理数据
+     */
+    public void clear() {
+<span class="nc bnc" id="L141" title="All 2 branches missed.">        if (!jobs.isEmpty()) {</span>
+<span class="nc" id="L142">            log.warn(&quot;assign jobs is not empty, maybe there are jobs not assigned&quot;);</span>
+<span class="nc" id="L143">            jobs.clear();</span>
+        }
+<span class="nc" id="L145">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

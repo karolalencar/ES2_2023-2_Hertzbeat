@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DnsCollectImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.dns</a> &gt; <span class="el_source">DnsCollectImpl.java</span></div><h1>DnsCollectImpl.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.collect.dns;
+
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.dromara.hertzbeat.collector.collect.AbstractCollect;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.job.protocol.DnsProtocol;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+import org.springframework.util.StopWatch;
+import org.xbill.DNS.DClass;
+import org.xbill.DNS.Message;
+import org.xbill.DNS.Name;
+import org.xbill.DNS.Opcode;
+import org.xbill.DNS.RRset;
+import org.xbill.DNS.Rcode;
+import org.xbill.DNS.Record;
+import org.xbill.DNS.Resolver;
+import org.xbill.DNS.Section;
+import org.xbill.DNS.SimpleResolver;
+import org.xbill.DNS.Type;
+
+import java.io.IOException;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ * dns protocol collection implementation
+ * @author Calvin
+ */
+<span class="fc" id="L43">@Slf4j</span>
+<span class="fc" id="L44">public class DnsCollectImpl extends AbstractCollect {</span>
+    /*
+     each part of dig command output
+     */
+    private static final String HEADER = &quot;header&quot;;
+    private static final String QUESTION = &quot;question&quot;;
+    private static final String ANSWER = &quot;answer&quot;;
+    private static final String AUTHORITY = &quot;authority&quot;;
+    private static final String ADDITIONAL = &quot;additional&quot;;
+    /*
+     * used for header key
+     * example:
+     * ;; -&gt;&gt;HEADER&lt;&lt;- opcode: QUERY, status: NOERROR, id: 3221
+     * ;; flags: qr rd ra ; qd: 1 an: 1 au: 0 ad: 0
+     *
+     *
+     * opcode -&gt; opcode
+     * status -&gt; status
+     * flags -&gt; flags
+     * qd -&gt; questionRowCount
+     * an -&gt; answerRowCount
+     * au -&gt; authorityRowCount
+     * ad -&gt; additionalRowCount
+     */
+    private static final String RESPONSE_TIME = &quot;responseTime&quot;;
+    private static final String OP_CODE = &quot;opcode&quot;;
+    private static final String STATUS = &quot;status&quot;;
+    private static final String FLAGS = &quot;flags&quot;;
+    private static final String QUESTION_ROW_COUNT = &quot;questionRowCount&quot;;
+    private static final String ANSWER_ROW_COUNT = &quot;answerRowCount&quot;;
+    private static final String AUTHORITY_ROW_COUNT = &quot;authorityRowCount&quot;;
+    private static final String ADDITIONAL_ROW_COUNT = &quot;additionalRowCount&quot;;
+
+
+    @Override
+    public void collect(CollectRep.MetricsData.Builder builder, long monitorId, String app, Metrics metrics) {
+        // check params
+<span class="pc bpc" id="L81" title="1 of 2 branches missed.">        if (checkDnsProtocolFailed(metrics.getDns())) {</span>
+<span class="fc" id="L82">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="fc" id="L83">            builder.setMsg(&quot;DNS collect must have a valid DNS protocol param! &quot;);</span>
+<span class="fc" id="L84">            return;</span>
+        }
+
+        DNSResolveResult dnsResolveResult;
+        try {
+            // run dig command
+<span class="nc" id="L90">            dnsResolveResult = dig(metrics.getDns());</span>
+<span class="nc" id="L91">        } catch (IOException e) {</span>
+<span class="nc" id="L92">            log.info(CommonUtil.getMessageFromThrowable(e));</span>
+<span class="nc" id="L93">            builder.setCode(CollectRep.Code.UN_CONNECTABLE);</span>
+<span class="nc" id="L94">            builder.setMsg(e.getMessage());</span>
+<span class="nc" id="L95">            return;</span>
+<span class="nc" id="L96">        } catch (Exception e) {</span>
+<span class="nc" id="L97">            String errorMsg = CommonUtil.getMessageFromThrowable(e);</span>
+<span class="nc" id="L98">            log.warn(&quot;[dns collect] error: {}&quot;, e.getMessage(), e);</span>
+<span class="nc" id="L99">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L100">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L101">            return;</span>
+<span class="nc" id="L102">        }</span>
+
+        // build dns metrics data
+<span class="nc" id="L105">        CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">        if (StringUtils.equals(HEADER, metrics.getName())) {</span>
+            // add header columns
+<span class="nc" id="L108">            Map&lt;String, String&gt; headerInfo = dnsResolveResult.getHeaderInfo();</span>
+<span class="nc" id="L109">            metrics.getAliasFields().forEach(field -&gt; valueRowBuilder.addColumns(headerInfo.getOrDefault(field, CommonConstants.NULL_VALUE)));</span>
+<span class="nc" id="L110">        }else {</span>
+            // add question/answer/authority/additional columns
+<span class="nc" id="L112">            List&lt;String&gt; currentMetricsResolveResultList = dnsResolveResult.getList(metrics.getName());</span>
+<span class="nc bnc" id="L113" title="All 2 branches missed.">            for (int index = 0; index &lt; metrics.getAliasFields().size(); index++) {</span>
+<span class="nc bnc" id="L114" title="All 2 branches missed.">                valueRowBuilder.addColumns(index &gt;= currentMetricsResolveResultList.size()</span>
+<span class="nc" id="L115">                        ? CommonConstants.NULL_VALUE</span>
+<span class="nc" id="L116">                        : currentMetricsResolveResultList.get(index));</span>
+            }
+        }
+
+<span class="nc" id="L120">        builder.addValues(valueRowBuilder.build());</span>
+<span class="nc" id="L121">    }</span>
+
+    @Override
+    public String supportProtocol() {
+<span class="nc" id="L125">        return DispatchConstants.PROTOCOL_DNS;</span>
+    }
+
+    private boolean checkDnsProtocolFailed(DnsProtocol dnsProtocol) {
+<span class="pc bpc" id="L129" title="2 of 4 branches missed.">        return Objects.isNull(dnsProtocol) || dnsProtocol.isInvalid();</span>
+    }
+
+    /**
+     * run dig command
+     */
+    private DNSResolveResult dig(DnsProtocol dns) throws IOException {
+<span class="nc" id="L136">        StopWatch responseTimeStopWatch = new StopWatch(&quot;responseTime&quot;);</span>
+<span class="nc" id="L137">        responseTimeStopWatch.start();</span>
+
+<span class="nc" id="L139">        Name name = Name.fromString(dns.getAddress(), Name.root);</span>
+<span class="nc" id="L140">        Message query = Message.newQuery(Record.newRecord(name, Type.ANY, DClass.ANY));</span>
+<span class="nc" id="L141">        Resolver res = new SimpleResolver(dns.getDnsServerIP());</span>
+<span class="nc" id="L142">        res.setTimeout(Duration.of(Long.parseLong(dns.getTimeout()), ChronoUnit.MILLIS));</span>
+<span class="nc" id="L143">        res.setTCP(Boolean.parseBoolean(dns.getTcp()));</span>
+<span class="nc" id="L144">        res.setPort(Integer.parseInt(dns.getPort()));</span>
+
+<span class="nc" id="L146">        Message response = res.send(query);</span>
+<span class="nc" id="L147">        responseTimeStopWatch.stop();</span>
+<span class="nc" id="L148">        return resolve(response, responseTimeStopWatch.getLastTaskTimeMillis());</span>
+    }
+
+    private DNSResolveResult resolve(Message message, Long responseTime) {
+<span class="nc" id="L152">        return DNSResolveResult.builder()</span>
+<span class="nc" id="L153">                .headerInfo(getHeaderInfo(message, responseTime))</span>
+<span class="nc" id="L154">                .questionList(getSectionInfo(message, Section.QUESTION))</span>
+<span class="nc" id="L155">                .answerList(getSectionInfo(message, Section.ANSWER))</span>
+<span class="nc" id="L156">                .authorityList(getSectionInfo(message, Section.AUTHORITY))</span>
+<span class="nc" id="L157">                .additionalList(getSectionInfo(message, Section.ADDITIONAL))</span>
+<span class="nc" id="L158">                .build();</span>
+    }
+
+    private Map&lt;String, String&gt; getHeaderInfo(Message message, Long responseTime) {
+<span class="nc" id="L162">        Map&lt;String, String&gt; resultMap = Maps.newHashMap();</span>
+<span class="nc" id="L163">        resultMap.put(RESPONSE_TIME, String.valueOf(responseTime));</span>
+<span class="nc" id="L164">        resultMap.put(OP_CODE, Opcode.string(message.getHeader().getOpcode()));</span>
+<span class="nc" id="L165">        resultMap.put(STATUS, Rcode.string(message.getHeader().getRcode()));</span>
+<span class="nc" id="L166">        resultMap.put(FLAGS, message.getHeader().printFlags());</span>
+<span class="nc" id="L167">        resultMap.put(QUESTION_ROW_COUNT, String.valueOf(message.getHeader().getCount(Section.QUESTION)));</span>
+<span class="nc" id="L168">        resultMap.put(ANSWER_ROW_COUNT, String.valueOf(message.getHeader().getCount(Section.ANSWER)));</span>
+<span class="nc" id="L169">        resultMap.put(AUTHORITY_ROW_COUNT, String.valueOf(message.getHeader().getCount(Section.AUTHORITY)));</span>
+<span class="nc" id="L170">        resultMap.put(ADDITIONAL_ROW_COUNT, String.valueOf(message.getHeader().getCount(Section.ADDITIONAL)));</span>
+
+<span class="nc" id="L172">        return resultMap;</span>
+    }
+
+    private List&lt;String&gt; getSectionInfo(Message message, int section) {
+<span class="nc" id="L176">        List&lt;RRset&gt; currentRRsetList = message.getSectionRRsets(section);</span>
+<span class="nc bnc" id="L177" title="All 4 branches missed.">        if (currentRRsetList == null || currentRRsetList.size() &lt;= 0) {</span>
+<span class="nc" id="L178">            return Lists.newArrayList();</span>
+        }
+
+<span class="nc" id="L181">        List&lt;String&gt; infoList = Lists.newArrayListWithCapacity(currentRRsetList.size());</span>
+<span class="nc" id="L182">        currentRRsetList.forEach(res -&gt; infoList.add(res.toString()));</span>
+
+<span class="nc" id="L184">        return infoList;</span>
+    }
+
+
+<span class="nc bnc" id="L188" title="All 46 branches missed.">    @Data</span>
+<span class="nc" id="L189">    @Builder</span>
+<span class="nc" id="L190">    @NoArgsConstructor</span>
+<span class="nc" id="L191">    @AllArgsConstructor</span>
+    private static class DNSResolveResult {
+<span class="nc" id="L193">        private Map&lt;String, String&gt; headerInfo;</span>
+        /** example: www.google.com.		140	IN	A	192.133.77.133 **/
+<span class="nc" id="L195">        private List&lt;String&gt; questionList;</span>
+<span class="nc" id="L196">        private List&lt;String&gt; answerList;</span>
+<span class="nc" id="L197">        private List&lt;String&gt; authorityList;</span>
+<span class="nc" id="L198">        private List&lt;String&gt; additionalList;</span>
+
+        public List&lt;String&gt; getList(String metricsName) {
+<span class="nc bnc" id="L201" title="All 5 branches missed.">            switch (metricsName) {</span>
+<span class="nc" id="L202">                case QUESTION: return questionList;</span>
+<span class="nc" id="L203">                case ANSWER: return answerList;</span>
+<span class="nc" id="L204">                case AUTHORITY: return authorityList;</span>
+<span class="nc" id="L205">                case ADDITIONAL: return additionalList;</span>
+<span class="nc" id="L206">                default: return Collections.emptyList();</span>
+            }
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>StrBuffer.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.util</a> &gt; <span class="el_source">StrBuffer.java</span></div><h1>StrBuffer.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.common.util;
+
+/**
+ * @author ceilzcx
+ *
+ * 为了避免ExporterParser解析过程中, 使用subString的方式生成过多的String对象, 使用该类控制
+ */
+public class StrBuffer {
+    private static final String POSITIVE_INF = &quot;+inf&quot;;
+    private static final String NEGATIVE_INF = &quot;-inf&quot;;
+    private static final long POSITIVE_INF_VALUE = 0x7FF0000000000000L;
+    private static final long NEGATIVE_INF_VALUE = 0xFFF0000000000000L;
+
+    private final char[] chars;
+    private int left;
+    private int right;
+
+<span class="nc" id="L18">    public StrBuffer(String s) {</span>
+<span class="nc" id="L19">        this.chars = s.toCharArray();</span>
+<span class="nc" id="L20">        this.left = 0;</span>
+<span class="nc" id="L21">        this.right = s.length() - 1;</span>
+<span class="nc" id="L22">    }</span>
+
+    /**
+     * 读取当前字符, left++
+     *
+     * @return 当前下标字符
+     */
+    public char read() {
+<span class="nc bnc" id="L30" title="All 2 branches missed.">        if (left &gt; right) {</span>
+<span class="nc" id="L31">            throw new IndexOutOfBoundsException(&quot;StrBuffer use charAt method error. left=&quot; + left + &quot;, right=&quot; + right);</span>
+        }
+<span class="nc" id="L33">        return chars[left++];</span>
+    }
+
+    /**
+     * 回滚一个字符
+     */
+    public void rollback() {
+<span class="nc bnc" id="L40" title="All 2 branches missed.">        if (left &gt; 0) {</span>
+<span class="nc" id="L41">            left--;</span>
+        }
+<span class="nc" id="L43">    }</span>
+
+    /**
+     * 只查询left+i的下标字符, 不会进行left++的操作
+     *
+     * @param i 下标
+     * @return left+i下标对应的字符
+     */
+    public char charAt(int i) {
+<span class="nc bnc" id="L52" title="All 2 branches missed.">        if (left + i &gt; right) {</span>
+<span class="nc" id="L53">            throw new IndexOutOfBoundsException(&quot;StrBuffer use charAt method error. left=&quot; + left + &quot;, i=&quot; + i);</span>
+        }
+<span class="nc" id="L55">        return chars[left + i];</span>
+    }
+
+    /**
+     * 转string对象
+     *
+     * @return char数组对应的字符串
+     */
+    public String toStr() {
+<span class="nc" id="L64">        StringBuilder builder = new StringBuilder();</span>
+<span class="nc bnc" id="L65" title="All 2 branches missed.">        for (int i = left; i &lt;= right; i++) {</span>
+<span class="nc" id="L66">            builder.append(chars[i]);</span>
+        }
+<span class="nc" id="L68">        return builder.toString();</span>
+    }
+
+    /**
+     * 转double
+     *
+     * @return char数组对应的浮点数
+     */
+    public double toDouble() {
+<span class="nc" id="L77">        String s = toStr();</span>
+<span class="nc" id="L78">        return parseDouble(s);</span>
+    }
+
+    /**
+     * 转long
+     *
+     * @return char数组对应的长整数
+     */
+    public long toLong() {
+<span class="nc" id="L87">        String s = toStr();</span>
+<span class="nc" id="L88">        return parseLong(s);</span>
+    }
+
+    public void skipBlankTabs() {
+<span class="nc bnc" id="L92" title="All 2 branches missed.">        while (left &lt;= right) {</span>
+<span class="nc bnc" id="L93" title="All 2 branches missed.">            if (this.isBlankOrTab(chars[left])) {</span>
+<span class="nc" id="L94">                left++;</span>
+            } else {
+                break;
+            }
+        }
+<span class="nc bnc" id="L99" title="All 2 branches missed.">        while (right &gt;= left) {</span>
+<span class="nc bnc" id="L100" title="All 2 branches missed.">            if (this.isBlankOrTab(chars[right])) {</span>
+<span class="nc" id="L101">                right--;</span>
+            } else {
+                break;
+            }
+        }
+<span class="nc" id="L106">    }</span>
+
+    private boolean isBlankOrTab(char c) {
+<span class="nc bnc" id="L109" title="All 4 branches missed.">        return c == ' ' || c == '\t';</span>
+    }
+
+    public boolean isEmpty() {
+<span class="nc bnc" id="L113" title="All 2 branches missed.">        return left &gt; right;</span>
+    }
+
+    /**
+     * string -&gt; long, 需要判断是否为INF
+     *
+     * @param s 字符串
+     * @return 长整数
+     */
+    public static long parseLong(String s) {
+<span class="nc bnc" id="L123" title="All 2 branches missed.">        if (POSITIVE_INF.equalsIgnoreCase(s)) {</span>
+<span class="nc" id="L124">            return POSITIVE_INF_VALUE;</span>
+        }
+<span class="nc bnc" id="L126" title="All 2 branches missed.">        if (NEGATIVE_INF.equalsIgnoreCase(s)) {</span>
+<span class="nc" id="L127">            return NEGATIVE_INF_VALUE;</span>
+        }
+<span class="nc" id="L129">        return Double.valueOf(s).longValue();</span>
+    }
+
+    /**
+     * string -&gt; double, 需要判断是否为INF
+     *
+     * @param s 字符串
+     * @return 浮点数
+     */
+    public static double parseDouble(String s) {
+<span class="nc bnc" id="L139" title="All 2 branches missed.">        if (POSITIVE_INF.equalsIgnoreCase(s)) {</span>
+<span class="nc" id="L140">            return POSITIVE_INF_VALUE;</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">        } else if (NEGATIVE_INF.equalsIgnoreCase(s)) {</span>
+<span class="nc" id="L142">            return NEGATIVE_INF_VALUE;</span>
+        }
+<span class="nc" id="L144">        return Double.parseDouble(s);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

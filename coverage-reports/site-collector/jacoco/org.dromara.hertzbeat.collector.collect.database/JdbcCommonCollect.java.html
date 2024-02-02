@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>JdbcCommonCollect.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.database</a> &gt; <span class="el_source">JdbcCommonCollect.java</span></div><h1>JdbcCommonCollect.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.collector.collect.database;
+
+import com.mysql.cj.jdbc.exceptions.CommunicationsException;
+import org.dromara.hertzbeat.collector.collect.AbstractCollect;
+import org.dromara.hertzbeat.collector.collect.common.cache.CacheIdentifier;
+import org.dromara.hertzbeat.collector.collect.common.cache.CommonCache;
+import org.dromara.hertzbeat.collector.collect.common.cache.JdbcConnect;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.collector.util.CollectUtil;
+import org.dromara.hertzbeat.common.constants.CollectorConstants;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.job.protocol.JdbcProtocol;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+import lombok.extern.slf4j.Slf4j;
+import org.postgresql.util.PSQLException;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.jdbc.datasource.init.ScriptUtils;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+
+/**
+ * common query for database query
+ * @author tomsun28
+ */
+<span class="nc" id="L52">@Slf4j</span>
+public class JdbcCommonCollect extends AbstractCollect {
+
+    private static final String QUERY_TYPE_ONE_ROW = &quot;oneRow&quot;;
+    private static final String QUERY_TYPE_MULTI_ROW = &quot;multiRow&quot;;
+    private static final String QUERY_TYPE_COLUMNS = &quot;columns&quot;;
+    private static final String RUN_SCRIPT = &quot;runScript&quot;;
+
+<span class="nc" id="L60">    public JdbcCommonCollect(){}</span>
+
+    @Override
+    public void collect(CollectRep.MetricsData.Builder builder, long monitorId, String app, Metrics metrics) {
+<span class="nc" id="L64">        long startTime = System.currentTimeMillis();</span>
+        // check the params
+<span class="nc bnc" id="L66" title="All 4 branches missed.">        if (metrics == null || metrics.getJdbc() == null) {</span>
+<span class="nc" id="L67">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L68">            builder.setMsg(&quot;DATABASE collect must has jdbc params&quot;);</span>
+<span class="nc" id="L69">            return;</span>
+        }
+<span class="nc" id="L71">        JdbcProtocol jdbcProtocol = metrics.getJdbc();</span>
+<span class="nc" id="L72">        String databaseUrl = constructDatabaseUrl(jdbcProtocol);</span>
+<span class="nc" id="L73">        int timeout = CollectUtil.getTimeout(jdbcProtocol.getTimeout());</span>
+<span class="nc" id="L74">        Statement statement = null;</span>
+        try {
+<span class="nc" id="L76">            statement = getConnection(jdbcProtocol.getUsername(),</span>
+<span class="nc" id="L77">                    jdbcProtocol.getPassword(), databaseUrl, timeout);</span>
+<span class="nc bnc" id="L78" title="All 5 branches missed.">            switch (jdbcProtocol.getQueryType()) {</span>
+                case QUERY_TYPE_ONE_ROW:
+<span class="nc" id="L80">                    queryOneRow(statement, jdbcProtocol.getSql(), metrics.getAliasFields(), builder, startTime);</span>
+<span class="nc" id="L81">                    break;</span>
+                case QUERY_TYPE_MULTI_ROW:
+<span class="nc" id="L83">                    queryMultiRow(statement, jdbcProtocol.getSql(), metrics.getAliasFields(), builder, startTime);</span>
+<span class="nc" id="L84">                    break;</span>
+                case QUERY_TYPE_COLUMNS:
+<span class="nc" id="L86">                    queryOneRowByMatchTwoColumns(statement, jdbcProtocol.getSql(), metrics.getAliasFields(), builder, startTime);</span>
+<span class="nc" id="L87">                    break;</span>
+                case RUN_SCRIPT:
+<span class="nc" id="L89">                    Connection connection = statement.getConnection();</span>
+<span class="nc" id="L90">                    FileSystemResource rc = new FileSystemResource(jdbcProtocol.getSql());</span>
+<span class="nc" id="L91">                    ScriptUtils.executeSqlScript(connection, rc);</span>
+<span class="nc" id="L92">                    break;</span>
+                default:
+<span class="nc" id="L94">                    builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L95">                    builder.setMsg(&quot;Not support database query type: &quot; + jdbcProtocol.getQueryType());</span>
+                    break;
+            }
+<span class="nc" id="L98">        } catch (CommunicationsException communicationsException) {</span>
+<span class="nc" id="L99">            log.warn(&quot;Jdbc sql error: {}, code: {}.&quot;, communicationsException.getMessage(), communicationsException.getErrorCode());</span>
+<span class="nc" id="L100">            builder.setCode(CollectRep.Code.UN_REACHABLE);</span>
+<span class="nc" id="L101">            builder.setMsg(&quot;Error: &quot; + communicationsException.getMessage() + &quot; Code: &quot; + communicationsException.getErrorCode());</span>
+<span class="nc" id="L102">        } catch (PSQLException psqlException) {</span>
+            // for PostgreSQL 08001
+<span class="nc bnc" id="L104" title="All 2 branches missed.">            if (CollectorConstants.POSTGRESQL_UN_REACHABLE_CODE.equals(psqlException.getSQLState())) {</span>
+                // 对端链接失败 不可达
+<span class="nc" id="L106">                builder.setCode(CollectRep.Code.UN_REACHABLE);</span>
+            } else {
+<span class="nc" id="L108">                builder.setCode(CollectRep.Code.FAIL);</span>
+            }
+<span class="nc" id="L110">            builder.setMsg(&quot;Error: &quot; + psqlException.getMessage() + &quot; Code: &quot; + psqlException.getSQLState());</span>
+<span class="nc" id="L111">        } catch (SQLException sqlException) {</span>
+<span class="nc" id="L112">            log.warn(&quot;Jdbc sql error: {}, code: {}.&quot;, sqlException.getMessage(), sqlException.getErrorCode());</span>
+<span class="nc" id="L113">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L114">            builder.setMsg(&quot;Query Error: &quot; + sqlException.getMessage() + &quot; Code: &quot; + sqlException.getErrorCode());</span>
+<span class="nc" id="L115">        } catch (Exception e) {</span>
+<span class="nc" id="L116">            String errorMessage = CommonUtil.getMessageFromThrowable(e);</span>
+<span class="nc" id="L117">            log.error(&quot;Jdbc error: {}.&quot;, errorMessage, e);</span>
+<span class="nc" id="L118">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L119">            builder.setMsg(&quot;Query Error: &quot; + errorMessage);</span>
+        } finally {
+<span class="nc bnc" id="L121" title="All 2 branches missed.">            if (statement != null) {</span>
+                try {
+<span class="nc" id="L123">                    statement.close();</span>
+<span class="nc" id="L124">                } catch (Exception e) {</span>
+<span class="nc" id="L125">                    log.error(&quot;Jdbc close statement error: {}&quot;, e.getMessage());</span>
+<span class="nc" id="L126">                }</span>
+            }
+        }
+<span class="nc" id="L129">    }</span>
+
+    @Override
+    public String supportProtocol() {
+<span class="nc" id="L133">        return DispatchConstants.PROTOCOL_JDBC;</span>
+    }
+
+
+    private Statement getConnection(String username, String password, String url,Integer timeout) throws Exception {
+<span class="nc" id="L138">        CacheIdentifier identifier = CacheIdentifier.builder()</span>
+<span class="nc" id="L139">                .ip(url)</span>
+<span class="nc" id="L140">                .username(username).password(password).build();</span>
+<span class="nc" id="L141">        Optional&lt;Object&gt; cacheOption = CommonCache.getInstance().getCache(identifier, true);</span>
+<span class="nc" id="L142">        Statement statement = null;</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">        if (cacheOption.isPresent()) {</span>
+<span class="nc" id="L144">            JdbcConnect jdbcConnect = (JdbcConnect) cacheOption.get();</span>
+            try {
+<span class="nc" id="L146">                statement = jdbcConnect.getConnection().createStatement();</span>
+                // set query timeout
+<span class="nc" id="L148">                int timeoutSecond = timeout / 1000;</span>
+<span class="nc bnc" id="L149" title="All 2 branches missed.">                timeoutSecond = timeoutSecond &lt;= 0 ? 1 : timeoutSecond;</span>
+<span class="nc" id="L150">                statement.setQueryTimeout(timeoutSecond);</span>
+                // set query max row number
+<span class="nc" id="L152">                statement.setMaxRows(1000);</span>
+<span class="nc" id="L153">            } catch (Exception e) {</span>
+<span class="nc" id="L154">                log.info(&quot;The jdbc connect from cache, create statement error: {}&quot;, e.getMessage());</span>
+                try {
+<span class="nc bnc" id="L156" title="All 2 branches missed.">                    if (statement != null) {</span>
+<span class="nc" id="L157">                        statement.close();</span>
+                    }
+<span class="nc" id="L159">                    jdbcConnect.close();</span>
+<span class="nc" id="L160">                } catch (Exception e2) {</span>
+<span class="nc" id="L161">                    log.error(e2.getMessage());</span>
+<span class="nc" id="L162">                }</span>
+<span class="nc" id="L163">                statement = null;</span>
+<span class="nc" id="L164">                CommonCache.getInstance().removeCache(identifier);</span>
+<span class="nc" id="L165">            }</span>
+        }
+<span class="nc bnc" id="L167" title="All 2 branches missed.">        if (statement != null) {</span>
+<span class="nc" id="L168">            return statement;</span>
+        }
+        // renew connection when failed
+<span class="nc" id="L171">        Connection connection = DriverManager.getConnection(url, username, password);</span>
+<span class="nc" id="L172">        statement = connection.createStatement();</span>
+<span class="nc" id="L173">        int timeoutSecond = timeout / 1000;</span>
+<span class="nc bnc" id="L174" title="All 2 branches missed.">        timeoutSecond = timeoutSecond &lt;= 0 ? 1 : timeoutSecond;</span>
+<span class="nc" id="L175">        statement.setQueryTimeout(timeoutSecond);</span>
+<span class="nc" id="L176">        statement.setMaxRows(1000);</span>
+<span class="nc" id="L177">        JdbcConnect jdbcConnect = new JdbcConnect(connection);</span>
+<span class="nc" id="L178">        CommonCache.getInstance().addCache(identifier, jdbcConnect);</span>
+<span class="nc" id="L179">        return statement;</span>
+    }
+
+    /**
+     * query one row record, response metrics header and one value row
+     * eg:
+     * query metrics：one tow three four
+     * query sql：select one, tow, three, four from book limit 1;
+     * @param statement statement
+     * @param sql sql
+     * @param columns query metrics field list
+     * @throws Exception when error happen
+     */
+    private void queryOneRow(Statement statement, String sql, List&lt;String&gt; columns,
+                                           CollectRep.MetricsData.Builder builder, long startTime) throws Exception {
+<span class="nc" id="L194">        statement.setMaxRows(1);</span>
+<span class="nc" id="L195">        try (ResultSet resultSet = statement.executeQuery(sql)) {</span>
+<span class="nc bnc" id="L196" title="All 2 branches missed.">            if (resultSet.next()) {</span>
+<span class="nc" id="L197">                CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L198" title="All 2 branches missed.">                for (String column : columns) {</span>
+<span class="nc bnc" id="L199" title="All 2 branches missed.">                    if (CollectorConstants.RESPONSE_TIME.equals(column)) {</span>
+<span class="nc" id="L200">                        long time = System.currentTimeMillis() - startTime;</span>
+<span class="nc" id="L201">                        valueRowBuilder.addColumns(String.valueOf(time));</span>
+<span class="nc" id="L202">                    } else {</span>
+<span class="nc" id="L203">                        String value = resultSet.getString(column);</span>
+<span class="nc bnc" id="L204" title="All 2 branches missed.">                        value = value == null ? CommonConstants.NULL_VALUE : value;</span>
+<span class="nc" id="L205">                        valueRowBuilder.addColumns(value);</span>
+                    }
+<span class="nc" id="L207">                }</span>
+<span class="nc" id="L208">                builder.addValues(valueRowBuilder.build());</span>
+            }
+        }
+<span class="nc" id="L211">    }</span>
+
+    /**
+     * query two columns to mapping one row
+     * eg:
+     * query metrics：one two three four
+     * query sql：select key, value from book; the key is the query metrics fields
+     * select key, value from book; 
+     * one    -  value1
+     * two    -  value2
+     * three  -  value3
+     * four   -  value4
+     * @param statement statement
+     * @param sql sql
+     * @param columns query metrics field list
+     * @throws Exception when error happen
+     */
+    private void queryOneRowByMatchTwoColumns(Statement statement, String sql, List&lt;String&gt; columns,
+                                              CollectRep.MetricsData.Builder builder, long startTime) throws Exception {
+<span class="nc" id="L230">        try (ResultSet resultSet = statement.executeQuery(sql)) {</span>
+<span class="nc" id="L231">            HashMap&lt;String, String&gt; values = new HashMap&lt;&gt;(columns.size());</span>
+<span class="nc bnc" id="L232" title="All 2 branches missed.">            while (resultSet.next()) {</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">                if (resultSet.getString(1) != null) {</span>
+<span class="nc" id="L234">                    values.put(resultSet.getString(1).toLowerCase().trim(), resultSet.getString(2));</span>
+                }
+            }
+<span class="nc" id="L237">            CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L238" title="All 2 branches missed.">            for (String column : columns) {</span>
+<span class="nc bnc" id="L239" title="All 2 branches missed.">                if (CollectorConstants.RESPONSE_TIME.equals(column)) {</span>
+<span class="nc" id="L240">                    long time = System.currentTimeMillis() - startTime;</span>
+<span class="nc" id="L241">                    valueRowBuilder.addColumns(String.valueOf(time));</span>
+<span class="nc" id="L242">                } else {</span>
+<span class="nc" id="L243">                    String value = values.get(column.toLowerCase());</span>
+<span class="nc bnc" id="L244" title="All 2 branches missed.">                    value = value == null ? CommonConstants.NULL_VALUE : value;</span>
+<span class="nc" id="L245">                    valueRowBuilder.addColumns(value);</span>
+                }
+<span class="nc" id="L247">            }</span>
+<span class="nc" id="L248">            builder.addValues(valueRowBuilder.build());</span>
+        }
+<span class="nc" id="L250">    }</span>
+
+    /**
+     * query multi row record, response metrics header and multi value row
+     * eg:
+     * query metrics：one tow three four
+     * query sql：select one, tow, three, four from book;
+     * and return multi row record mapping with the metrics
+     * @param statement statement
+     * @param sql sql
+     * @param columns query metrics field list
+     * @throws Exception when error happen
+     */
+    private void queryMultiRow(Statement statement, String sql, List&lt;String&gt; columns,
+                               CollectRep.MetricsData.Builder builder, long startTime) throws Exception {
+<span class="nc" id="L265">        try (ResultSet resultSet = statement.executeQuery(sql)) {</span>
+<span class="nc bnc" id="L266" title="All 2 branches missed.">            while (resultSet.next()) {</span>
+<span class="nc" id="L267">                CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L268" title="All 2 branches missed.">                for (String column : columns) {</span>
+<span class="nc bnc" id="L269" title="All 2 branches missed.">                    if (CollectorConstants.RESPONSE_TIME.equals(column)) {</span>
+<span class="nc" id="L270">                        long time = System.currentTimeMillis() - startTime;</span>
+<span class="nc" id="L271">                        valueRowBuilder.addColumns(String.valueOf(time));</span>
+<span class="nc" id="L272">                    } else {</span>
+<span class="nc" id="L273">                        String value = resultSet.getString(column);</span>
+<span class="nc bnc" id="L274" title="All 2 branches missed.">                        value = value == null ? CommonConstants.NULL_VALUE : value;</span>
+<span class="nc" id="L275">                        valueRowBuilder.addColumns(value);</span>
+                    }
+<span class="nc" id="L277">                }</span>
+<span class="nc" id="L278">                builder.addValues(valueRowBuilder.build());</span>
+<span class="nc" id="L279">            }</span>
+        }
+<span class="nc" id="L281">    }</span>
+
+    /**
+     * construct jdbc url due the jdbc protocol
+     * @param jdbcProtocol jdbc
+     * @return URL
+     */
+    private String constructDatabaseUrl(JdbcProtocol jdbcProtocol) {
+<span class="nc bnc" id="L289" title="All 2 branches missed.">        if (Objects.nonNull(jdbcProtocol.getUrl())</span>
+<span class="nc bnc" id="L290" title="All 2 branches missed.">                &amp;&amp; !Objects.equals(&quot;&quot;, jdbcProtocol.getUrl())</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">                &amp;&amp; jdbcProtocol.getUrl().startsWith(&quot;jdbc&quot;)) {</span>
+            // when has config jdbc url, use it 
+<span class="nc" id="L293">            return jdbcProtocol.getUrl();</span>
+        }
+        String url;
+<span class="nc bnc" id="L296" title="All 7 branches missed.">        switch (jdbcProtocol.getPlatform()) {</span>
+            case &quot;mysql&quot;:
+            case &quot;mariadb&quot;:
+<span class="nc" id="L299">                url = &quot;jdbc:mysql://&quot; + jdbcProtocol.getHost() + &quot;:&quot; + jdbcProtocol.getPort()</span>
+<span class="nc bnc" id="L300" title="All 2 branches missed.">                        + &quot;/&quot; + (jdbcProtocol.getDatabase() == null ? &quot;&quot; : jdbcProtocol.getDatabase())</span>
+                        + &quot;?useUnicode=true&amp;characterEncoding=utf-8&amp;useSSL=false&quot;;
+<span class="nc" id="L302">                break;</span>
+            case &quot;postgresql&quot;:
+<span class="nc" id="L304">                url = &quot;jdbc:postgresql://&quot; + jdbcProtocol.getHost() + &quot;:&quot; + jdbcProtocol.getPort()</span>
+<span class="nc bnc" id="L305" title="All 2 branches missed.">                        + &quot;/&quot; + (jdbcProtocol.getDatabase() == null ? &quot;&quot; : jdbcProtocol.getDatabase());</span>
+<span class="nc" id="L306">                break;</span>
+            case &quot;clickhouse&quot;:
+<span class="nc" id="L308">                url = &quot;jdbc:clickhouse://&quot; + jdbcProtocol.getHost() + &quot;:&quot; + jdbcProtocol.getPort()</span>
+<span class="nc bnc" id="L309" title="All 2 branches missed.">                        + &quot;/&quot; + (jdbcProtocol.getDatabase() == null ? &quot;&quot; : jdbcProtocol.getDatabase());</span>
+<span class="nc" id="L310">                break;</span>
+            case &quot;sqlserver&quot;:
+<span class="nc" id="L312">                url = &quot;jdbc:sqlserver://&quot; + jdbcProtocol.getHost() + &quot;:&quot; + jdbcProtocol.getPort()</span>
+<span class="nc bnc" id="L313" title="All 2 branches missed.">                        + &quot;;&quot; + (jdbcProtocol.getDatabase() == null ? &quot;&quot; : &quot;DatabaseName=&quot; + jdbcProtocol.getDatabase())</span>
+                        + &quot;;trustServerCertificate=true;&quot;;
+<span class="nc" id="L315">                break;</span>
+            case &quot;oracle&quot;:
+<span class="nc" id="L317">                url = &quot;jdbc:oracle:thin:@&quot; + jdbcProtocol.getHost() + &quot;:&quot; + jdbcProtocol.getPort()</span>
+<span class="nc bnc" id="L318" title="All 2 branches missed.">                        + &quot;/&quot; + (jdbcProtocol.getDatabase() == null ? &quot;&quot; : jdbcProtocol.getDatabase());</span>
+<span class="nc" id="L319">                break;</span>
+            case &quot;dm&quot;:
+<span class="nc" id="L321">                url = &quot;jdbc:dm://&quot; + jdbcProtocol.getHost() + &quot;:&quot; +jdbcProtocol.getPort();</span>
+<span class="nc" id="L322">                break;</span>
+            default:
+<span class="nc" id="L324">                throw new IllegalArgumentException(&quot;Not support database platform: &quot; + jdbcProtocol.getPlatform());</span>
+
+        }
+<span class="nc" id="L327">        return url;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

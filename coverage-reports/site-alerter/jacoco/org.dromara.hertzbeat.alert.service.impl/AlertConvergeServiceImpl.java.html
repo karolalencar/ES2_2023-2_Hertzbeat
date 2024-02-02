@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AlertConvergeServiceImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-alerter</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.alert.service.impl</a> &gt; <span class="el_source">AlertConvergeServiceImpl.java</span></div><h1>AlertConvergeServiceImpl.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.alert.service.impl;
+
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.alert.dao.AlertConvergeDao;
+import org.dromara.hertzbeat.alert.service.AlertConvergeService;
+import org.dromara.hertzbeat.common.cache.CacheFactory;
+import org.dromara.hertzbeat.common.cache.ICacheService;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.alerter.AlertConverge;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Set;
+
+/**
+ * implement for alert converge service
+ * @author tom
+ */
+@Service
+@Transactional(rollbackFor = Exception.class)
+<span class="nc" id="L25">@Slf4j</span>
+<span class="nc" id="L26">public class AlertConvergeServiceImpl implements AlertConvergeService {</span>
+    
+    @Autowired
+    private AlertConvergeDao alertConvergeDao;    
+ 
+    @Override
+    public void validate(AlertConverge alertConverge, boolean isModify) throws IllegalArgumentException {
+        // todo 
+<span class="nc" id="L34">    }</span>
+    
+    @Override
+    public void addAlertConverge(AlertConverge alertConverge) throws RuntimeException {
+<span class="nc" id="L38">        alertConvergeDao.save(alertConverge);</span>
+<span class="nc" id="L39">        clearAlertConvergesCache();</span>
+<span class="nc" id="L40">    }</span>
+    
+    @Override
+    public void modifyAlertConverge(AlertConverge alertConverge) throws RuntimeException {
+<span class="nc" id="L44">        alertConvergeDao.save(alertConverge);</span>
+<span class="nc" id="L45">        clearAlertConvergesCache();</span>
+<span class="nc" id="L46">    }</span>
+    
+    @Override
+    public AlertConverge getAlertConverge(long convergeId) throws RuntimeException {
+<span class="nc" id="L50">        return alertConvergeDao.findById(convergeId).orElse(null);</span>
+    }
+    
+    @Override
+    public void deleteAlertConverges(Set&lt;Long&gt; convergeIds) throws RuntimeException {
+<span class="nc" id="L55">        alertConvergeDao.deleteAlertConvergesByIdIn(convergeIds);</span>
+<span class="nc" id="L56">        clearAlertConvergesCache();</span>
+<span class="nc" id="L57">    }</span>
+    
+    @Override
+    public Page&lt;AlertConverge&gt; getAlertConverges(Specification&lt;AlertConverge&gt; specification, PageRequest pageRequest) {
+<span class="nc" id="L61">        return alertConvergeDao.findAll(specification, pageRequest);</span>
+    }
+    
+    private void clearAlertConvergesCache() {
+<span class="nc" id="L65">        ICacheService&lt;String, Object&gt; convergeCache = CacheFactory.getAlertConvergeCache();</span>
+<span class="nc" id="L66">        convergeCache.remove(CommonConstants.CACHE_ALERT_CONVERGE);</span>
+<span class="nc" id="L67">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

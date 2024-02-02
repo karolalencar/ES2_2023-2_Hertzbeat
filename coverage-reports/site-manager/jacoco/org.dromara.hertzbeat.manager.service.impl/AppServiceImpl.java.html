@@ -1,0 +1,647 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AppServiceImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.service.impl</a> &gt; <span class="el_source">AppServiceImpl.java</span></div><h1>AppServiceImpl.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.manager.service.impl;
+
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.collector.util.CollectUtil;
+import org.dromara.hertzbeat.common.entity.job.Configmap;
+import org.dromara.hertzbeat.common.entity.job.Job;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.manager.Monitor;
+import org.dromara.hertzbeat.common.entity.manager.Param;
+import org.dromara.hertzbeat.common.entity.manager.ParamDefine;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.support.SpringContextHolder;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+import org.dromara.hertzbeat.manager.dao.MonitorDao;
+import org.dromara.hertzbeat.manager.dao.ParamDao;
+import org.dromara.hertzbeat.manager.pojo.dto.Hierarchy;
+import org.dromara.hertzbeat.manager.pojo.dto.ObjectStoreConfigChangeEvent;
+import org.dromara.hertzbeat.manager.pojo.dto.ObjectStoreDTO;
+import org.dromara.hertzbeat.manager.service.AppService;
+import org.dromara.hertzbeat.manager.service.MonitorService;
+import org.dromara.hertzbeat.manager.service.ObjectStoreService;
+import org.dromara.hertzbeat.warehouse.service.WarehouseService;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import org.springframework.stereotype.Service;
+import org.springframework.util.Assert;
+import org.springframework.util.StreamUtils;
+import org.springframework.util.StringUtils;
+import org.yaml.snakeyaml.Yaml;
+
+import javax.annotation.Resource;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+import static java.util.Objects.isNull;
+
+/**
+ * Monitoring Type Management Implementation
+ * 监控类型管理实现
+ * temporarily stores the monitoring configuration and parameter configuration in memory and then stores it in the
+ * 暂时将监控配置和参数配置存放内存 之后存入数据库
+ *
+ * @author tomsun28
+ */
+@Service
+@Order(value = Ordered.HIGHEST_PRECEDENCE)
+<span class="fc" id="L75">@Slf4j</span>
+<span class="fc" id="L76">public class AppServiceImpl implements AppService, CommandLineRunner {</span>
+
+<span class="fc" id="L78">    private static final Yaml YAML = new Yaml();</span>
+
+    private static final String PUSH_PROTOCOL_METRICS_NAME = &quot;metrics&quot;;
+
+    @Resource
+    private MonitorDao monitorDao;
+
+    @Resource
+    private ObjectStoreConfigServiceImpl objectStoreConfigService;
+
+    @Resource
+    private ParamDao paramDao;
+    
+    @Resource
+    private WarehouseService warehouseService;
+
+<span class="fc" id="L94">    private final Map&lt;String, Job&gt; appDefines = new ConcurrentHashMap&lt;&gt;();</span>
+
+    private AppDefineStore appDefineStore;
+<span class="fc" id="L97">    private final AppDefineStore jarAppDefineStore = new JarAppDefineStoreImpl();</span>
+
+    @Override
+    public List&lt;ParamDefine&gt; getAppParamDefines(String app) {
+<span class="pc bpc" id="L101" title="1 of 2 branches missed.">        if (!StringUtils.hasText(app)) {</span>
+<span class="nc" id="L102">            return Collections.emptyList();</span>
+        }
+<span class="fc" id="L104">        var appDefine = appDefines.get(app.toLowerCase());</span>
+<span class="pc bpc" id="L105" title="2 of 4 branches missed.">        if (appDefine != null &amp;&amp; appDefine.getParams() != null) {</span>
+<span class="fc" id="L106">            return appDefine.getParams();</span>
+        } else {
+<span class="nc" id="L108">            return Collections.emptyList();</span>
+        }
+    }
+
+    @Override
+    public Job getPushDefine(Long monitorId) throws IllegalArgumentException {
+<span class="nc" id="L114">        Job appDefine = appDefines.get(DispatchConstants.PROTOCOL_PUSH);</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">        if (appDefine == null) {</span>
+<span class="nc" id="L116">            throw new IllegalArgumentException(&quot;The push collector not support.&quot;);</span>
+        }
+<span class="nc" id="L118">        List&lt;Metrics&gt; metrics = appDefine.getMetrics();</span>
+<span class="nc" id="L119">        List&lt;Metrics&gt; metricsTmp = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">        for (Metrics metric : metrics) {</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">            if (PUSH_PROTOCOL_METRICS_NAME.equals(metric.getName())) {</span>
+<span class="nc" id="L122">                List&lt;Param&gt; params = paramDao.findParamsByMonitorId(monitorId);</span>
+<span class="nc" id="L123">                List&lt;Configmap&gt; configmaps = params.stream()</span>
+<span class="nc" id="L124">                        .map(param -&gt; new Configmap(param.getField(), param.getValue(),</span>
+<span class="nc" id="L125">                                param.getType())).collect(Collectors.toList());</span>
+<span class="nc" id="L126">                Map&lt;String, Configmap&gt; configmap = configmaps.stream().collect(Collectors.toMap(Configmap::getKey, item -&gt; item, (key1, key2) -&gt; key1));</span>
+<span class="nc" id="L127">                CollectUtil.replaceFieldsForPushStyleMonitor(metric, configmap);</span>
+<span class="nc" id="L128">                metricsTmp.add(metric);</span>
+            }
+<span class="nc" id="L130">        }</span>
+<span class="nc" id="L131">        appDefine.setMetrics(metricsTmp);</span>
+<span class="nc" id="L132">        return appDefine;</span>
+    }
+
+    @Override
+    public Job getAutoGenerateDynamicDefine(Long monitorId) {
+        // todo now only for prometheus
+<span class="nc" id="L138">        Job job = getAppDefine(DispatchConstants.PROTOCOL_PROMETHEUS);</span>
+<span class="nc" id="L139">        List&lt;CollectRep.MetricsData&gt; metricsDataList = warehouseService.queryMonitorMetricsData(monitorId);</span>
+<span class="nc" id="L140">        Metrics tmpMetrics = job.getMetrics().get(0);</span>
+<span class="nc" id="L141">        List&lt;Metrics&gt; metricsList = new LinkedList&lt;&gt;();</span>
+<span class="nc bnc" id="L142" title="All 2 branches missed.">        for (CollectRep.MetricsData metricsData : metricsDataList) {</span>
+<span class="nc" id="L143">            List&lt;Metrics.Field&gt; fields = metricsData.getFieldsList().stream().map(item -&gt;</span>
+<span class="nc" id="L144">                    Metrics.Field.builder()</span>
+<span class="nc" id="L145">                            .field(item.getName())</span>
+<span class="nc" id="L146">                            .type((byte) item.getType())</span>
+<span class="nc" id="L147">                            .label(item.getLabel())</span>
+<span class="nc" id="L148">                            .unit(item.getUnit())</span>
+<span class="nc" id="L149">                            .build())</span>
+<span class="nc" id="L150">                    .collect(Collectors.toList());</span>
+<span class="nc" id="L151">            Metrics metrics = Metrics.builder()</span>
+<span class="nc" id="L152">                    .visible(true)</span>
+<span class="nc" id="L153">                    .name(metricsData.getMetrics())</span>
+<span class="nc" id="L154">                    .fields(fields)</span>
+<span class="nc" id="L155">                    .prometheus(tmpMetrics.getPrometheus())</span>
+<span class="nc" id="L156">                    .build();</span>
+<span class="nc" id="L157">            metricsList.add(metrics);</span>
+<span class="nc" id="L158">        }</span>
+<span class="nc" id="L159">        job.setMetrics(metricsList);</span>
+<span class="nc" id="L160">        return job;</span>
+    }
+
+    @Override
+    public Job getAppDefine(String app) throws IllegalArgumentException {
+<span class="pc bpc" id="L165" title="1 of 2 branches missed.">        if (!StringUtils.hasText(app)) {</span>
+<span class="nc" id="L166">            throw new IllegalArgumentException(&quot;The app can not null.&quot;);</span>
+        }
+<span class="fc" id="L168">        var appDefine = appDefines.get(app.toLowerCase());</span>
+<span class="fc bfc" id="L169" title="All 2 branches covered.">        if (appDefine == null) {</span>
+<span class="fc" id="L170">            throw new IllegalArgumentException(&quot;The app &quot; + app + &quot; not support.&quot;);</span>
+        }
+<span class="fc" id="L172">        return appDefine.clone();</span>
+    }
+
+    @Override
+    public Optional&lt;Job&gt; getAppDefineOption(String app) {
+<span class="nc bnc" id="L177" title="All 2 branches missed.">        if (StringUtils.hasText(app)) {</span>
+<span class="nc" id="L178">            Job appDefine = appDefines.get(app.toLowerCase());</span>
+<span class="nc" id="L179">            return Optional.ofNullable(appDefine);</span>
+        }
+<span class="nc" id="L181">        return Optional.empty();</span>
+    }
+
+    @Override
+    public List&lt;String&gt; getAppDefineMetricNames(String app) {
+<span class="fc" id="L186">        List&lt;String&gt; metricNames = new ArrayList&lt;&gt;(16);</span>
+<span class="pc bpc" id="L187" title="1 of 2 branches missed.">        if (StringUtils.hasLength(app)) {</span>
+<span class="fc" id="L188">            var appDefine = appDefines.get(app.toLowerCase());</span>
+<span class="pc bpc" id="L189" title="1 of 2 branches missed.">            if (appDefine == null) {</span>
+<span class="nc" id="L190">                throw new IllegalArgumentException(&quot;The app &quot; + app + &quot; not support.&quot;);</span>
+            }
+<span class="fc" id="L192">            metricNames.addAll(appDefine.getMetrics().stream().map(Metrics::getName).collect(Collectors.toList()));</span>
+<span class="fc" id="L193">        } else {</span>
+<span class="nc" id="L194">            appDefines.forEach((k, v) -&gt;</span>
+<span class="nc" id="L195">                    metricNames.addAll(v.getMetrics().stream().map(Metrics::getName).collect(Collectors.toList())));</span>
+        }
+<span class="fc" id="L197">        return metricNames;</span>
+    }
+
+
+    @Override
+    public Map&lt;String, String&gt; getI18nResources(String lang) {
+<span class="fc" id="L203">        Map&lt;String, String&gt; i18nMap = new HashMap&lt;&gt;(128);</span>
+<span class="fc bfc" id="L204" title="All 2 branches covered.">        for (var job : appDefines.values()) {</span>
+<span class="fc" id="L205">            var name = job.getName();</span>
+<span class="fc" id="L206">            var i18nName = CommonUtil.getLangMappingValueFromI18nMap(lang, name);</span>
+<span class="pc bpc" id="L207" title="1 of 2 branches missed.">            if (i18nName != null) {</span>
+<span class="fc" id="L208">                i18nMap.put(&quot;monitor.app.&quot; + job.getApp(), i18nName);</span>
+            }
+<span class="fc" id="L210">            var help = job.getHelp();</span>
+<span class="fc" id="L211">            var i18nHelp = CommonUtil.getLangMappingValueFromI18nMap(lang, help);</span>
+<span class="fc bfc" id="L212" title="All 2 branches covered.">            if (i18nHelp != null) {</span>
+<span class="fc" id="L213">                i18nMap.put(&quot;monitor.app.&quot; + job.getApp() + &quot;.help&quot;, i18nHelp);</span>
+            }
+
+<span class="fc" id="L216">            var helpLink = job.getHelpLink();</span>
+<span class="fc" id="L217">            var i18nHelpLink = CommonUtil.getLangMappingValueFromI18nMap(lang, helpLink);</span>
+<span class="fc bfc" id="L218" title="All 2 branches covered.">            if (i18nHelpLink != null) {</span>
+<span class="fc" id="L219">                i18nMap.put(&quot;monitor.app.&quot; + job.getApp() + &quot;.helpLink&quot;, i18nHelpLink);</span>
+            }
+
+<span class="fc bfc" id="L222" title="All 2 branches covered.">            for (var paramDefine : job.getParams()) {</span>
+<span class="fc" id="L223">                var paramDefineName = paramDefine.getName();</span>
+<span class="fc" id="L224">                var i18nParamName = CommonUtil.getLangMappingValueFromI18nMap(lang, paramDefineName);</span>
+<span class="pc bpc" id="L225" title="1 of 2 branches missed.">                if (i18nParamName != null) {</span>
+<span class="fc" id="L226">                    i18nMap.put(&quot;monitor.app.&quot; + job.getApp() + &quot;.param.&quot; + paramDefine.getField(), i18nParamName);</span>
+                }
+<span class="fc" id="L228">            }</span>
+<span class="fc bfc" id="L229" title="All 2 branches covered.">            for (var metrics : job.getMetrics()) {</span>
+<span class="fc" id="L230">                var metricsI18nName = metrics.getI18n();</span>
+<span class="fc" id="L231">                var i18nMetricsName = CommonUtil.getLangMappingValueFromI18nMap(lang, metricsI18nName);</span>
+<span class="fc bfc" id="L232" title="All 2 branches covered.">                if (i18nMetricsName != null) {</span>
+<span class="fc" id="L233">                    i18nMap.put(&quot;monitor.app.&quot; + job.getApp() + &quot;.metrics.&quot; + metrics.getName(), i18nMetricsName);</span>
+                }
+<span class="fc bfc" id="L235" title="All 2 branches covered.">                if (metrics.getFields() == null) {</span>
+<span class="fc" id="L236">                    continue;</span>
+                }
+<span class="fc bfc" id="L238" title="All 2 branches covered.">                for (var field : metrics.getFields()) {</span>
+<span class="fc" id="L239">                    var fieldI18nName = field.getI18n();</span>
+<span class="fc" id="L240">                    var i18nMetricName = CommonUtil.getLangMappingValueFromI18nMap(lang, fieldI18nName);</span>
+<span class="fc bfc" id="L241" title="All 2 branches covered.">                    if (i18nMetricName != null) {</span>
+<span class="fc" id="L242">                        i18nMap.put(&quot;monitor.app.&quot; + job.getApp() + &quot;.metrics.&quot; + metrics.getName() + &quot;.metric.&quot; + field.getField(), i18nMetricName);</span>
+                    }
+<span class="fc" id="L244">                }</span>
+<span class="fc" id="L245">            }</span>
+<span class="fc" id="L246">        }</span>
+<span class="fc" id="L247">        return i18nMap;</span>
+    }
+
+    @Override
+    public List&lt;Hierarchy&gt; getAllAppHierarchy(String lang) {
+<span class="fc" id="L252">        LinkedList&lt;Hierarchy&gt; hierarchies = new LinkedList&lt;&gt;();</span>
+<span class="fc bfc" id="L253" title="All 2 branches covered.">        for (var job : appDefines.values()) {</span>
+            // todo 暂时先过滤掉push以解决前端问题，待后续设计优化后放开
+<span class="fc bfc" id="L255" title="All 2 branches covered.">            if (DispatchConstants.PROTOCOL_PUSH.equalsIgnoreCase(job.getApp())) {</span>
+<span class="fc" id="L256">                continue;</span>
+            }
+<span class="fc" id="L258">            var hierarchyApp = new Hierarchy();</span>
+<span class="fc" id="L259">            hierarchyApp.setCategory(job.getCategory());</span>
+<span class="fc" id="L260">            hierarchyApp.setValue(job.getApp());</span>
+<span class="fc" id="L261">            var nameMap = job.getName();</span>
+<span class="pc bpc" id="L262" title="2 of 4 branches missed.">            if (nameMap != null &amp;&amp; !nameMap.isEmpty()) {</span>
+<span class="fc" id="L263">                var i18nName = CommonUtil.getLangMappingValueFromI18nMap(lang, nameMap);</span>
+<span class="pc bpc" id="L264" title="1 of 2 branches missed.">                if (i18nName != null) {</span>
+<span class="fc" id="L265">                    hierarchyApp.setLabel(i18nName);</span>
+                }
+            }
+<span class="fc" id="L268">            List&lt;Hierarchy&gt; hierarchyMetricList = new LinkedList&lt;&gt;();</span>
+<span class="fc bfc" id="L269" title="All 2 branches covered.">            if (DispatchConstants.PROTOCOL_PROMETHEUS.equalsIgnoreCase(job.getApp())) {</span>
+<span class="fc" id="L270">                List&lt;Monitor&gt; monitors = monitorDao.findMonitorsByAppEquals(job.getApp());</span>
+<span class="fc bfc" id="L271" title="All 2 branches covered.">                for (Monitor monitor : monitors) {</span>
+<span class="fc" id="L272">                    List&lt;CollectRep.MetricsData&gt; metricsDataList = warehouseService.queryMonitorMetricsData(monitor.getId());</span>
+<span class="pc bpc" id="L273" title="1 of 2 branches missed.">                    for (CollectRep.MetricsData metricsData : metricsDataList) {</span>
+<span class="nc" id="L274">                        var hierarchyMetric = new Hierarchy();</span>
+<span class="nc" id="L275">                        hierarchyMetric.setValue(metricsData.getMetrics());</span>
+<span class="nc" id="L276">                        hierarchyMetric.setLabel(metricsData.getMetrics());</span>
+<span class="nc" id="L277">                        List&lt;Hierarchy&gt; hierarchyFieldList = metricsData.getFieldsList().stream()</span>
+<span class="nc" id="L278">                                .map(item -&gt; {</span>
+<span class="nc" id="L279">                                    var hierarchyField = new Hierarchy();</span>
+<span class="nc" id="L280">                                    hierarchyField.setValue(item.getName());</span>
+<span class="nc" id="L281">                                    hierarchyField.setLabel(item.getName());</span>
+<span class="nc" id="L282">                                    hierarchyField.setIsLeaf(true);</span>
+<span class="nc" id="L283">                                    hierarchyField.setType((byte)item.getType());</span>
+<span class="nc" id="L284">                                    hierarchyField.setUnit(item.getUnit());</span>
+<span class="nc" id="L285">                                    return hierarchyField;</span>
+<span class="nc" id="L286">                                }).collect(Collectors.toList());</span>
+<span class="nc" id="L287">                        hierarchyMetric.setChildren(hierarchyFieldList);</span>
+                        // combine Hierarchy Metrics
+<span class="nc" id="L289">                        combineHierarchyMetrics(hierarchyMetricList, hierarchyMetric);</span>
+<span class="nc" id="L290">                    }</span>
+<span class="fc" id="L291">                }</span>
+<span class="fc" id="L292">                hierarchyApp.setChildren(hierarchyMetricList);</span>
+<span class="fc" id="L293">                hierarchies.addFirst(hierarchyApp);</span>
+<span class="fc" id="L294">            } else {</span>
+<span class="pc bpc" id="L295" title="1 of 2 branches missed.">                if (job.getMetrics() != null) {</span>
+<span class="fc bfc" id="L296" title="All 2 branches covered.">                    for (var metrics : job.getMetrics()) {</span>
+<span class="fc" id="L297">                        var hierarchyMetric = new Hierarchy();</span>
+<span class="fc" id="L298">                        hierarchyMetric.setValue(metrics.getName());</span>
+<span class="fc" id="L299">                        var metricsI18nName = CommonUtil.getLangMappingValueFromI18nMap(lang, metrics.getI18n());</span>
+<span class="fc bfc" id="L300" title="All 2 branches covered.">                        hierarchyMetric.setLabel(metricsI18nName != null ? metricsI18nName : metrics.getName());</span>
+<span class="fc" id="L301">                        List&lt;Hierarchy&gt; hierarchyFieldList = new LinkedList&lt;&gt;();</span>
+<span class="pc bpc" id="L302" title="1 of 2 branches missed.">                        if (metrics.getFields() != null) {</span>
+<span class="fc bfc" id="L303" title="All 2 branches covered.">                            for (var field : metrics.getFields()) {</span>
+<span class="fc" id="L304">                                var hierarchyField = new Hierarchy();</span>
+<span class="fc" id="L305">                                hierarchyField.setValue(field.getField());</span>
+<span class="fc" id="L306">                                var metricI18nName = CommonUtil.getLangMappingValueFromI18nMap(lang, field.getI18n());</span>
+<span class="fc bfc" id="L307" title="All 2 branches covered.">                                hierarchyField.setLabel(metricI18nName != null ? metricI18nName : field.getField());</span>
+<span class="fc" id="L308">                                hierarchyField.setIsLeaf(true);</span>
+                                // for metric
+<span class="fc" id="L310">                                hierarchyField.setType(field.getType());</span>
+<span class="fc" id="L311">                                hierarchyField.setUnit(field.getUnit());</span>
+<span class="fc" id="L312">                                hierarchyFieldList.add(hierarchyField);</span>
+<span class="fc" id="L313">                            }</span>
+<span class="fc" id="L314">                            hierarchyMetric.setChildren(hierarchyFieldList);</span>
+                        }
+<span class="fc" id="L316">                        hierarchyMetricList.add(hierarchyMetric);</span>
+<span class="fc" id="L317">                    }</span>
+                }
+<span class="fc" id="L319">                hierarchyApp.setChildren(hierarchyMetricList);</span>
+<span class="fc" id="L320">                hierarchies.add(hierarchyApp);</span>
+            }
+<span class="fc" id="L322">        }</span>
+<span class="fc" id="L323">        return hierarchies;</span>
+    }
+
+    private void combineHierarchyMetrics(List&lt;Hierarchy&gt; hierarchyMetricList, Hierarchy hierarchyMetric) {
+<span class="nc" id="L327">        Optional&lt;Hierarchy&gt; preHierarchyOptional = hierarchyMetricList.stream()</span>
+<span class="nc" id="L328">                .filter(item -&gt; item.getValue().equals(hierarchyMetric.getValue())).findFirst();</span>
+<span class="nc bnc" id="L329" title="All 2 branches missed.">        if (preHierarchyOptional.isPresent()) {</span>
+<span class="nc" id="L330">            Hierarchy preHierarchy = preHierarchyOptional.get();</span>
+<span class="nc" id="L331">            List&lt;Hierarchy&gt; children = preHierarchy.getChildren();</span>
+<span class="nc" id="L332">            Set&lt;String&gt; childrenKey = children.stream().map(Hierarchy::getValue).collect(Collectors.toSet());</span>
+<span class="nc bnc" id="L333" title="All 2 branches missed.">            for (Hierarchy child : hierarchyMetric.getChildren()) {</span>
+<span class="nc bnc" id="L334" title="All 2 branches missed.">                if (!childrenKey.contains(child.getValue())) {</span>
+<span class="nc" id="L335">                    children.add(child);</span>
+                }
+<span class="nc" id="L337">            }</span>
+<span class="nc" id="L338">        } else {</span>
+<span class="nc" id="L339">            hierarchyMetricList.add(hierarchyMetric);</span>
+        }
+<span class="nc" id="L341">    }</span>
+
+    @Override
+    public Map&lt;String, Job&gt; getAllAppDefines() {
+<span class="fc" id="L345">        return appDefines;</span>
+    }
+
+
+    @Override
+    public String getMonitorDefineFileContent(String app) {
+<span class="nc" id="L351">        var appDefine = appDefineStore.loadAppDefine(app);</span>
+<span class="nc bnc" id="L352" title="All 2 branches missed.">        if (isNull(appDefine)) {</span>
+<span class="nc" id="L353">            appDefine = jarAppDefineStore.loadAppDefine(app);</span>
+        }
+<span class="nc bnc" id="L355" title="All 2 branches missed.">        if (isNull(appDefine)) {</span>
+<span class="nc" id="L356">            throw new IllegalArgumentException(&quot;can not find &quot; + app + &quot; define yml&quot;);</span>
+        }
+<span class="nc" id="L358">        return appDefine;</span>
+    }
+
+    @Override
+    public void applyMonitorDefineYml(String ymlContent, boolean isModify) {
+<span class="nc" id="L363">        var yaml = new Yaml();</span>
+        Job app;
+        try {
+<span class="nc" id="L366">            app = yaml.loadAs(ymlContent, Job.class);</span>
+<span class="nc" id="L367">        } catch (Exception e) {</span>
+<span class="nc" id="L368">            log.error(e.getMessage());</span>
+<span class="nc" id="L369">            throw new IllegalArgumentException(&quot;parse yml error: &quot; + e.getMessage());</span>
+<span class="nc" id="L370">        }</span>
+        // app params verify
+<span class="nc" id="L372">        verifyDefineAppContent(app, isModify);</span>
+<span class="nc" id="L373">        appDefineStore.save(app.getApp(), ymlContent);</span>
+<span class="nc" id="L374">        appDefines.put(app.getApp().toLowerCase(), app);</span>
+        // 解决 ：模板修改后，同类型模板的所有监控实例 ，在任务状态中，需要重新下发任务
+<span class="nc" id="L376">        SpringContextHolder.getBean(MonitorService.class).updateAppCollectJob(app);</span>
+<span class="nc" id="L377">    }</span>
+
+    private void verifyDefineAppContent(Job app, boolean isModify) {
+<span class="nc" id="L380">        Assert.notNull(app, &quot;monitoring template can not null&quot;);</span>
+<span class="nc" id="L381">        Assert.notNull(app.getApp(), &quot;monitoring template require attributes app&quot;);</span>
+<span class="nc" id="L382">        Assert.notNull(app.getCategory(), &quot;monitoring template require attributes category&quot;);</span>
+<span class="nc" id="L383">        Assert.notEmpty(app.getName(), &quot;monitoring template require attributes name&quot;);</span>
+<span class="nc" id="L384">        Assert.notEmpty(app.getParams(), &quot;monitoring template require attributes params&quot;);</span>
+<span class="nc" id="L385">        var hasParamHost = app.getParams().stream().anyMatch(item -&gt; &quot;host&quot;.equals(item.getField()));</span>
+<span class="nc" id="L386">        Assert.isTrue(hasParamHost, &quot;monitoring template attributes params must have param host&quot;);</span>
+<span class="nc" id="L387">        Assert.notEmpty(app.getMetrics(), &quot;monitoring template require attributes metrics&quot;);</span>
+<span class="nc bnc" id="L388" title="All 2 branches missed.">        var hasAvailableMetrics = app.getMetrics().stream().anyMatch(item -&gt; item.getPriority() == 0);</span>
+<span class="nc" id="L389">        Assert.isTrue(hasAvailableMetrics, &quot;monitoring template metrics list must have one priority 0 metrics&quot;);</span>
+<span class="nc bnc" id="L390" title="All 2 branches missed.">        if (!isModify) {</span>
+<span class="nc" id="L391">            Assert.isNull(appDefines.get(app.getApp().toLowerCase()),</span>
+<span class="nc" id="L392">                    &quot;monitoring template name &quot; + app.getApp() + &quot; already exists.&quot;);</span>
+        }
+<span class="nc" id="L394">        Set&lt;String&gt; fieldsSet = new HashSet&lt;&gt;(16);</span>
+<span class="nc bnc" id="L395" title="All 2 branches missed.">        for (Metrics metrics : app.getMetrics()) {</span>
+<span class="nc" id="L396">            Assert.notEmpty(metrics.getFields(), &quot;monitoring template metrics fields can not null&quot;);</span>
+<span class="nc" id="L397">            fieldsSet.clear();</span>
+<span class="nc bnc" id="L398" title="All 2 branches missed.">            for (Metrics.Field field : metrics.getFields()) {</span>
+<span class="nc bnc" id="L399" title="All 2 branches missed.">                if (fieldsSet.contains(field.getField())) {</span>
+<span class="nc" id="L400">                    throw new IllegalArgumentException(app.getApp() + &quot; &quot; + metrics.getName() + &quot; &quot; </span>
+<span class="nc" id="L401">                            + field.getField() + &quot; can not duplicated.&quot;);</span>
+                }
+<span class="nc" id="L403">                fieldsSet.add(field.getField());</span>
+<span class="nc" id="L404">            }</span>
+<span class="nc" id="L405">        }</span>
+<span class="nc" id="L406">    }</span>
+
+    @Override
+    public void deleteMonitorDefine(String app) {
+        // if app has monitors now, delete failed
+<span class="nc" id="L411">        var monitors = monitorDao.findMonitorsByAppEquals(app);</span>
+<span class="nc bnc" id="L412" title="All 4 branches missed.">        if (monitors != null &amp;&amp; !monitors.isEmpty()) {</span>
+<span class="nc" id="L413">            throw new IllegalArgumentException(&quot;Can not delete define which has monitoring instances.&quot;);</span>
+        }
+<span class="nc" id="L415">        var classpath = Objects.requireNonNull(this.getClass().getClassLoader().getResource(&quot;&quot;)).getPath();</span>
+<span class="nc" id="L416">        var defineAppPath = classpath + &quot;define&quot; + File.separator + &quot;app-&quot; + app + &quot;.yml&quot;;</span>
+<span class="nc" id="L417">        var defineAppFile = new File(defineAppPath);</span>
+<span class="nc bnc" id="L418" title="All 4 branches missed.">        if (defineAppFile.exists() &amp;&amp; defineAppFile.isFile()) {</span>
+<span class="nc" id="L419">            defineAppFile.delete();</span>
+        }
+<span class="nc" id="L421">        appDefines.remove(app.toLowerCase());</span>
+<span class="nc" id="L422">    }</span>
+
+    @Override
+    public void run(String... args) throws Exception {
+<span class="fc" id="L426">        var objectStoreConfig = objectStoreConfigService.getConfig();</span>
+<span class="fc" id="L427">        refreshStore(objectStoreConfig);</span>
+<span class="fc" id="L428">    }</span>
+
+    @EventListener(ObjectStoreConfigChangeEvent.class)
+    public void onObjectStoreConfigChange(ObjectStoreConfigChangeEvent event) {
+<span class="nc" id="L432">        refreshStore(event.getConfig());</span>
+<span class="nc" id="L433">    }</span>
+
+    /**
+     * 刷新配置存储
+     *
+     * @param objectStoreConfig 文件服务配置
+     */
+    private void refreshStore(ObjectStoreDTO&lt;?&gt; objectStoreConfig) {
+<span class="pc bpc" id="L441" title="1 of 2 branches missed.">        if (objectStoreConfig == null) {</span>
+<span class="fc" id="L442">            appDefineStore = new LocalFileAppDefineStoreImpl();</span>
+        } else {
+<span class="nc bnc" id="L444" title="All 2 branches missed.">            switch (objectStoreConfig.getType()) {</span>
+                case OBS:
+<span class="nc" id="L446">                    appDefineStore = new ObjectStoreAppDefineStoreImpl();</span>
+<span class="nc" id="L447">                    break;</span>
+                case FILE:
+                default:
+<span class="nc" id="L450">                    appDefineStore = new LocalFileAppDefineStoreImpl();</span>
+            }
+        }
+<span class="fc" id="L453">        var success = appDefineStore.loadAppDefines();</span>
+<span class="pc bpc" id="L454" title="1 of 2 branches missed.">        if (!success) {</span>
+<span class="fc" id="L455">            new JarAppDefineStoreImpl().loadAppDefines();</span>
+        }
+<span class="fc" id="L457">    }</span>
+
+    private interface AppDefineStore {
+
+        /**
+         * 加载所有采集任务配置
+         */
+        boolean loadAppDefines();
+
+        /**
+         * 加载某个采集任务配置
+         *
+         * @param app 应用名称
+         * @return 采集任务配置文本
+         */
+        String loadAppDefine(String app);
+
+        void save(String app, String ymlContent);
+
+    }
+
+<span class="fc" id="L478">    private class JarAppDefineStoreImpl implements AppDefineStore {</span>
+
+        @Override
+        public boolean loadAppDefines() {
+            try {
+<span class="fc" id="L483">                log.info(&quot;load define app yml in internal jar&quot;);</span>
+<span class="fc" id="L484">                var resolver = new PathMatchingResourcePatternResolver();</span>
+<span class="fc" id="L485">                var resources = resolver.getResources(&quot;classpath:define/*.yml&quot;);</span>
+<span class="fc bfc" id="L486" title="All 2 branches covered.">                for (var resource : resources) {</span>
+<span class="fc" id="L487">                    try (var inputStream = resource.getInputStream()) {</span>
+<span class="fc" id="L488">                        var app = YAML.loadAs(inputStream, Job.class);</span>
+<span class="fc" id="L489">                        appDefines.put(app.getApp().toLowerCase(), app);</span>
+<span class="nc" id="L490">                    } catch (IOException e) {</span>
+<span class="nc" id="L491">                        log.error(e.getMessage(), e);</span>
+<span class="nc" id="L492">                        log.error(&quot;Ignore this template file: {}.&quot;, resource.getFilename());</span>
+<span class="fc" id="L493">                    }</span>
+                }
+<span class="fc" id="L495">                return true;</span>
+<span class="nc" id="L496">            } catch (IOException e) {</span>
+<span class="nc" id="L497">                log.error(&quot;define app yml not exist&quot;);</span>
+<span class="nc" id="L498">                return false;</span>
+            }
+        }
+
+        @Override
+        public String loadAppDefine(String app) {
+            // load define app yml in jar
+<span class="nc" id="L505">            log.info(&quot;load define app yml in internal jar&quot;);</span>
+<span class="nc" id="L506">            var resolver = new PathMatchingResourcePatternResolver();</span>
+<span class="nc" id="L507">            var resource = resolver.getResource(&quot;classpath:define/app-&quot; + app + &quot;.yml&quot;);</span>
+<span class="nc" id="L508">            try (var inputStream = resource.getInputStream()) {</span>
+<span class="nc" id="L509">                return StreamUtils.copyToString(inputStream, StandardCharsets.UTF_8);</span>
+<span class="nc" id="L510">            } catch (IOException e) {</span>
+<span class="nc" id="L511">                log.error(e.getMessage());</span>
+<span class="nc" id="L512">                return null;</span>
+            }
+        }
+
+        @Override
+        public void save(String app, String ymlContent) {
+<span class="nc" id="L518">            throw new UnsupportedOperationException();</span>
+        }
+
+    }
+
+<span class="fc" id="L523">    private class LocalFileAppDefineStoreImpl implements AppDefineStore {</span>
+
+        @Override
+        public boolean loadAppDefines() {
+<span class="fc" id="L527">            var rootUrl = this.getClass().getClassLoader().getResource(&quot;&quot;);</span>
+<span class="pc bpc" id="L528" title="1 of 2 branches missed.">            if (rootUrl == null) {</span>
+<span class="nc" id="L529">                return false;</span>
+            }
+<span class="fc" id="L531">            var classpath = rootUrl.getPath();</span>
+<span class="fc" id="L532">            var defineAppPath = classpath + &quot;define&quot;;</span>
+<span class="fc" id="L533">            var directory = new File(defineAppPath);</span>
+<span class="pc bpc" id="L534" title="3 of 4 branches missed.">            if (!directory.exists() || directory.listFiles() == null) {</span>
+<span class="fc" id="L535">                rootUrl = this.getClass().getResource(File.separator);</span>
+<span class="pc bpc" id="L536" title="1 of 2 branches missed.">                if (rootUrl == null) {</span>
+<span class="nc" id="L537">                    return false;</span>
+                }
+<span class="fc" id="L539">                classpath = rootUrl.getPath();</span>
+<span class="fc" id="L540">                defineAppPath = classpath + &quot;define&quot;;</span>
+<span class="fc" id="L541">                directory = new File(defineAppPath);</span>
+<span class="pc bpc" id="L542" title="3 of 4 branches missed.">                if (!directory.exists() || directory.listFiles() == null) {</span>
+<span class="fc" id="L543">                    return false;</span>
+                }
+            }
+<span class="nc" id="L546">            log.info(&quot;load define path {}&quot;, defineAppPath);</span>
+<span class="nc bnc" id="L547" title="All 2 branches missed.">            for (var appFile : Objects.requireNonNull(directory.listFiles())) {</span>
+<span class="nc bnc" id="L548" title="All 4 branches missed.">                if (appFile.exists() &amp;&amp; appFile.isFile()) {</span>
+<span class="nc bnc" id="L549" title="All 2 branches missed.">                    if (appFile.isHidden()</span>
+<span class="nc bnc" id="L550" title="All 4 branches missed.">                            || (!appFile.getName().endsWith(&quot;yml&quot;) &amp;&amp; !appFile.getName().endsWith(&quot;yaml&quot;))) {</span>
+<span class="nc" id="L551">                        log.error(&quot;Ignore this template file: {}.&quot;, appFile.getName());</span>
+<span class="nc" id="L552">                        continue;</span>
+                    }
+<span class="nc" id="L554">                    try (var fileInputStream = new FileInputStream(appFile)) {</span>
+<span class="nc" id="L555">                        var app = YAML.loadAs(fileInputStream, Job.class);</span>
+<span class="nc bnc" id="L556" title="All 2 branches missed.">                        if (app != null) {</span>
+<span class="nc" id="L557">                            appDefines.put(app.getApp().toLowerCase(), app);</span>
+                        }
+<span class="nc" id="L559">                    } catch (IOException e) {</span>
+<span class="nc" id="L560">                        log.error(e.getMessage(), e);</span>
+<span class="nc" id="L561">                        log.error(&quot;Ignore this template file: {}.&quot;, appFile.getName());</span>
+<span class="nc" id="L562">                    }</span>
+                }
+            }
+<span class="nc" id="L565">            return true;</span>
+        }
+
+        @Override
+        public String loadAppDefine(String app) {
+<span class="nc" id="L570">            var classpath = Objects.requireNonNull(this.getClass().getClassLoader().getResource(&quot;&quot;)).getPath();</span>
+<span class="nc" id="L571">            var defineAppPath = classpath + &quot;define&quot; + File.separator + &quot;app-&quot; + app + &quot;.yml&quot;;</span>
+<span class="nc" id="L572">            var defineAppFile = new File(defineAppPath);</span>
+<span class="nc bnc" id="L573" title="All 4 branches missed.">            if (defineAppFile.exists() &amp;&amp; defineAppFile.isFile()) {</span>
+<span class="nc" id="L574">                log.info(&quot;load {} define app yml in file: {}&quot;, app, defineAppPath);</span>
+                try {
+<span class="nc" id="L576">                    return FileUtils.readFileToString(defineAppFile, StandardCharsets.UTF_8);</span>
+<span class="nc" id="L577">                } catch (Exception e) {</span>
+<span class="nc" id="L578">                    log.error(e.getMessage());</span>
+                }
+            }
+<span class="nc" id="L581">            return null;</span>
+        }
+
+        @Override
+        public void save(String app, String ymlContent) {
+<span class="nc" id="L586">            var classpath = Objects.requireNonNull(this.getClass().getClassLoader().getResource(&quot;&quot;)).getPath();</span>
+<span class="nc" id="L587">            var defineAppPath = classpath + &quot;define&quot; + File.separator + &quot;app-&quot; + app + &quot;.yml&quot;;</span>
+<span class="nc" id="L588">            var defineAppFile = new File(defineAppPath);</span>
+            try {
+<span class="nc" id="L590">                FileUtils.writeStringToFile(defineAppFile, ymlContent, StandardCharsets.UTF_8, false);</span>
+<span class="nc" id="L591">            } catch (Exception e) {</span>
+<span class="nc" id="L592">                log.error(e.getMessage());</span>
+<span class="nc" id="L593">                throw new RuntimeException(&quot;flush file &quot; + defineAppPath + &quot; error: &quot; + e.getMessage());</span>
+<span class="nc" id="L594">            }</span>
+<span class="nc" id="L595">        }</span>
+    }
+
+<span class="nc" id="L598">    private class ObjectStoreAppDefineStoreImpl implements AppDefineStore {</span>
+
+        @Override
+        public boolean loadAppDefines() {
+<span class="nc" id="L602">            var objectStoreService = getObjectStoreService();</span>
+<span class="nc" id="L603">            objectStoreService.list(&quot;define&quot;)</span>
+<span class="nc" id="L604">                    .forEach(it -&gt; {</span>
+<span class="nc bnc" id="L605" title="All 2 branches missed.">                        if (it.getInputStream() != null) {</span>
+<span class="nc" id="L606">                            var app = YAML.loadAs(it.getInputStream(), Job.class);</span>
+<span class="nc bnc" id="L607" title="All 2 branches missed.">                            if (app != null) {</span>
+<span class="nc" id="L608">                                appDefines.put(app.getApp().toLowerCase(), app);</span>
+                            }
+                        }
+<span class="nc" id="L611">                    });</span>
+<span class="nc" id="L612">            return false;</span>
+        }
+
+        @Override
+        public String loadAppDefine(String app) {
+<span class="nc" id="L617">            var objectStoreService = getObjectStoreService();</span>
+<span class="nc" id="L618">            var file = objectStoreService.download(getDefineAppPath(app));</span>
+<span class="nc bnc" id="L619" title="All 2 branches missed.">            if (isNull(file)) {</span>
+<span class="nc" id="L620">                return null;</span>
+            }
+            try {
+<span class="nc" id="L623">                return IOUtils.toString(file.getInputStream(), StandardCharsets.UTF_8);</span>
+<span class="nc" id="L624">            } catch (IOException e) {</span>
+<span class="nc" id="L625">                log.error(&quot;load app define from object store service error&quot;, e);</span>
+<span class="nc" id="L626">                return null;</span>
+            }
+        }
+
+        @Override
+        public void save(String app, String ymlContent) {
+<span class="nc" id="L632">            var objectStoreService = getObjectStoreService();</span>
+<span class="nc" id="L633">            objectStoreService.upload(getDefineAppPath(app), IOUtils.toInputStream(ymlContent, StandardCharsets.UTF_8));</span>
+<span class="nc" id="L634">        }</span>
+
+        private ObjectStoreService getObjectStoreService() {
+<span class="nc" id="L637">            return SpringContextHolder.getBean(ObsObjectStoreServiceImpl.class);</span>
+        }
+
+        private String getDefineAppPath(String app) {
+<span class="nc" id="L641">            return &quot;define/app-&quot; + app + &quot;.yml&quot;;</span>
+        }
+
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

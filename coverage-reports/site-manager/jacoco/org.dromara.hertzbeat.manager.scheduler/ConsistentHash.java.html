@@ -1,0 +1,421 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ConsistentHash.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.scheduler</a> &gt; <span class="el_source">ConsistentHash.java</span></div><h1>ConsistentHash.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.manager.scheduler;
+
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+/**
+ * 一致性hash实现的采集器与任务映射调度
+ * @author tom
+ */
+<span class="fc" id="L16">@Slf4j</span>
+public class ConsistentHash {
+
+    /**
+     * 一致性hash环
+     */
+    private final ConcurrentTreeMap&lt;Integer, Node&gt; hashCircle;
+
+    /**
+     * 采集器节点 采集器ID-node
+     */
+    private final Map&lt;String, Node&gt; existNodeMap;
+
+    /**
+     * 未被调度的任务缓存
+     */
+    private final List&lt;DispatchJob&gt; dispatchJobCache;
+
+    /**
+     * 虚拟机节点默认数量
+     */
+    private static final byte VIRTUAL_NODE_DEFAULT_SIZE = 10;
+
+<span class="fc" id="L39">    public ConsistentHash() {</span>
+<span class="fc" id="L40">        hashCircle  = new ConcurrentTreeMap&lt;&gt;();</span>
+<span class="fc" id="L41">        existNodeMap = new ConcurrentHashMap&lt;&gt;(16);</span>
+<span class="fc" id="L42">        dispatchJobCache = Collections.synchronizedList(new LinkedList&lt;&gt;());</span>
+<span class="fc" id="L43">    }</span>
+
+    /**
+     * 添加采集器节点
+     * @param newNode 节点
+     */
+    public void addNode(Node newNode) {
+        // when mode is cluster public, need reBalance dispatch jobs. else not when is cloud-edge private
+<span class="pc bpc" id="L51" title="1 of 2 branches missed.">        if (!CommonConstants.MODE_PRIVATE.equals(newNode.mode)) {</span>
+<span class="pc bpc" id="L52" title="1 of 2 branches missed.">            byte virtualNodeNum = newNode.quality == null ? VIRTUAL_NODE_DEFAULT_SIZE : newNode.quality;</span>
+<span class="fc bfc" id="L53" title="All 2 branches covered.">            for (byte i = 0; i &lt; virtualNodeNum; i++) {</span>
+<span class="fc" id="L54">                int virtualHashKey = hash(newNode.identity + i);</span>
+<span class="fc" id="L55">                hashCircle.put(virtualHashKey, newNode);</span>
+<span class="fc" id="L56">                newNode.addVirtualNodeJobs(virtualHashKey, ConcurrentHashMap.newKeySet(16));</span>
+<span class="fc" id="L57">                Map.Entry&lt;Integer, Node&gt; higherVirtualNode = hashCircle.higherEntry(virtualHashKey);</span>
+<span class="fc bfc" id="L58" title="All 2 branches covered.">                if (higherVirtualNode == null) {</span>
+<span class="fc" id="L59">                    higherVirtualNode = hashCircle.firstEntry();</span>
+                }
+                // 将路由到 higherVirtualNode 虚拟节点的任务重新分配
+                // 任务不是在原虚拟节点 就是在新虚拟节点
+<span class="fc" id="L63">                Integer higherVirtualNodeKey = higherVirtualNode.getKey();</span>
+<span class="fc" id="L64">                Node higherNode = higherVirtualNode.getValue();</span>
+<span class="fc" id="L65">                Set&lt;Long[]&gt; dispatchJobs = higherNode.clearVirtualNodeJobs(higherVirtualNodeKey);</span>
+<span class="pc bpc" id="L66" title="2 of 4 branches missed.">                if (dispatchJobs != null &amp;&amp; !dispatchJobs.isEmpty()) {</span>
+<span class="nc" id="L67">                    Set&lt;Long[]&gt; reDispatchJobs = ConcurrentHashMap.newKeySet(dispatchJobs.size());</span>
+<span class="nc" id="L68">                    Iterator&lt;Long[]&gt; iterator = dispatchJobs.iterator();</span>
+<span class="nc bnc" id="L69" title="All 2 branches missed.">                    while (iterator.hasNext()) {</span>
+<span class="nc" id="L70">                        Long[] jobHash = iterator.next();</span>
+<span class="nc" id="L71">                        int dispatchHash = jobHash[1].intValue();</span>
+<span class="nc bnc" id="L72" title="All 2 branches missed.">                        if (dispatchHash &lt;= virtualHashKey) {</span>
+<span class="nc" id="L73">                            reDispatchJobs.add(jobHash);</span>
+<span class="nc" id="L74">                            iterator.remove();</span>
+                        }
+<span class="nc" id="L76">                    }</span>
+<span class="nc" id="L77">                    higherNode.virtualNodeMap.put(higherVirtualNodeKey, dispatchJobs);</span>
+<span class="nc" id="L78">                    Set&lt;Long&gt; jobIds = reDispatchJobs.stream().map(item -&gt; item[0]).collect(Collectors.toSet());</span>
+<span class="nc" id="L79">                    newNode.addVirtualNodeJobs(virtualHashKey, reDispatchJobs);</span>
+<span class="nc bnc" id="L80" title="All 2 branches missed.">                    if (higherNode != newNode) {</span>
+<span class="nc" id="L81">                        higherNode.assignJobs.removeAssignJobs(jobIds);</span>
+<span class="nc" id="L82">                        higherNode.assignJobs.addRemovingJobs(jobIds);</span>
+<span class="nc" id="L83">                        newNode.assignJobs.addAddingJobs(jobIds);</span>
+                    }
+                }
+            }   
+        }
+<span class="fc" id="L88">        existNodeMap.put(newNode.identity, newNode);</span>
+<span class="pc bpc" id="L89" title="1 of 2 branches missed.">        if (!dispatchJobCache.isEmpty()) {</span>
+<span class="nc" id="L90">            int size = dispatchJobCache.size();</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">            for (int index = 0; index &lt; size; index++) {</span>
+<span class="nc" id="L92">                DispatchJob dispatchJob = dispatchJobCache.remove(0);</span>
+<span class="nc" id="L93">                dispatchJob(dispatchJob.dispatchHash, dispatchJob.jobId, false);</span>
+            }
+        }
+<span class="fc" id="L96">    }</span>
+
+    /**
+     * 删除采集器节点
+     * @param name 采集器 name
+     */
+    public Node removeNode(String name) {
+<span class="nc" id="L103">        Node deletedNode = existNodeMap.remove(name);</span>
+<span class="nc bnc" id="L104" title="All 2 branches missed.">        if (deletedNode == null) {</span>
+<span class="nc" id="L105">            return null;</span>
+        }
+<span class="nc bnc" id="L107" title="All 2 branches missed.">        for (Map.Entry&lt;Integer, Set&lt;Long[]&gt;&gt; virtualNodeEntry : deletedNode.virtualNodeMap.entrySet()) {</span>
+<span class="nc" id="L108">            Integer virtualNodeHash = virtualNodeEntry.getKey();</span>
+<span class="nc" id="L109">            Set&lt;Long[]&gt; removeJobHashSet = virtualNodeEntry.getValue();</span>
+            // 将 virtualNodeEntry 的采集任务迁移到比他大的最近的虚拟节点
+<span class="nc" id="L111">            hashCircle.remove(virtualNodeHash);</span>
+<span class="nc bnc" id="L112" title="All 4 branches missed.">            if (removeJobHashSet == null || removeJobHashSet.isEmpty()) {</span>
+<span class="nc" id="L113">                continue;</span>
+            }
+<span class="nc" id="L115">            Map.Entry&lt;Integer, Node&gt; higherVirtualEntry = hashCircle.higherEntry(virtualNodeHash);</span>
+<span class="nc bnc" id="L116" title="All 2 branches missed.">            if (higherVirtualEntry == null) {</span>
+<span class="nc" id="L117">                higherVirtualEntry = hashCircle.firstEntry();</span>
+            }
+<span class="nc bnc" id="L119" title="All 4 branches missed.">            if (higherVirtualEntry == null || higherVirtualEntry.getValue() == deletedNode) {</span>
+<span class="nc" id="L120">                higherVirtualEntry = null;</span>
+            }
+            // jobId
+<span class="nc" id="L123">            Set&lt;Long&gt; removeJobIds = removeJobHashSet.stream().map(item -&gt; item[0]).collect(Collectors.toSet());</span>
+<span class="nc" id="L124">            deletedNode.assignJobs.removeAssignJobs(removeJobIds);</span>
+<span class="nc" id="L125">            deletedNode.assignJobs.addRemovingJobs(removeJobIds);</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">            if (higherVirtualEntry == null) {</span>
+                // jobId-dispatchHash
+<span class="nc" id="L128">                virtualNodeEntry.getValue().forEach(value -&gt; {</span>
+<span class="nc" id="L129">                    Long jobId = value[0];</span>
+<span class="nc" id="L130">                    Integer dispatchHash = value[1].intValue();</span>
+<span class="nc bnc" id="L131" title="All 2 branches missed.">                    if (removeJobIds.contains(jobId)) {</span>
+<span class="nc" id="L132">                        dispatchJobCache.add(new DispatchJob(dispatchHash, jobId));</span>
+                    } else {
+<span class="nc" id="L134">                        log.error(&quot;Get job {} from removeJobMap null.&quot;, jobId);</span>
+                    }
+<span class="nc" id="L136">                });</span>
+            } else {
+<span class="nc" id="L138">                Node higherVirtualNode = higherVirtualEntry.getValue();</span>
+<span class="nc" id="L139">                higherVirtualNode.addVirtualNodeJobs(higherVirtualEntry.getKey(), removeJobHashSet);</span>
+<span class="nc" id="L140">                higherVirtualNode.assignJobs.addAddingJobs(removeJobIds);</span>
+            }
+<span class="nc" id="L142">        }</span>
+<span class="nc" id="L143">        deletedNode.destroy();</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">        if (!dispatchJobCache.isEmpty()) {</span>
+<span class="nc" id="L145">            int size = dispatchJobCache.size();</span>
+<span class="nc bnc" id="L146" title="All 2 branches missed.">            for (int index = 0; index &lt; size; index++) {</span>
+<span class="nc" id="L147">                DispatchJob dispatchJob = dispatchJobCache.remove(0);</span>
+<span class="nc" id="L148">                dispatchJob(dispatchJob.dispatchHash, dispatchJob.jobId, false);</span>
+            }
+        }
+<span class="nc" id="L151">        return deletedNode;</span>
+    }
+
+    /**
+     * 获取所有采集器节点
+     * @return nodes
+     */
+    public Map&lt;String, Node&gt; getAllNodes() {
+<span class="fc" id="L159">        return existNodeMap;</span>
+    }
+    
+    /**
+     * get node
+     * @param collectorName collector name
+     * @return node
+     */
+    public Node getNode(String collectorName) {
+<span class="nc" id="L168">        return existNodeMap.get(collectorName);</span>
+    }
+
+    /**
+     * 获取暂被缓存的采集调度任务
+     * @return 缓存任务
+     */
+    public List&lt;DispatchJob&gt; getDispatchJobCache() {
+<span class="nc" id="L176">        return dispatchJobCache;</span>
+    }
+
+    /**
+     * 根据采集任务信息获取其分配到的采集器节点
+     *
+     * @param dispatchKey 采集任务路由key: ip+appId
+     * @param jobId jobId
+     * @return 采集器节点
+     */
+    public Node dispatchJob(String dispatchKey, Long jobId) {
+<span class="nc bnc" id="L187" title="All 4 branches missed.">        if (dispatchKey == null || &quot;&quot;.equals(dispatchKey)) {</span>
+<span class="nc" id="L188">            log.error(&quot;The dispatch key can not null.&quot;);</span>
+<span class="nc" id="L189">            return null;</span>
+        }
+<span class="nc" id="L191">        int dispatchHash = hash(dispatchKey);</span>
+<span class="nc" id="L192">        return dispatchJob(dispatchHash, jobId, true);</span>
+    }
+    
+    /**
+     * 预先根据采集任务信息获取其分配到的采集器节点
+     *
+     * @param dispatchKey 采集任务路由key: ip+appId
+     * @return 采集器节点
+     */
+    public Node preDispatchJob(String dispatchKey) {
+<span class="nc bnc" id="L202" title="All 4 branches missed.">        if (dispatchKey == null || &quot;&quot;.equals(dispatchKey)) {</span>
+<span class="nc" id="L203">            log.error(&quot;The dispatch key can not null.&quot;);</span>
+<span class="nc" id="L204">            return null;</span>
+        }
+<span class="nc" id="L206">        int dispatchHash = hash(dispatchKey);</span>
+<span class="nc" id="L207">        return preDispatchJob(dispatchHash);</span>
+    }
+
+    /**
+     * 根据采集任务信息获取其分配到的采集器节点
+     *
+     * @param dispatchHash 采集任务路由hash
+     * @param jobId jobId
+     * @param isFlushed is has flush this job or wait to dispatch 此任务是否已被下发调度还是等待后续下发
+     * @return 采集器节点
+     */
+    public Node dispatchJob(Integer dispatchHash, Long jobId, boolean isFlushed) {
+<span class="nc bnc" id="L219" title="All 6 branches missed.">        if (dispatchHash == null || hashCircle == null || hashCircle.isEmpty()) {</span>
+<span class="nc" id="L220">            log.warn(&quot;There is no available collector registered. Cache the job {}.&quot;, jobId);</span>
+<span class="nc" id="L221">            dispatchJobCache.add(new DispatchJob(dispatchHash, jobId));</span>
+<span class="nc" id="L222">            return null;</span>
+        }
+<span class="nc" id="L224">        Map.Entry&lt;Integer, Node&gt; ceilEntry = hashCircle.ceilingEntry(dispatchHash);</span>
+<span class="nc bnc" id="L225" title="All 2 branches missed.">        if (ceilEntry == null) {</span>
+<span class="nc" id="L226">            ceilEntry = hashCircle.firstEntry();</span>
+        }
+<span class="nc" id="L228">        int virtualKey = ceilEntry.getKey();</span>
+<span class="nc" id="L229">        Node curNode = ceilEntry.getValue();</span>
+
+<span class="nc" id="L231">        curNode.addJob(virtualKey, dispatchHash, jobId, isFlushed);</span>
+<span class="nc" id="L232">        return curNode;</span>
+    }
+    
+    /**
+     * 预先根据采集任务信息获取其分配到的采集器节点
+     *
+     * @param dispatchHash 采集任务路由hash
+     * @return 采集器节点
+     */
+    public Node preDispatchJob(Integer dispatchHash) {
+<span class="nc bnc" id="L242" title="All 6 branches missed.">        if (dispatchHash == null || hashCircle == null || hashCircle.isEmpty()) {</span>
+<span class="nc" id="L243">            log.warn(&quot;There is no available collector registered.&quot;);</span>
+<span class="nc" id="L244">            return null;</span>
+        }
+<span class="nc" id="L246">        Map.Entry&lt;Integer, Node&gt; ceilEntry = hashCircle.ceilingEntry(dispatchHash);</span>
+<span class="nc bnc" id="L247" title="All 2 branches missed.">        if (ceilEntry == null) {</span>
+<span class="nc" id="L248">            ceilEntry = hashCircle.firstEntry();</span>
+        }
+<span class="nc" id="L250">        return ceilEntry.getValue();</span>
+    }
+
+    /**
+     * hash long
+     * @param key long value
+     * @return hash value
+     */
+    private int hash(long key) {
+<span class="nc" id="L259">        String keyStr = String.valueOf(key);</span>
+<span class="nc" id="L260">        return hash(keyStr);</span>
+    }
+
+    /**
+     * FNV1_32_HASH算法
+     * @param key the key
+     * @return hash
+     */
+    private int hash(String key) {
+<span class="fc" id="L269">        final int p = 16777619;</span>
+<span class="fc" id="L270">        int hash = (int) 2166136261L;</span>
+<span class="fc bfc" id="L271" title="All 2 branches covered.">        for (int i = 0; i &lt; key.length(); i++) {</span>
+<span class="fc" id="L272">            hash = (hash ^ key.charAt(i)) * p;</span>
+        }
+<span class="fc" id="L274">        hash += hash &lt;&lt; 13;</span>
+<span class="fc" id="L275">        hash ^= hash &gt;&gt; 7;</span>
+<span class="fc" id="L276">        hash += hash &lt;&lt; 3;</span>
+<span class="fc" id="L277">        hash ^= hash &gt;&gt; 17;</span>
+<span class="fc" id="L278">        hash += hash &lt;&lt; 5;</span>
+        // 负数则取其绝对值
+<span class="fc bfc" id="L280" title="All 2 branches covered.">        if (hash &lt; 0) {</span>
+<span class="fc" id="L281">            hash = Math.abs(hash);</span>
+        }
+<span class="fc" id="L283">        return hash;</span>
+    }
+
+
+    /**
+     * 分发任务摘要
+     */
+<span class="nc" id="L290">    @AllArgsConstructor</span>
+    public static class DispatchJob {
+        /**
+         * 分发任务路由key
+         */
+        private Integer dispatchHash;
+        /**
+         * job ID
+         */
+<span class="nc" id="L299">        @Getter</span>
+        private Long jobId;
+    }
+
+    /**
+     * 采集器节点的机器地址
+     */
+    public static class Node {
+        /**
+         * 采集器唯一标识
+         */
+<span class="nc" id="L310">        @Getter</span>
+        private final String identity;
+        /**
+         * collector mode: public or private
+         */
+        private final String mode;
+        /**
+         * ip
+         */
+        private final String ip;
+        /**
+         * 采集器上线时间戳
+         */
+        private final long uptime;
+        /**
+         * 采集器自身的性能服务质量分数 0 - 127
+         * 虚拟节点数量会根据此服务质量分数计算
+         */
+        private final Byte quality;
+        /**
+         * 使用此采集器的采集采集任务ID列表
+         * jobId,jobVersion
+         */
+        private AssignJobs assignJobs;
+        /**
+         * 此节点所对应的每个虚拟节点所映射的采集采集任务ID列表
+         * Long[] [0]-jobId, [1]-dispatchHash
+         */
+        private Map&lt;Integer, Set&lt;Long[]&gt;&gt; virtualNodeMap;
+
+<span class="fc" id="L340">        public Node(String identity, String mode, String ip, long uptime, Byte quality) {</span>
+<span class="fc" id="L341">            this.identity = identity;</span>
+<span class="fc" id="L342">            this.mode = mode;</span>
+<span class="fc" id="L343">            this.ip = ip;</span>
+<span class="fc" id="L344">            this.uptime = uptime;</span>
+<span class="fc" id="L345">            this.quality = quality;</span>
+<span class="fc" id="L346">            assignJobs = new AssignJobs();</span>
+<span class="fc" id="L347">            virtualNodeMap = new ConcurrentHashMap&lt;&gt;(VIRTUAL_NODE_DEFAULT_SIZE);</span>
+<span class="fc" id="L348">        }</span>
+
+        private synchronized void addJob(Integer virtualNodeKey, Integer dispatchHash, Long jobId, boolean isFlushed) {
+<span class="nc bnc" id="L351" title="All 2 branches missed.">            if (virtualNodeMap == null) {</span>
+<span class="nc" id="L352">                virtualNodeMap = new ConcurrentHashMap&lt;&gt;(VIRTUAL_NODE_DEFAULT_SIZE);</span>
+            }
+<span class="nc bnc" id="L354" title="All 2 branches missed.">            if (assignJobs == null) {</span>
+<span class="nc" id="L355">                assignJobs = new AssignJobs();</span>
+            }
+<span class="nc" id="L357">            Set&lt;Long[]&gt; virtualNodeJob = virtualNodeMap.computeIfAbsent(virtualNodeKey, k -&gt; ConcurrentHashMap.newKeySet(16));</span>
+<span class="nc" id="L358">            virtualNodeJob.add(new Long[]{jobId, dispatchHash.longValue()});</span>
+<span class="nc bnc" id="L359" title="All 2 branches missed.">            if (isFlushed) {</span>
+<span class="nc" id="L360">                assignJobs.addAssignJob(jobId);   </span>
+            } else {
+<span class="nc" id="L362">                assignJobs.addAddingJob(jobId);</span>
+            }
+<span class="nc" id="L364">        }</span>
+
+        /**
+         * 根据virtualNodeKey清除指定虚拟节点所路由的采集任务
+         * @param virtualNodeKey 虚拟节点key
+         * @return 采集任务
+         */
+        private Set&lt;Long[]&gt; clearVirtualNodeJobs(Integer virtualNodeKey) {
+<span class="pc bpc" id="L372" title="2 of 4 branches missed.">            if (virtualNodeMap == null || virtualNodeMap.isEmpty()) {</span>
+<span class="nc" id="L373">                return null;</span>
+            }
+<span class="fc" id="L375">            Set&lt;Long[]&gt; virtualNodeJobs = virtualNodeMap.remove(virtualNodeKey);</span>
+<span class="fc" id="L376">            virtualNodeMap.put(virtualNodeKey, ConcurrentHashMap.newKeySet(16));</span>
+<span class="fc" id="L377">            return virtualNodeJobs;</span>
+        }
+
+        private void addVirtualNodeJobs(Integer virtualHashKey, Set&lt;Long[]&gt; reDispatchJobs) {
+<span class="pc bpc" id="L381" title="1 of 2 branches missed.">            if (reDispatchJobs == null) {</span>
+<span class="nc" id="L382">                return;</span>
+            }
+<span class="pc bpc" id="L384" title="1 of 2 branches missed.">            if (virtualNodeMap == null) {</span>
+<span class="nc" id="L385">                virtualNodeMap = new ConcurrentHashMap&lt;&gt;(16);</span>
+            }
+<span class="fc" id="L387">            Set&lt;Long[]&gt; virtualNodeJobs = virtualNodeMap.get(virtualHashKey);</span>
+<span class="pc bpc" id="L388" title="1 of 2 branches missed.">            if (virtualNodeJobs != null) {</span>
+<span class="nc" id="L389">                reDispatchJobs.addAll(virtualNodeJobs);</span>
+            }
+<span class="fc" id="L391">            virtualNodeMap.put(virtualHashKey, reDispatchJobs);</span>
+<span class="fc" id="L392">        }</span>
+        
+        public void removeVirtualNodeJob(Long jobId) {
+<span class="nc bnc" id="L395" title="All 4 branches missed.">            if (jobId == null || virtualNodeMap == null) {</span>
+<span class="nc" id="L396">                return;</span>
+            }
+<span class="nc bnc" id="L398" title="All 2 branches missed.">            for (Set&lt;Long[]&gt; jobSet : virtualNodeMap.values()) {</span>
+<span class="nc" id="L399">                Optional&lt;Long[]&gt; optional = jobSet.stream().filter(item -&gt; Objects.equals(item[0], jobId)).findFirst();</span>
+<span class="nc bnc" id="L400" title="All 2 branches missed.">                if (optional.isPresent()) {</span>
+<span class="nc" id="L401">                    jobSet.remove(optional.get());</span>
+<span class="nc" id="L402">                    break;</span>
+                }
+<span class="nc" id="L404">            }</span>
+<span class="nc" id="L405">        }</span>
+
+        public AssignJobs getAssignJobs() {
+<span class="fc" id="L408">            return assignJobs;</span>
+        }
+
+        public void destroy() {
+<span class="nc bnc" id="L412" title="All 2 branches missed.">            if (assignJobs != null) {</span>
+<span class="nc" id="L413">                assignJobs.clear();</span>
+            }
+<span class="nc bnc" id="L415" title="All 2 branches missed.">            if (virtualNodeMap != null) {</span>
+<span class="nc" id="L416">                virtualNodeMap.clear();</span>
+            }
+<span class="nc" id="L418">        }</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

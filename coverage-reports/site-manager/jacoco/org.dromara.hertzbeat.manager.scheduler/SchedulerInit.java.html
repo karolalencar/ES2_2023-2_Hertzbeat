@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SchedulerInit.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.scheduler</a> &gt; <span class="el_source">SchedulerInit.java</span></div><h1>SchedulerInit.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.manager.scheduler;
+
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.collector.util.CollectUtil;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.dto.CollectorInfo;
+import org.dromara.hertzbeat.common.entity.job.Configmap;
+import org.dromara.hertzbeat.common.entity.job.Job;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.manager.*;
+import org.dromara.hertzbeat.manager.dao.CollectorDao;
+import org.dromara.hertzbeat.manager.dao.CollectorMonitorBindDao;
+import org.dromara.hertzbeat.manager.dao.MonitorDao;
+import org.dromara.hertzbeat.manager.dao.ParamDao;
+import org.dromara.hertzbeat.manager.service.AppService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.util.StringUtils;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+/**
+ * scheduler init
+ *
+ * @author tom
+ */
+@Configuration
+@Order(value = Ordered.LOWEST_PRECEDENCE - 1)
+<span class="fc" id="L36">@Slf4j</span>
+<span class="fc" id="L37">public class SchedulerInit implements CommandLineRunner {</span>
+    
+    @Autowired
+    private CollectorScheduling collectorScheduling;
+    
+    @Autowired
+    private CollectJobScheduling collectJobScheduling;
+   
+    private static final String MAIN_COLLECTOR_NODE_IP = &quot;127.0.0.1&quot;;
+    
+    @Autowired
+    private AppService appService;
+    
+    @Autowired
+    private MonitorDao monitorDao;
+    
+    @Autowired
+    private ParamDao paramDao;
+    
+    @Autowired
+    private CollectorDao collectorDao;
+    
+    @Autowired
+    private CollectorMonitorBindDao collectorMonitorBindDao;
+    
+    @Override
+    public void run(String... args) throws Exception {
+        // init pre collector status
+<span class="fc" id="L65">        List&lt;Collector&gt; collectors = collectorDao.findAll().stream()</span>
+<span class="fc" id="L66">                .peek(item -&gt; item.setStatus(CommonConstants.COLLECTOR_STATUS_OFFLINE))</span>
+<span class="fc" id="L67">                .collect(Collectors.toList());</span>
+<span class="fc" id="L68">        collectorDao.saveAll(collectors);</span>
+        // insert default consistent node
+<span class="fc" id="L70">        CollectorInfo collectorInfo = CollectorInfo.builder()</span>
+<span class="fc" id="L71">                                              .name(CommonConstants.MAIN_COLLECTOR_NODE)</span>
+<span class="fc" id="L72">                                              .ip(MAIN_COLLECTOR_NODE_IP)</span>
+<span class="fc" id="L73">                                              .build();</span>
+<span class="fc" id="L74">        collectorScheduling.collectorGoOnline(CommonConstants.MAIN_COLLECTOR_NODE, collectorInfo);</span>
+        // init jobs
+<span class="fc" id="L76">        List&lt;Monitor&gt; monitors = monitorDao.findMonitorsByStatusNotInAndAndJobIdNotNull(List.of((byte) 0));</span>
+<span class="fc" id="L77">        List&lt;CollectorMonitorBind&gt; monitorBinds = collectorMonitorBindDao.findAll();</span>
+<span class="fc" id="L78">        Map&lt;Long, String&gt; monitorIdCollectorMap = monitorBinds.stream().collect(</span>
+<span class="fc" id="L79">                Collectors.toMap(CollectorMonitorBind::getMonitorId, CollectorMonitorBind::getCollector));</span>
+<span class="pc bpc" id="L80" title="1 of 2 branches missed.">        for (Monitor monitor : monitors) {</span>
+            try {
+                // 构造采集任务Job实体
+<span class="nc" id="L83">                Job appDefine = appService.getAppDefine(monitor.getApp());</span>
+<span class="nc bnc" id="L84" title="All 2 branches missed.">                if (CommonConstants.PROMETHEUS.equals(monitor.getApp())) {</span>
+<span class="nc" id="L85">                    appDefine.setApp(CommonConstants.PROMETHEUS_APP_PREFIX + monitor.getName());</span>
+                }
+<span class="nc" id="L87">                appDefine.setId(monitor.getJobId());</span>
+<span class="nc" id="L88">                appDefine.setMonitorId(monitor.getId());</span>
+<span class="nc" id="L89">                appDefine.setInterval(monitor.getIntervals());</span>
+<span class="nc" id="L90">                appDefine.setCyclic(true);</span>
+<span class="nc" id="L91">                appDefine.setTimestamp(System.currentTimeMillis());</span>
+<span class="nc" id="L92">                List&lt;Param&gt; params = paramDao.findParamsByMonitorId(monitor.getId());</span>
+<span class="nc" id="L93">                List&lt;Configmap&gt; configmaps = params.stream()</span>
+<span class="nc" id="L94">                        .map(param -&gt; new Configmap(param.getField(), param.getValue(),</span>
+<span class="nc" id="L95">                                param.getType())).collect(Collectors.toList());</span>
+<span class="nc" id="L96">                List&lt;ParamDefine&gt; paramDefaultValue = appDefine.getParams().stream()</span>
+<span class="nc" id="L97">                        .filter(item -&gt; StringUtils.hasText(item.getDefaultValue()))</span>
+<span class="nc" id="L98">                        .collect(Collectors.toList());</span>
+<span class="nc" id="L99">                paramDefaultValue.forEach(defaultVar -&gt; {</span>
+<span class="nc bnc" id="L100" title="All 2 branches missed.">                    if (configmaps.stream().noneMatch(item -&gt; item.getKey().equals(defaultVar.getField()))) {</span>
+                        // todo type
+<span class="nc" id="L102">                        Configmap configmap = new Configmap(defaultVar.getField(), defaultVar.getDefaultValue(), (byte) 1);</span>
+<span class="nc" id="L103">                        configmaps.add(configmap);</span>
+                    }
+<span class="nc" id="L105">                });</span>
+<span class="nc" id="L106">                appDefine.setConfigmap(configmaps);</span>
+<span class="nc" id="L107">                String collector = monitorIdCollectorMap.get(monitor.getId());</span>
+<span class="nc" id="L108">                long jobId = collectJobScheduling.addAsyncCollectJob(appDefine, collector);</span>
+<span class="nc" id="L109">                monitor.setJobId(jobId);</span>
+<span class="nc" id="L110">                monitorDao.save(monitor);</span>
+<span class="nc" id="L111">            } catch (Exception e) {</span>
+<span class="nc" id="L112">                log.error(&quot;init monitor job: {} error,continue next monitor&quot;, monitor, e);</span>
+<span class="nc" id="L113">            }</span>
+<span class="nc" id="L114">        }</span>
+<span class="fc" id="L115">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

@@ -1,0 +1,408 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MetricsCollect.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.dispatch</a> &gt; <span class="el_source">MetricsCollect.java</span></div><h1>MetricsCollect.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.collector.dispatch;
+
+import com.googlecode.aviator.AviatorEvaluator;
+import com.googlecode.aviator.Expression;
+import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.collector.collect.AbstractCollect;
+import org.dromara.hertzbeat.collector.collect.prometheus.PrometheusAutoCollectImpl;
+import org.dromara.hertzbeat.collector.collect.strategy.CollectStrategyFactory;
+import org.dromara.hertzbeat.collector.dispatch.timer.Timeout;
+import org.dromara.hertzbeat.collector.dispatch.timer.WheelTimerTask;
+import org.dromara.hertzbeat.collector.dispatch.unit.UnitConvert;
+import org.dromara.hertzbeat.collector.util.CollectUtil;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.job.Job;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+import org.dromara.hertzbeat.common.util.Pair;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * metrics collection
+ */
+<span class="nc" id="L44">@Slf4j</span>
+<span class="nc bnc" id="L45" title="All 68 branches missed.">@Data</span>
+public class MetricsCollect implements Runnable, Comparable&lt;MetricsCollect&gt; {
+    /**
+     * Scheduling alarm threshold time 100ms
+     */
+    private static final long WARN_DISPATCH_TIME = 100;
+    /**
+     * collector identity
+     */
+<span class="nc" id="L54">    protected String collectorIdentity;</span>
+    /**
+     * Tenant ID
+     */
+<span class="nc" id="L58">    protected long tenantId;</span>
+    /**
+     * Monitor ID
+     */
+<span class="nc" id="L62">    protected long monitorId;</span>
+    /**
+     * Monitoring type name
+     */
+<span class="nc" id="L66">    protected String app;</span>
+    /**
+     * Metrics configuration
+     */
+<span class="nc" id="L70">    protected Metrics metrics;</span>
+    /**
+     * time wheel timeout
+     */
+<span class="nc" id="L74">    protected Timeout timeout;</span>
+    /**
+     * Task and Data Scheduling
+     */
+<span class="nc" id="L78">    protected CollectDataDispatch collectDataDispatch;</span>
+    /**
+     * task execution priority
+     */
+<span class="nc" id="L82">    protected byte runPriority;</span>
+    /**
+     * Periodic collection or one-time collection true-periodic false-one-time
+     */
+<span class="nc" id="L86">    protected boolean isCyclic;</span>
+    /**
+     * Time for creating collection task
+     */
+<span class="nc" id="L90">    protected long newTime;</span>
+    /**
+     * Start time of the collection task
+     */
+<span class="nc" id="L94">    protected long startTime;</span>
+
+<span class="nc" id="L96">    protected List&lt;UnitConvert&gt; unitConvertList;</span>
+
+    public MetricsCollect(Metrics metrics, Timeout timeout,
+                          CollectDataDispatch collectDataDispatch,
+                          String collectorIdentity,
+<span class="nc" id="L101">                          List&lt;UnitConvert&gt; unitConvertList) {</span>
+<span class="nc" id="L102">        this.newTime = System.currentTimeMillis();</span>
+<span class="nc" id="L103">        this.timeout = timeout;</span>
+<span class="nc" id="L104">        this.metrics = metrics;</span>
+<span class="nc" id="L105">        this.collectorIdentity = collectorIdentity;</span>
+<span class="nc" id="L106">        WheelTimerTask timerJob = (WheelTimerTask) timeout.task();</span>
+<span class="nc" id="L107">        Job job = timerJob.getJob();</span>
+<span class="nc" id="L108">        this.monitorId = job.getMonitorId();</span>
+<span class="nc" id="L109">        this.tenantId = job.getTenantId();</span>
+<span class="nc" id="L110">        this.app = job.getApp();</span>
+<span class="nc" id="L111">        this.collectDataDispatch = collectDataDispatch;</span>
+<span class="nc" id="L112">        this.isCyclic = job.isCyclic();</span>
+<span class="nc" id="L113">        this.unitConvertList = unitConvertList;</span>
+        // Temporary one-time tasks are executed with high priority
+<span class="nc bnc" id="L115" title="All 2 branches missed.">        if (isCyclic) {</span>
+<span class="nc" id="L116">            runPriority = (byte) -1;</span>
+        } else {
+<span class="nc" id="L118">            runPriority = (byte) 1;</span>
+        }
+<span class="nc" id="L120">    }</span>
+
+    @Override
+    public void run() {
+<span class="nc" id="L124">        this.startTime = System.currentTimeMillis();</span>
+<span class="nc" id="L125">        setNewThreadName(monitorId, app, startTime, metrics);</span>
+<span class="nc" id="L126">        CollectRep.MetricsData.Builder response = CollectRep.MetricsData.newBuilder();</span>
+<span class="nc" id="L127">        response.setApp(app);</span>
+<span class="nc" id="L128">        response.setId(monitorId);</span>
+<span class="nc" id="L129">        response.setTenantId(tenantId);</span>
+        // for prometheus auto 
+<span class="nc bnc" id="L131" title="All 2 branches missed.">        if (DispatchConstants.PROTOCOL_PROMETHEUS.equalsIgnoreCase(metrics.getProtocol())) {</span>
+            List&lt;CollectRep.MetricsData&gt; metricsData = PrometheusAutoCollectImpl
+<span class="nc" id="L133">                    .getInstance().collect(response, metrics);</span>
+<span class="nc" id="L134">            validateResponse(metricsData.stream().findFirst().orElse(null));</span>
+<span class="nc" id="L135">            collectDataDispatch.dispatchCollectData(timeout, metrics, metricsData);</span>
+<span class="nc" id="L136">            return;</span>
+        }
+<span class="nc" id="L138">        response.setMetrics(metrics.getName());</span>
+        // According to the metrics collection protocol, application type, etc., 
+        // dispatch to the real application metrics collection implementation class
+<span class="nc" id="L141">        AbstractCollect abstractCollect = CollectStrategyFactory.invoke(metrics.getProtocol());</span>
+<span class="nc bnc" id="L142" title="All 2 branches missed.">        if (abstractCollect == null) {</span>
+<span class="nc" id="L143">            log.error(&quot;[Dispatcher] - not support this: app: {}, metrics: {}, protocol: {}.&quot;,</span>
+<span class="nc" id="L144">                    app, metrics.getName(), metrics.getProtocol());</span>
+<span class="nc" id="L145">            response.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L146">            response.setMsg(&quot;not support &quot; + app + &quot;, &quot;</span>
+<span class="nc" id="L147">                    + metrics.getName() + &quot;, &quot; + metrics.getProtocol());</span>
+        } else {
+            try {
+<span class="nc" id="L150">                abstractCollect.collect(response, monitorId, app, metrics);</span>
+<span class="nc" id="L151">            } catch (Exception e) {</span>
+<span class="nc" id="L152">                String msg = e.getMessage();</span>
+<span class="nc bnc" id="L153" title="All 4 branches missed.">                if (msg == null &amp;&amp; e.getCause() != null) {</span>
+<span class="nc" id="L154">                    msg = e.getCause().getMessage();</span>
+                }
+<span class="nc" id="L156">                log.error(&quot;[Metrics Collect]: {}.&quot;, msg, e);</span>
+<span class="nc" id="L157">                response.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc bnc" id="L158" title="All 2 branches missed.">                if (msg != null) {</span>
+<span class="nc" id="L159">                    response.setMsg(msg);</span>
+                }
+<span class="nc" id="L161">            }</span>
+        }
+        // Alias attribute expression replacement calculation
+<span class="nc bnc" id="L164" title="All 2 branches missed.">        if (fastFailed()) {</span>
+<span class="nc" id="L165">            return;</span>
+        }
+<span class="nc" id="L167">        calculateFields(metrics, response);</span>
+<span class="nc" id="L168">        CollectRep.MetricsData metricsData = validateResponse(response);</span>
+<span class="nc" id="L169">        collectDataDispatch.dispatchCollectData(timeout, metrics, metricsData);</span>
+<span class="nc" id="L170">    }</span>
+
+
+    /**
+     * Calculate the real metrics value according to the calculates and aliasFields configuration
+     *
+     * @param metrics     Metrics configuration     
+     * @param collectData Data collection    
+     */
+    private void calculateFields(Metrics metrics, CollectRep.MetricsData.Builder collectData) {
+<span class="nc" id="L180">        collectData.setPriority(metrics.getPriority());</span>
+<span class="nc" id="L181">        List&lt;CollectRep.Field&gt; fieldList = new LinkedList&lt;&gt;();</span>
+<span class="nc bnc" id="L182" title="All 2 branches missed.">        for (Metrics.Field field : metrics.getFields()) {</span>
+<span class="nc" id="L183">            CollectRep.Field.Builder fieldBuilder = CollectRep.Field.newBuilder();</span>
+<span class="nc" id="L184">            fieldBuilder.setName(field.getField()).setType(field.getType()).setLabel(field.isLabel());</span>
+<span class="nc bnc" id="L185" title="All 2 branches missed.">            if (field.getUnit() != null) {</span>
+<span class="nc" id="L186">                fieldBuilder.setUnit(field.getUnit());</span>
+            }
+<span class="nc" id="L188">            fieldList.add(fieldBuilder.build());</span>
+<span class="nc" id="L189">        }</span>
+<span class="nc" id="L190">        collectData.addAllFields(fieldList);</span>
+<span class="nc" id="L191">        List&lt;CollectRep.ValueRow&gt; aliasRowList = collectData.getValuesList();</span>
+<span class="nc bnc" id="L192" title="All 4 branches missed.">        if (aliasRowList == null || aliasRowList.isEmpty()) {</span>
+<span class="nc" id="L193">            return;</span>
+        }
+<span class="nc" id="L195">        collectData.clearValues();</span>
+        // Preprocess calculates first    
+<span class="nc bnc" id="L197" title="All 2 branches missed.">        if (metrics.getCalculates() == null) {</span>
+<span class="nc" id="L198">            metrics.setCalculates(Collections.emptyList());</span>
+        }
+        // eg: database_pages=Database pages unconventional mapping 
+<span class="nc" id="L201">        Map&lt;String, String&gt; fieldAliasMap = new HashMap&lt;&gt;(8);</span>
+<span class="nc" id="L202">        Map&lt;String, Expression&gt; fieldExpressionMap = metrics.getCalculates()</span>
+<span class="nc" id="L203">                .stream()</span>
+<span class="nc" id="L204">                .map(cal -&gt; transformCal(cal, fieldAliasMap))</span>
+<span class="nc" id="L205">                .filter(Objects::nonNull)</span>
+<span class="nc" id="L206">                .collect(Collectors.toMap(arr -&gt; (String) arr[0], arr -&gt; (Expression) arr[1], (oldValue, newValue) -&gt; newValue));</span>
+
+<span class="nc bnc" id="L208" title="All 2 branches missed.">        if (metrics.getUnits() == null) {</span>
+<span class="nc" id="L209">            metrics.setUnits(Collections.emptyList());</span>
+        }
+<span class="nc" id="L211">        Map&lt;String, Pair&lt;String, String&gt;&gt; fieldUnitMap = metrics.getUnits()</span>
+<span class="nc" id="L212">                .stream()</span>
+<span class="nc" id="L213">                .map(this::transformUnit)</span>
+<span class="nc" id="L214">                .filter(Objects::nonNull)</span>
+<span class="nc" id="L215">                .collect(Collectors.toMap(arr -&gt; (String) arr[0], arr -&gt; (Pair&lt;String, String&gt;) arr[1], (oldValue, newValue) -&gt; newValue));</span>
+
+<span class="nc" id="L217">        List&lt;Metrics.Field&gt; fields = metrics.getFields();</span>
+<span class="nc" id="L218">        List&lt;String&gt; aliasFields = metrics.getAliasFields();</span>
+<span class="nc" id="L219">        Map&lt;String, String&gt; aliasFieldValueMap = new HashMap&lt;&gt;(16);</span>
+<span class="nc" id="L220">        Map&lt;String, Object&gt; fieldValueMap = new HashMap&lt;&gt;(16);</span>
+<span class="nc" id="L221">        CollectRep.ValueRow.Builder realValueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L222" title="All 2 branches missed.">        for (CollectRep.ValueRow aliasRow : aliasRowList) {</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">            for (int aliasIndex = 0; aliasIndex &lt; aliasFields.size(); aliasIndex++) {</span>
+<span class="nc" id="L224">                String aliasFieldValue = aliasRow.getColumns(aliasIndex);</span>
+<span class="nc bnc" id="L225" title="All 2 branches missed.">                if (!CommonConstants.NULL_VALUE.equals(aliasFieldValue)) {</span>
+<span class="nc" id="L226">                    aliasFieldValueMap.put(aliasFields.get(aliasIndex), aliasFieldValue);</span>
+                }
+            }
+
+<span class="nc bnc" id="L230" title="All 2 branches missed.">            for (Metrics.Field field : fields) {</span>
+<span class="nc" id="L231">                String realField = field.getField();</span>
+<span class="nc" id="L232">                Expression expression = fieldExpressionMap.get(realField);</span>
+<span class="nc" id="L233">                String value = null;</span>
+<span class="nc" id="L234">                String aliasFieldUnit = null;</span>
+<span class="nc bnc" id="L235" title="All 2 branches missed.">                if (expression != null) {</span>
+                    // If there is a calculation expression, calculate the value
+<span class="nc bnc" id="L237" title="All 2 branches missed.">                    if (CommonConstants.TYPE_NUMBER == field.getType()) {</span>
+<span class="nc bnc" id="L238" title="All 2 branches missed.">                        for (String variable : expression.getVariableFullNames()) {</span>
+                            // extract double value and unit from aliasField value
+<span class="nc" id="L240">                            CollectUtil.DoubleAndUnit doubleAndUnit = CollectUtil</span>
+<span class="nc" id="L241">                                    .extractDoubleAndUnitFromStr(aliasFieldValueMap.get(variable));</span>
+<span class="nc bnc" id="L242" title="All 2 branches missed.">                            if (doubleAndUnit != null) {</span>
+<span class="nc" id="L243">                                Double doubleValue = doubleAndUnit.getValue();</span>
+<span class="nc" id="L244">                                aliasFieldUnit = doubleAndUnit.getUnit();</span>
+<span class="nc" id="L245">                                fieldValueMap.put(variable, doubleValue);</span>
+<span class="nc" id="L246">                            } else {</span>
+<span class="nc" id="L247">                                fieldValueMap.put(variable, null);</span>
+                            }
+<span class="nc" id="L249">                        }</span>
+                    } else {
+<span class="nc bnc" id="L251" title="All 2 branches missed.">                        for (String variable : expression.getVariableFullNames()) {</span>
+<span class="nc" id="L252">                            String strValue = aliasFieldValueMap.get(variable);</span>
+<span class="nc" id="L253">                            fieldValueMap.put(variable, strValue);</span>
+<span class="nc" id="L254">                        }</span>
+                    }
+                    try {
+                        // valueList为空时也执行,涵盖纯字符串赋值表达式
+<span class="nc" id="L258">                        Object objValue = expression.execute(fieldValueMap);</span>
+<span class="nc bnc" id="L259" title="All 2 branches missed.">                        if (objValue != null) {</span>
+<span class="nc" id="L260">                            value = String.valueOf(objValue);</span>
+                        }
+<span class="nc" id="L262">                    } catch (Exception e) {</span>
+<span class="nc" id="L263">                        log.info(&quot;[calculates execute warning] {}.&quot;, e.getMessage());</span>
+<span class="nc" id="L264">                    }</span>
+                } else {
+                    // does not exist then map the alias value
+<span class="nc" id="L267">                    String aliasField = fieldAliasMap.get(realField);</span>
+<span class="nc bnc" id="L268" title="All 2 branches missed.">                    if (aliasField != null) {</span>
+<span class="nc" id="L269">                        value = aliasFieldValueMap.get(aliasField);</span>
+                    } else {
+<span class="nc" id="L271">                        value = aliasFieldValueMap.get(realField);</span>
+                    }
+
+<span class="nc bnc" id="L274" title="All 2 branches missed.">                    if (value != null) {</span>
+<span class="nc" id="L275">                        final byte fieldType = field.getType();</span>
+
+<span class="nc bnc" id="L277" title="All 2 branches missed.">                        if (fieldType == CommonConstants.TYPE_NUMBER) {</span>
+<span class="nc" id="L278">                            CollectUtil.DoubleAndUnit doubleAndUnit = CollectUtil</span>
+<span class="nc" id="L279">                                    .extractDoubleAndUnitFromStr(value);</span>
+<span class="nc" id="L280">                            final Double tempValue = doubleAndUnit.getValue();</span>
+<span class="nc bnc" id="L281" title="All 2 branches missed.">                            value = tempValue == null ? null : String.valueOf(tempValue);</span>
+<span class="nc" id="L282">                            aliasFieldUnit = doubleAndUnit.getUnit();</span>
+<span class="nc bnc" id="L283" title="All 2 branches missed.">                        } else if (fieldType == CommonConstants.TYPE_TIME) {</span>
+                            final int tempValue;
+<span class="nc bnc" id="L285" title="All 2 branches missed.">                            value = (tempValue = CommonUtil.parseTimeStrToSecond(value)) == -1 ? null : String.valueOf(tempValue);</span>
+                        }
+                    }
+                }
+                
+<span class="nc" id="L290">                Pair&lt;String, String&gt; unitPair = fieldUnitMap.get(realField);</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">                if (aliasFieldUnit != null) {</span>
+<span class="nc bnc" id="L292" title="All 2 branches missed.">                    if (unitPair != null) {</span>
+<span class="nc" id="L293">                        unitPair.setLeft(aliasFieldUnit);</span>
+<span class="nc bnc" id="L294" title="All 4 branches missed.">                    } else if (field.getUnit() != null &amp;&amp; !aliasFieldUnit.equalsIgnoreCase(field.getUnit())) {</span>
+<span class="nc" id="L295">                        unitPair = Pair.of(aliasFieldUnit, field.getUnit());</span>
+                    }
+                }
+<span class="nc bnc" id="L298" title="All 4 branches missed.">                if (value != null &amp;&amp; unitPair != null) {</span>
+<span class="nc bnc" id="L299" title="All 2 branches missed.">                    for (UnitConvert unitConvert : unitConvertList) {</span>
+<span class="nc bnc" id="L300" title="All 4 branches missed.">                        if (unitConvert.checkUnit(unitPair.getLeft()) &amp;&amp; unitConvert.checkUnit(unitPair.getRight())) {</span>
+<span class="nc" id="L301">                            value = unitConvert.convert(value, unitPair.getLeft(), unitPair.getRight());</span>
+                        }
+<span class="nc" id="L303">                    }</span>
+                }
+                // Handle metrics values that may have units such as 34%, 34Mb, and limit values to 4 decimal places
+<span class="nc bnc" id="L306" title="All 2 branches missed.">                if (CommonConstants.TYPE_NUMBER == field.getType()) {</span>
+<span class="nc" id="L307">                    value = CommonUtil.parseDoubleStr(value, field.getUnit());</span>
+                }
+<span class="nc bnc" id="L309" title="All 2 branches missed.">                if (value == null) {</span>
+<span class="nc" id="L310">                    value = CommonConstants.NULL_VALUE;</span>
+                }
+<span class="nc" id="L312">                realValueRowBuilder.addColumns(value);</span>
+<span class="nc" id="L313">                fieldValueMap.clear();</span>
+<span class="nc" id="L314">            }</span>
+<span class="nc" id="L315">            aliasFieldValueMap.clear();</span>
+<span class="nc" id="L316">            collectData.addValues(realValueRowBuilder.build());</span>
+<span class="nc" id="L317">            realValueRowBuilder.clear();</span>
+<span class="nc" id="L318">        }</span>
+<span class="nc" id="L319">    }</span>
+
+
+    /**
+     * @param cal cal
+     * @param fieldAliasMap field alias map
+     * @return expr
+     */
+    private Object[] transformCal(String cal, Map&lt;String, String&gt; fieldAliasMap) {
+<span class="nc" id="L328">        int splitIndex = cal.indexOf(&quot;=&quot;);</span>
+<span class="nc" id="L329">        String field = cal.substring(0, splitIndex).trim();</span>
+<span class="nc" id="L330">        String expressionStr = cal.substring(splitIndex + 1).trim().replace(&quot;\\#&quot;, &quot;#&quot;);</span>
+        Expression expression;
+        try {
+<span class="nc" id="L333">            expression = AviatorEvaluator.compile(expressionStr, true);</span>
+<span class="nc" id="L334">        } catch (Exception e) {</span>
+<span class="nc" id="L335">            fieldAliasMap.put(field, expressionStr);</span>
+<span class="nc" id="L336">            return null;</span>
+<span class="nc" id="L337">        }</span>
+<span class="nc" id="L338">        return new Object[]{field, expression};</span>
+    }
+
+
+    /**
+     * transform unit
+     * @param unit unit
+     * @return units
+     */
+    private Object[] transformUnit(String unit) {
+<span class="nc" id="L348">        int equalIndex = unit.indexOf(&quot;=&quot;);</span>
+<span class="nc" id="L349">        int arrowIndex = unit.indexOf(&quot;-&gt;&quot;);</span>
+<span class="nc bnc" id="L350" title="All 4 branches missed.">        if (equalIndex &lt; 0 || arrowIndex &lt; 0) {</span>
+<span class="nc" id="L351">            return null;</span>
+        }
+<span class="nc" id="L353">        String field = unit.substring(0, equalIndex).trim();</span>
+<span class="nc" id="L354">        String originUnit = unit.substring(equalIndex + 1, arrowIndex).trim();</span>
+<span class="nc" id="L355">        String newUnit = unit.substring(arrowIndex + 2).trim();</span>
+<span class="nc" id="L356">        return new Object[]{field, Pair.of(originUnit, newUnit)};</span>
+    }
+
+    private boolean fastFailed() {
+<span class="nc bnc" id="L360" title="All 4 branches missed.">        return this.timeout == null || this.timeout.isCancelled();</span>
+    }
+
+    private CollectRep.MetricsData validateResponse(CollectRep.MetricsData.Builder builder) {
+<span class="nc" id="L364">        long endTime = System.currentTimeMillis();</span>
+<span class="nc" id="L365">        builder.setTime(endTime);</span>
+<span class="nc" id="L366">        long runningTime = endTime - startTime;</span>
+<span class="nc" id="L367">        long allTime = endTime - newTime;</span>
+<span class="nc bnc" id="L368" title="All 2 branches missed.">        if (startTime - newTime &gt;= WARN_DISPATCH_TIME) {</span>
+<span class="nc" id="L369">            log.warn(&quot;[Collector Dispatch Warn, Dispatch Use {}ms.&quot;, startTime - newTime);</span>
+        }
+<span class="nc bnc" id="L371" title="All 2 branches missed.">        if (builder.getCode() != CollectRep.Code.SUCCESS) {</span>
+<span class="nc" id="L372">            log.info(&quot;[Collect Failed, Run {}ms, All {}ms] Reason: {}&quot;, runningTime, allTime, builder.getMsg());</span>
+        } else {
+<span class="nc" id="L374">            log.info(&quot;[Collect Success, Run {}ms, All {}ms].&quot;, runningTime, allTime);</span>
+        }
+<span class="nc" id="L376">        return builder.build();</span>
+    }
+
+    private void validateResponse(CollectRep.MetricsData metricsData) {
+<span class="nc bnc" id="L380" title="All 2 branches missed.">        if (metricsData == null) {</span>
+<span class="nc" id="L381">            log.error(&quot;[Collect Failed] Response metrics data is null.&quot;);</span>
+<span class="nc" id="L382">            return;</span>
+        }
+<span class="nc" id="L384">        long endTime = System.currentTimeMillis();</span>
+<span class="nc" id="L385">        long runningTime = endTime - startTime;</span>
+<span class="nc" id="L386">        long allTime = endTime - newTime;</span>
+<span class="nc bnc" id="L387" title="All 2 branches missed.">        if (startTime - newTime &gt;= WARN_DISPATCH_TIME) {</span>
+<span class="nc" id="L388">            log.warn(&quot;[Collector Dispatch Warn, Dispatch Use {}ms.&quot;, startTime - newTime);</span>
+        }
+<span class="nc bnc" id="L390" title="All 2 branches missed.">        if (metricsData.getCode() != CollectRep.Code.SUCCESS) {</span>
+<span class="nc" id="L391">            log.info(&quot;[Collect Failed, Run {}ms, All {}ms] Reason: {}&quot;, runningTime, allTime, metricsData.getMsg());</span>
+        } else {
+<span class="nc" id="L393">            log.info(&quot;[Collect Success, Run {}ms, All {}ms].&quot;, runningTime, allTime);</span>
+        }
+<span class="nc" id="L395">    }</span>
+
+    private void setNewThreadName(long monitorId, String app, long startTime, Metrics metrics) {
+<span class="nc" id="L398">        String builder = monitorId + &quot;-&quot; + app + &quot;-&quot; + metrics.getName() +</span>
+<span class="nc" id="L399">                &quot;-&quot; + String.valueOf(startTime).substring(9);</span>
+<span class="nc" id="L400">        Thread.currentThread().setName(builder);</span>
+<span class="nc" id="L401">    }</span>
+
+    @Override
+    public int compareTo(MetricsCollect collect) {
+<span class="nc" id="L405">        return runPriority - collect.runPriority;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

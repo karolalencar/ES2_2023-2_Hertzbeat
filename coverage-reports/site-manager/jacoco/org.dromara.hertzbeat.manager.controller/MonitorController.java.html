@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MonitorController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.controller</a> &gt; <span class="el_source">MonitorController.java</span></div><h1>MonitorController.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.manager.controller;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.dromara.hertzbeat.common.entity.dto.Message;
+import org.dromara.hertzbeat.common.entity.manager.Monitor;
+import org.dromara.hertzbeat.manager.pojo.dto.MonitorDto;
+import org.dromara.hertzbeat.manager.service.MonitorService;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import javax.validation.Valid;
+import java.util.List;
+
+import static org.dromara.hertzbeat.common.constants.CommonConstants.MONITOR_NOT_EXIST_CODE;
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
+
+/**
+ * Monitoring management API
+ * 监控管理API
+ *
+ * @author tomsun28
+ */
+@Tag(name = &quot;Monitor Manage API | 监控管理API&quot;)
+@RestController
+@RequestMapping(path = &quot;/api/monitor&quot;, produces = {APPLICATION_JSON_VALUE})
+<span class="fc" id="L54">public class MonitorController {</span>
+
+    @Autowired
+    private MonitorService monitorService;
+
+    @PostMapping
+    @Operation(summary = &quot;Add a monitoring application&quot;, description = &quot;新增一个监控应用&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; addNewMonitor(@Valid @RequestBody MonitorDto monitorDto) {
+        // Verify request data  校验请求数据
+<span class="fc" id="L63">        monitorService.validate(monitorDto, false);</span>
+<span class="pc bpc" id="L64" title="1 of 2 branches missed.">        if (monitorDto.isDetected()) {</span>
+            // Probe    进行探测
+<span class="fc" id="L66">            monitorService.detectMonitor(monitorDto.getMonitor(), monitorDto.getParams(), monitorDto.getCollector());</span>
+        }
+<span class="fc" id="L68">        monitorService.addMonitor(monitorDto.getMonitor(), monitorDto.getParams(), monitorDto.getCollector());</span>
+<span class="fc" id="L69">        return ResponseEntity.ok(Message.success(&quot;Add success&quot;));</span>
+    }
+
+    @PutMapping
+    @Operation(summary = &quot;Modify an existing monitoring application&quot;, description = &quot;修改一个已存在监控应用&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; modifyMonitor(@Valid @RequestBody MonitorDto monitorDto) {
+        // Verify request data  校验请求数据
+<span class="fc" id="L76">        monitorService.validate(monitorDto, true);</span>
+<span class="pc bpc" id="L77" title="1 of 2 branches missed.">        if (monitorDto.isDetected()) {</span>
+            // Probe    进行探测
+<span class="fc" id="L79">            monitorService.detectMonitor(monitorDto.getMonitor(), monitorDto.getParams(), monitorDto.getCollector());</span>
+        }
+<span class="fc" id="L81">        monitorService.modifyMonitor(monitorDto.getMonitor(), monitorDto.getParams(), monitorDto.getCollector());</span>
+<span class="fc" id="L82">        return ResponseEntity.ok(Message.success(&quot;Modify success&quot;));</span>
+    }
+
+    @GetMapping(path = &quot;/{id}&quot;)
+    @Operation(summary = &quot;Obtain monitoring information based on monitoring ID&quot;, description = &quot;根据监控任务ID获取监控信息&quot;)
+    public ResponseEntity&lt;Message&lt;MonitorDto&gt;&gt; getMonitor(
+            @Parameter(description = &quot;监控任务ID&quot;, example = &quot;6565463543&quot;) @PathVariable(&quot;id&quot;) final long id) {
+        // Get monitoring information
+        // 获取监控信息
+<span class="fc" id="L91">        MonitorDto monitorDto = monitorService.getMonitorDto(id);</span>
+<span class="pc bpc" id="L92" title="1 of 2 branches missed.">        if (monitorDto == null) {</span>
+<span class="nc" id="L93">            return ResponseEntity.ok(Message.fail(MONITOR_NOT_EXIST_CODE, &quot;Monitor not exist.&quot;));</span>
+        } else {
+<span class="fc" id="L95">            return ResponseEntity.ok(Message.success(monitorDto));</span>
+        }
+    }
+
+    @DeleteMapping(path = &quot;/{id}&quot;)
+    @Operation(summary = &quot;Delete monitoring application based on monitoring ID&quot;, description = &quot;根据监控任务ID删除监控应用&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; deleteMonitor(
+            @Parameter(description = &quot;en: Monitor ID,zh: 监控任务ID&quot;, example = &quot;6565463543&quot;) @PathVariable(&quot;id&quot;) final long id) {
+        // delete monitor 删除监控
+<span class="fc" id="L104">        Monitor monitor = monitorService.getMonitor(id);</span>
+<span class="pc bpc" id="L105" title="1 of 2 branches missed.">        if (monitor == null) {</span>
+<span class="nc" id="L106">            return ResponseEntity.ok(Message.success(&quot;The specified monitoring was not queried, please check whether the parameters are correct&quot;));</span>
+        }
+<span class="fc" id="L108">        monitorService.deleteMonitor(id);</span>
+<span class="fc" id="L109">        return ResponseEntity.ok(Message.success(&quot;Delete success&quot;));</span>
+    }
+
+    @PostMapping(path = &quot;/detect&quot;)
+    @Operation(summary = &quot;Perform availability detection on this monitoring based on monitoring information&quot;, description = &quot;根据监控信息去对此监控进行可用性探测&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; detectMonitor(@Valid @RequestBody MonitorDto monitorDto) {
+<span class="fc" id="L115">        monitorService.validate(monitorDto, null);</span>
+<span class="fc" id="L116">        monitorService.detectMonitor(monitorDto.getMonitor(), monitorDto.getParams(), monitorDto.getCollector());</span>
+<span class="fc" id="L117">        return ResponseEntity.ok(Message.success(&quot;Detect success.&quot;));</span>
+    }
+
+    @PostMapping(&quot;/optional&quot;)
+    @Operation(summary = &quot;Add a monitor that can select metrics&quot;, description = &quot;新增一个可选指标的监控器&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; addNewMonitorOptionalMetrics(@Valid @RequestBody MonitorDto monitorDto) {
+<span class="fc" id="L123">        monitorService.validate(monitorDto, false);</span>
+<span class="pc bpc" id="L124" title="1 of 2 branches missed.">        if (monitorDto.isDetected()) {</span>
+<span class="fc" id="L125">            monitorService.detectMonitor(monitorDto.getMonitor(), monitorDto.getParams(), monitorDto.getCollector());</span>
+        }
+<span class="fc" id="L127">        monitorService.addNewMonitorOptionalMetrics(monitorDto.getMetrics(), monitorDto.getMonitor(), monitorDto.getParams());</span>
+<span class="fc" id="L128">        return ResponseEntity.ok(Message.success(&quot;Add success&quot;));</span>
+    }
+
+    @GetMapping(value = {&quot;/metric/{app}&quot;, &quot;/metric&quot;})
+    @Operation(summary = &quot;get app metric&quot;, description = &quot;根据app名称获取该app可监控指标，不传为获取全部指标&quot;)
+    public ResponseEntity&lt;Message&lt;List&lt;String&gt;&gt;&gt; getMonitorMetrics(
+            @PathVariable(value = &quot;app&quot;, required = false) String app) {
+<span class="fc" id="L135">        List&lt;String&gt; metricNames = monitorService.getMonitorMetrics(app);</span>
+<span class="fc" id="L136">        return ResponseEntity.ok(Message.success(metricNames));</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

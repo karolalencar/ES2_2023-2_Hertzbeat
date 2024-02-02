@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PrivateKeyUtils.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.util</a> &gt; <span class="el_source">PrivateKeyUtils.java</span></div><h1>PrivateKeyUtils.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.util;
+
+import lombok.experimental.UtilityClass;
+import lombok.extern.slf4j.Slf4j;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.Objects;
+
+/**
+ * private key util
+ * write private key to ~/.ssh
+ * @author &lt;a href=&quot;mailto:gcwm99@gmail.com&quot;&gt;gcdd1993&lt;/a&gt;
+ */
+<span class="fc" id="L16">@Slf4j</span>
+@UtilityClass
+<span class="nc" id="L18">public class PrivateKeyUtils {</span>
+
+<span class="fc" id="L20">    private static final String KEY_PATH = System.getProperty(&quot;user.home&quot;) + &quot;/.ssh&quot;;</span>
+
+    /**
+     * write private key to ~/.ssh, filename is ~/.ssh/id_rsa_${host}
+     *
+     * @param host   host
+     * @param keyStr key string
+     * @return key file path
+     * @throws IOException if ~/.ssh is not exist and create dir error
+     */
+    public static String writePrivateKey(String host, String keyStr) throws IOException {
+<span class="fc" id="L31">        var sshPath = Paths.get(KEY_PATH);</span>
+<span class="pc bpc" id="L32" title="1 of 2 branches missed.">        if (!Files.exists(sshPath)) {</span>
+<span class="nc" id="L33">            Files.createDirectories(sshPath);</span>
+        }
+<span class="fc" id="L35">        var keyPath = Paths.get(KEY_PATH, &quot;id_rsa_&quot; + host);</span>
+<span class="pc bpc" id="L36" title="1 of 2 branches missed.">        if (!Files.exists(keyPath)) {</span>
+<span class="nc" id="L37">            Files.writeString(keyPath, keyStr);</span>
+        } else {
+<span class="fc" id="L39">            var oldKey = Files.readString(keyPath);</span>
+<span class="pc bpc" id="L40" title="1 of 2 branches missed.">            if (!Objects.equals(oldKey, keyStr)) {</span>
+<span class="nc" id="L41">                Files.writeString(keyPath, keyStr);</span>
+            }
+        }
+<span class="fc" id="L44">        return keyPath.toString();</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

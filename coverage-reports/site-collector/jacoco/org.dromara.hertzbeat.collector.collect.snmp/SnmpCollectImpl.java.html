@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SnmpCollectImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.snmp</a> &gt; <span class="el_source">SnmpCollectImpl.java</span></div><h1>SnmpCollectImpl.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.collector.collect.snmp;
+
+import org.dromara.hertzbeat.collector.collect.AbstractCollect;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.collector.util.CollectUtil;
+import org.dromara.hertzbeat.common.constants.CollectorConstants;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.job.protocol.SnmpProtocol;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+import lombok.extern.slf4j.Slf4j;
+import org.snmp4j.PDU;
+import org.snmp4j.Snmp;
+import org.snmp4j.mp.SnmpConstants;
+import org.snmp4j.smi.*;
+import org.snmp4j.util.*;
+import org.springframework.util.Assert;
+import org.snmp4j.*;
+import org.snmp4j.fluent.SnmpBuilder;
+import org.snmp4j.fluent.SnmpCompletableFuture;
+import org.snmp4j.fluent.TargetBuilder;
+import org.snmp4j.security.SecurityModel;
+import org.springframework.util.StringUtils;
+
+import java.io.IOException;
+import java.nio.Buffer;
+import java.nio.charset.Charset;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+
+/**
+ * Snmp protocol collection implementation
+ * @author wangtao
+ */
+<span class="nc" id="L54">@Slf4j</span>
+<span class="nc" id="L55">public class SnmpCollectImpl extends AbstractCollect {</span>
+
+    private static final String DEFAULT_PROTOCOL = &quot;udp&quot;;
+    private static final String OPERATION_GET = &quot;get&quot;;
+    private static final String OPERATION_WALK = &quot;walk&quot;;
+    private static final String HEX_SPLIT = &quot;:&quot;;
+    private static final String FORMAT_PATTERN =
+            &quot;{0,choice,0#|1#1 day, |1&lt;{0,number,integer} days, }&quot; +
+                    &quot;{1,choice,0#|1#1 hour, |1&lt;{1,number,integer} hours, }&quot; +
+                    &quot;{2,choice,0#|1#1 minute, |1&lt;{2,number,integer} minutes, }&quot; +
+                    &quot;{3,choice,0#|1#1 second, |1&lt;{3,number,integer} seconds }&quot;;
+
+<span class="nc" id="L67">    private final Map&lt;Integer, Snmp&gt; versionSnmpService = new ConcurrentHashMap&lt;&gt;(3);</span>
+
+
+    @Override
+    public void collect(CollectRep.MetricsData.Builder builder, long monitorId, String app, Metrics metrics) {
+<span class="nc" id="L72">        long startTime = System.currentTimeMillis();</span>
+        try {
+<span class="nc" id="L74">            validateParams(metrics);</span>
+<span class="nc" id="L75">        } catch (Exception e) {</span>
+<span class="nc" id="L76">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L77">            builder.setMsg(e.getMessage());</span>
+<span class="nc" id="L78">            return;</span>
+<span class="nc" id="L79">        }</span>
+<span class="nc" id="L80">        SnmpProtocol snmpProtocol = metrics.getSnmp();</span>
+<span class="nc" id="L81">        int timeout = CollectUtil.getTimeout(snmpProtocol.getTimeout());</span>
+<span class="nc" id="L82">        int snmpVersion = getSnmpVersion(snmpProtocol.getVersion());</span>
+        try {
+<span class="nc" id="L84">            SnmpBuilder snmpBuilder = new SnmpBuilder();</span>
+<span class="nc" id="L85">            Snmp snmpService = getSnmpService(snmpVersion);</span>
+            Target&lt;?&gt; target;
+<span class="nc" id="L87">            Address targetAddress = GenericAddress.parse(DEFAULT_PROTOCOL + &quot;:&quot; + snmpProtocol.getHost()</span>
+<span class="nc" id="L88">                    + &quot;/&quot; + snmpProtocol.getPort());</span>
+<span class="nc" id="L89">            TargetBuilder&lt;?&gt; targetBuilder = snmpBuilder.target(targetAddress);</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">            if (snmpVersion == SnmpConstants.version3) {</span>
+<span class="nc" id="L91">                target = targetBuilder</span>
+<span class="nc" id="L92">                        .user(snmpProtocol.getUsername())</span>
+<span class="nc" id="L93">                        .auth(TargetBuilder.AuthProtocol.hmac192sha256).authPassphrase(snmpProtocol.getAuthPassphrase())</span>
+<span class="nc" id="L94">                        .priv(TargetBuilder.PrivProtocol.aes128).privPassphrase(snmpProtocol.getPrivPassphrase())</span>
+<span class="nc" id="L95">                        .done()</span>
+<span class="nc" id="L96">                        .timeout(timeout).retries(1)</span>
+<span class="nc" id="L97">                        .build();</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">            } else if (snmpVersion == SnmpConstants.version1) {</span>
+<span class="nc" id="L99">                target = targetBuilder</span>
+<span class="nc" id="L100">                        .v1()</span>
+<span class="nc" id="L101">                        .community(new OctetString(snmpProtocol.getCommunity()))</span>
+<span class="nc" id="L102">                        .timeout(timeout).retries(1)</span>
+<span class="nc" id="L103">                        .build();</span>
+<span class="nc" id="L104">                target.setSecurityModel(SecurityModel.SECURITY_MODEL_SNMPv1);</span>
+            } else {
+<span class="nc" id="L106">                target = targetBuilder</span>
+<span class="nc" id="L107">                        .v2c()</span>
+<span class="nc" id="L108">                        .community(new OctetString(snmpProtocol.getCommunity()))</span>
+<span class="nc" id="L109">                        .timeout(timeout).retries(1)</span>
+<span class="nc" id="L110">                        .build();</span>
+<span class="nc" id="L111">                target.setSecurityModel(SecurityModel.SECURITY_MODEL_SNMPv2c);</span>
+            }
+<span class="nc" id="L113">            String operation = snmpProtocol.getOperation();</span>
+<span class="nc bnc" id="L114" title="All 2 branches missed.">            operation = StringUtils.hasText(operation) ? operation : OPERATION_GET;</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">            if (OPERATION_GET.equalsIgnoreCase(operation)) {</span>
+<span class="nc" id="L116">                PDU pdu = targetBuilder.pdu().type(PDU.GET).oids(snmpProtocol.getOids().values().toArray(new String[0])).build();</span>
+<span class="nc" id="L117">                SnmpCompletableFuture snmpRequestFuture = SnmpCompletableFuture.send(snmpService, target, pdu);</span>
+<span class="nc" id="L118">                List&lt;VariableBinding&gt; vbs = snmpRequestFuture.get().getAll();</span>
+<span class="nc" id="L119">                long responseTime = System.currentTimeMillis() - startTime;</span>
+<span class="nc" id="L120">                Map&lt;String, String&gt; oidsMap = snmpProtocol.getOids();</span>
+<span class="nc" id="L121">                Map&lt;String, String&gt; oidsValueMap = new HashMap&lt;&gt;(oidsMap.size());</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">                for (VariableBinding binding : vbs) {</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">                    if (binding == null) {</span>
+<span class="nc" id="L124">                        continue;</span>
+                    }
+<span class="nc" id="L126">                    Variable variable = binding.getVariable();</span>
+<span class="nc bnc" id="L127" title="All 2 branches missed.">                    if (variable instanceof TimeTicks) {</span>
+<span class="nc" id="L128">                        String value = ((TimeTicks) variable).toString(FORMAT_PATTERN);</span>
+<span class="nc" id="L129">                        oidsValueMap.put(binding.getOid().toDottedString(), value);</span>
+<span class="nc" id="L130">                    } else {</span>
+<span class="nc" id="L131">                        oidsValueMap.put(binding.getOid().toDottedString(), binding.toValueString());</span>
+                    }
+<span class="nc" id="L133">                }</span>
+<span class="nc" id="L134">                CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L135" title="All 2 branches missed.">                for (String alias : metrics.getAliasFields()) {</span>
+<span class="nc bnc" id="L136" title="All 2 branches missed.">                    if (CollectorConstants.RESPONSE_TIME.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L137">                        valueRowBuilder.addColumns(Long.toString(responseTime));</span>
+                    } else {
+<span class="nc" id="L139">                        String oid = oidsMap.get(alias);</span>
+<span class="nc" id="L140">                        String value = oidsValueMap.get(oid);</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">                        if (value != null) {</span>
+<span class="nc" id="L142">                            valueRowBuilder.addColumns(value);</span>
+                        } else {
+<span class="nc" id="L144">                            valueRowBuilder.addColumns(CommonConstants.NULL_VALUE);</span>
+                        }
+                    }
+<span class="nc" id="L147">                }</span>
+<span class="nc" id="L148">                builder.addValues(valueRowBuilder.build());</span>
+<span class="nc bnc" id="L149" title="All 2 branches missed.">            } else if (OPERATION_WALK.equalsIgnoreCase(operation)) {</span>
+<span class="nc" id="L150">                Map&lt;String, String&gt; oidMap = snmpProtocol.getOids();</span>
+<span class="nc" id="L151">                Assert.notEmpty(oidMap, &quot;snmp oids is required when operation is walk.&quot;);</span>
+<span class="nc" id="L152">                TableUtils tableUtils = new TableUtils(snmpService, new DefaultPDUFactory(PDU.GETBULK));</span>
+<span class="nc" id="L153">                OID[] oids = oidMap.values().stream().map(OID::new).toArray(OID[]::new);</span>
+<span class="nc" id="L154">                List&lt;TableEvent&gt; tableEvents = tableUtils.getTable(target, oids, null, null);</span>
+<span class="nc" id="L155">                Assert.notNull(tableEvents, &quot;snmp walk response empty content.&quot;);</span>
+<span class="nc" id="L156">                long responseTime = System.currentTimeMillis() - startTime;</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">                for (TableEvent tableEvent : tableEvents) {</span>
+<span class="nc bnc" id="L158" title="All 4 branches missed.">                    if (tableEvent == null || tableEvent.isError()) {</span>
+<span class="nc" id="L159">                        continue;</span>
+                    }
+<span class="nc" id="L161">                    VariableBinding[] varBindings = tableEvent.getColumns();</span>
+<span class="nc" id="L162">                    Map&lt;String, String&gt; oidsValueMap = new HashMap&lt;&gt;(varBindings.length);</span>
+<span class="nc bnc" id="L163" title="All 2 branches missed.">                    for (VariableBinding binding : varBindings) {</span>
+<span class="nc bnc" id="L164" title="All 2 branches missed.">                        if (binding == null) {</span>
+<span class="nc" id="L165">                            continue;</span>
+                        }
+<span class="nc" id="L167">                        Variable variable = binding.getVariable();</span>
+<span class="nc bnc" id="L168" title="All 2 branches missed.">                        if (variable instanceof TimeTicks) {</span>
+<span class="nc" id="L169">                            String value = ((TimeTicks) variable).toString(FORMAT_PATTERN);</span>
+<span class="nc" id="L170">                            oidsValueMap.put(binding.getOid().trim().toDottedString(), value);</span>
+<span class="nc" id="L171">                        } else {</span>
+<span class="nc" id="L172">                            oidsValueMap.put(binding.getOid().trim().toDottedString(), bingdingHexValueToString(binding));</span>
+                        }
+                    }
+                    // when too many empty value field, ignore
+<span class="nc bnc" id="L176" title="All 2 branches missed.">                    if (oidsValueMap.size() &lt; metrics.getAliasFields().size() / 2) {</span>
+<span class="nc" id="L177">                        continue;</span>
+                    }
+<span class="nc" id="L179">                    CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L180" title="All 2 branches missed.">                    for (String alias : metrics.getAliasFields()) {</span>
+<span class="nc bnc" id="L181" title="All 2 branches missed.">                        if (CollectorConstants.RESPONSE_TIME.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L182">                            valueRowBuilder.addColumns(Long.toString(responseTime));</span>
+                        } else {
+<span class="nc" id="L184">                            String oid = oidMap.get(alias);</span>
+<span class="nc" id="L185">                            String value = oidsValueMap.get(oid);</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">                            if (value == null) {</span>
+                                // get leaf
+<span class="nc bnc" id="L188" title="All 2 branches missed.">                                for (String key : oidsValueMap.keySet()) {</span>
+<span class="nc bnc" id="L189" title="All 2 branches missed.">                                    if (key.startsWith(oid)){</span>
+<span class="nc" id="L190">                                        value = oidsValueMap.get(key);</span>
+<span class="nc" id="L191">                                        break;</span>
+                                    }
+<span class="nc" id="L193">                                }</span>
+                            }
+<span class="nc bnc" id="L195" title="All 2 branches missed.">                            if (value != null) {</span>
+<span class="nc" id="L196">                                valueRowBuilder.addColumns(value);</span>
+                            } else {
+<span class="nc" id="L198">                                valueRowBuilder.addColumns(CommonConstants.NULL_VALUE);</span>
+                            }
+                        }
+<span class="nc" id="L201">                    }</span>
+<span class="nc" id="L202">                    builder.addValues(valueRowBuilder.build());</span>
+<span class="nc" id="L203">                }</span>
+            }
+<span class="nc" id="L205">        } catch (ExecutionException | InterruptedException ex) {</span>
+<span class="nc" id="L206">            String errorMsg = CommonUtil.getMessageFromThrowable(ex);</span>
+<span class="nc" id="L207">            log.warn(&quot;[snmp collect] error: {}&quot;, errorMsg);</span>
+<span class="nc" id="L208">            builder.setCode(CollectRep.Code.UN_CONNECTABLE);</span>
+<span class="nc" id="L209">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L210">        } catch (Exception e) {</span>
+<span class="nc" id="L211">            String errorMsg = CommonUtil.getMessageFromThrowable(e);</span>
+<span class="nc" id="L212">            log.warn(&quot;[snmp collect] error: {}&quot;, errorMsg, e);</span>
+<span class="nc" id="L213">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L214">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L215">        }</span>
+<span class="nc" id="L216">    }</span>
+
+    @Override
+    public String supportProtocol() {
+<span class="nc" id="L220">        return DispatchConstants.PROTOCOL_SNMP;</span>
+    }
+
+
+    private void validateParams(Metrics metrics) {
+<span class="nc bnc" id="L225" title="All 4 branches missed.">        if (metrics == null || metrics.getSnmp() == null) {</span>
+<span class="nc" id="L226">            throw new IllegalArgumentException(&quot;Snmp collect must has snmp params&quot;);</span>
+        }
+<span class="nc" id="L228">        SnmpProtocol snmpProtocol = metrics.getSnmp();</span>
+<span class="nc" id="L229">        Assert.hasText(snmpProtocol.getHost(), &quot;snmp host is required.&quot;);</span>
+<span class="nc" id="L230">        Assert.hasText(snmpProtocol.getPort(), &quot;snmp port is required.&quot;);</span>
+<span class="nc" id="L231">        Assert.notNull(snmpProtocol.getVersion(), &quot;snmp version is required.&quot;);</span>
+<span class="nc" id="L232">    }</span>
+
+    private synchronized Snmp getSnmpService(int snmpVersion) throws IOException {
+<span class="nc" id="L235">        Snmp snmpService = versionSnmpService.get(snmpVersion);</span>
+<span class="nc bnc" id="L236" title="All 2 branches missed.">        if (snmpService != null) {</span>
+<span class="nc" id="L237">            return snmpService;</span>
+        }
+<span class="nc" id="L239">        SnmpBuilder snmpBuilder = new SnmpBuilder();</span>
+<span class="nc bnc" id="L240" title="All 2 branches missed.">        if (snmpVersion == SnmpConstants.version3) {</span>
+<span class="nc" id="L241">            snmpService = snmpBuilder.udp().v3().usm().threads(4).build();</span>
+<span class="nc bnc" id="L242" title="All 2 branches missed.">        } else if (snmpVersion == SnmpConstants.version1) {</span>
+<span class="nc" id="L243">            snmpService = snmpBuilder.udp().v1().threads(4).build();</span>
+        } else {
+<span class="nc" id="L245">            snmpService = snmpBuilder.udp().v2c().threads(4).build();</span>
+        }
+<span class="nc" id="L247">        versionSnmpService.put(snmpVersion, snmpService);</span>
+<span class="nc" id="L248">        return snmpService;</span>
+    }
+
+    private int getSnmpVersion(String snmpVersion) {
+<span class="nc" id="L252">        int version = SnmpConstants.version2c;</span>
+<span class="nc bnc" id="L253" title="All 2 branches missed.">        if (!StringUtils.hasText(snmpVersion)) {</span>
+<span class="nc" id="L254">            return version;</span>
+        }
+<span class="nc bnc" id="L256" title="All 2 branches missed.">        if (snmpVersion.equalsIgnoreCase(String.valueOf(SnmpConstants.version1))</span>
+<span class="nc bnc" id="L257" title="All 2 branches missed.">                || snmpVersion.equalsIgnoreCase(TargetBuilder.SnmpVersion.v1.name())) {</span>
+<span class="nc" id="L258">            return SnmpConstants.version1;</span>
+        }
+<span class="nc bnc" id="L260" title="All 2 branches missed.">        if (snmpVersion.equalsIgnoreCase(String.valueOf(SnmpConstants.version3))</span>
+<span class="nc bnc" id="L261" title="All 2 branches missed.">                || snmpVersion.equalsIgnoreCase(TargetBuilder.SnmpVersion.v3.name())) {</span>
+<span class="nc" id="L262">            return SnmpConstants.version3;</span>
+        }
+<span class="nc" id="L264">        return version;</span>
+    }
+
+    private String bingdingHexValueToString(VariableBinding binding) {
+        // whether if binding is hex
+<span class="nc" id="L269">        String hexString = binding.toValueString();</span>
+<span class="nc bnc" id="L270" title="All 2 branches missed.">        if (hexString.contains(HEX_SPLIT)) {</span>
+            try {
+<span class="nc" id="L272">                StringBuilder output = new StringBuilder();</span>
+<span class="nc" id="L273">                String[] hexArr = hexString.split(HEX_SPLIT);</span>
+<span class="nc bnc" id="L274" title="All 2 branches missed.">                for (String hex : hexArr) {</span>
+<span class="nc" id="L275">                    output.append((char) Integer.parseInt(hex, 16));</span>
+                }
+<span class="nc" id="L277">                return output.toString();</span>
+<span class="nc" id="L278">            } catch (Exception e) {</span>
+<span class="nc" id="L279">                return hexString;</span>
+            }
+        } else {
+<span class="nc" id="L282">            return hexString;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

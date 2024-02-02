@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CollectorMonitorBind.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.entity.manager</a> &gt; <span class="el_source">CollectorMonitorBind.java</span></div><h1>CollectorMonitorBind.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.common.entity.manager;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.CreatedBy;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedBy;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.EntityListeners;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.Id;
+import javax.persistence.Index;
+import javax.persistence.Table;
+import java.time.LocalDateTime;
+
+/**
+ * collector entity
+ * @author tom
+ */
+@Entity
+@Table(name = &quot;hzb_collector_monitor_bind&quot;, indexes = {
+        @Index(name = &quot;index_collector_monitor&quot;, columnList = &quot;collector&quot;),
+        @Index(name = &quot;index_collector_monitor&quot;, columnList = &quot;monitor_id&quot;)
+})
+<span class="nc bnc" id="L33" title="All 62 branches missed.">@Data</span>
+<span class="nc" id="L34">@Builder</span>
+<span class="nc" id="L35">@AllArgsConstructor</span>
+<span class="nc" id="L36">@NoArgsConstructor</span>
+@Schema(description = &quot;slave collector monitor bind entity | 采集器与监控关联实体&quot;)
+@EntityListeners(AuditingEntityListener.class)
+public class CollectorMonitorBind {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Schema(title = &quot;primary id&quot;, example = &quot;23&quot;)
+<span class="nc" id="L44">    private Long id;</span>
+    
+    @Schema(title = &quot;collector name&quot;, example = &quot;87432674384&quot;)
+<span class="nc" id="L47">    private String collector;</span>
+    
+    @Schema(title = &quot;monitor ID&quot;, example = &quot;87432674336&quot;)
+    @Column(name = &quot;monitor_id&quot;)
+<span class="nc" id="L51">    private Long monitorId;</span>
+	
+	@Schema(title = &quot;The creator of this record&quot;, example = &quot;tom&quot;)
+	@CreatedBy
+<span class="nc" id="L55">	private String creator;</span>
+	
+	@Schema(title = &quot;This record was last modified by&quot;)
+	@LastModifiedBy
+<span class="nc" id="L59">	private String modifier;</span>
+	
+	@Schema(title = &quot;This record creation time (millisecond timestamp)&quot;)
+	@CreatedDate
+<span class="nc" id="L63">	private LocalDateTime gmtCreate;</span>
+	
+	@Schema(title = &quot;Record the latest modification time (timestamp in milliseconds)&quot;)
+	@LastModifiedDate
+<span class="nc" id="L67">	private LocalDateTime gmtUpdate;</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

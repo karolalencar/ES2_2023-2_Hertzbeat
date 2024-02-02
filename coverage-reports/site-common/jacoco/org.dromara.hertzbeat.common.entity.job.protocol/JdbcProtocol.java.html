@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>JdbcProtocol.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.entity.job.protocol</a> &gt; <span class="el_source">JdbcProtocol.java</span></div><h1>JdbcProtocol.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.common.entity.job.protocol;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+/**
+ * 公共的jdbc规范实现的数据库配置信息
+ * @author tomsun28
+ */
+<span class="nc bnc" id="L29" title="All 86 branches missed.">@Data</span>
+<span class="nc" id="L30">@Builder</span>
+<span class="nc" id="L31">@AllArgsConstructor</span>
+<span class="nc" id="L32">@NoArgsConstructor</span>
+public class JdbcProtocol {
+    /**
+     * 对端主机ip或域名
+     */
+<span class="nc" id="L37">    private String host;</span>
+    /**
+     * 端口号
+     */
+<span class="nc" id="L41">    private String port;</span>
+    /**
+     * 数据库用户名(可选)
+     */
+<span class="nc" id="L45">    private String username;</span>
+    /**
+     * 数据库密码(可选)
+     */
+<span class="nc" id="L49">    private String password;</span>
+    /**
+     * 数据库
+     */
+<span class="nc" id="L53">    private String database;</span>
+    /**
+     * 超时时间
+     */
+<span class="nc" id="L57">    private String timeout;</span>
+    /**
+     * 数据库类型 mysql oracle ...
+     */
+<span class="nc" id="L61">    private String platform;</span>
+    /**
+     * SQL查询方式： oneRow, multiRow, columns, runScript
+     */
+<span class="nc" id="L65">    private String queryType;</span>
+    /**
+     * sql
+     */
+<span class="nc" id="L69">    private String sql;</span>
+    /**
+     * 数据库链接url eg: jdbc:mysql://localhost:3306/usthe
+     */
+<span class="nc" id="L73">    private String url;</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

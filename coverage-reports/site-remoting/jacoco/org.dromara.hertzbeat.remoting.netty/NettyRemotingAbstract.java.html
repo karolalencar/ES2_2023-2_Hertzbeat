@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>NettyRemotingAbstract.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-remoting</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.remoting.netty</a> &gt; <span class="el_source">NettyRemotingAbstract.java</span></div><h1>NettyRemotingAbstract.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.remoting.netty;
+
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.epoll.Epoll;
+import io.netty.handler.timeout.IdleState;
+import io.netty.handler.timeout.IdleStateEvent;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.common.entity.message.ClusterMsg;
+import org.dromara.hertzbeat.common.util.NetworkUtil;
+import org.dromara.hertzbeat.remoting.RemotingService;
+import org.dromara.hertzbeat.remoting.event.NettyEventListener;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * netty remote abstract
+ * 参考: org.apache.rocketmq.remoting.netty.NettyRemotingAbstract
+ */
+<span class="fc" id="L39">@Slf4j</span>
+public abstract class NettyRemotingAbstract implements RemotingService {
+<span class="fc" id="L41">    protected ConcurrentHashMap&lt;ClusterMsg.MessageType, NettyRemotingProcessor&gt; processorTable = new ConcurrentHashMap&lt;&gt;();</span>
+
+<span class="fc" id="L43">    protected ConcurrentHashMap&lt;String, ResponseFuture&gt; responseTable = new ConcurrentHashMap&lt;&gt;();</span>
+
+<span class="fc" id="L45">    protected List&lt;NettyHook&gt; nettyHookList = new ArrayList&lt;&gt;();</span>
+
+    protected NettyEventListener nettyEventListener;
+
+<span class="fc" id="L49">    protected NettyRemotingAbstract(NettyEventListener nettyEventListener) {</span>
+<span class="fc" id="L50">        this.nettyEventListener = nettyEventListener;</span>
+<span class="fc" id="L51">    }</span>
+
+    public void registerProcessor(final ClusterMsg.MessageType messageType, final NettyRemotingProcessor processor) {
+<span class="fc" id="L54">        this.processorTable.put(messageType, processor);</span>
+<span class="fc" id="L55">    }</span>
+
+    protected void processReceiveMsg(ChannelHandlerContext ctx, ClusterMsg.Message message) {
+<span class="fc bfc" id="L58" title="All 2 branches covered.">        if (ClusterMsg.Direction.REQUEST.equals(message.getDirection())) {</span>
+<span class="fc" id="L59">            this.processRequestMsg(ctx, message);</span>
+        } else {
+<span class="fc" id="L61">            this.processResponseMsg(message);</span>
+        }
+<span class="fc" id="L63">    }</span>
+
+    protected void processRequestMsg(ChannelHandlerContext ctx, ClusterMsg.Message request) {
+<span class="fc" id="L66">        this.doBeforeRequest(ctx, request);</span>
+
+<span class="fc" id="L68">        NettyRemotingProcessor processor = this.processorTable.get(request.getType());</span>
+<span class="pc bpc" id="L69" title="1 of 2 branches missed.">        if (processor == null) {</span>
+<span class="nc" id="L70">            log.info(&quot;request type {} not supported&quot;, request.getType());</span>
+<span class="nc" id="L71">            return;</span>
+        }
+<span class="fc" id="L73">        ClusterMsg.Message response = processor.handle(ctx, request);</span>
+<span class="pc bpc" id="L74" title="1 of 2 branches missed.">        if (response != null) {</span>
+<span class="fc" id="L75">            ctx.writeAndFlush(response);</span>
+        }
+<span class="fc" id="L77">    }</span>
+
+    private void doBeforeRequest(ChannelHandlerContext ctx, ClusterMsg.Message request) {
+<span class="pc bpc" id="L80" title="2 of 4 branches missed.">        if (this.nettyHookList == null || this.nettyHookList.isEmpty()) {</span>
+<span class="fc" id="L81">            return;</span>
+        }
+<span class="nc bnc" id="L83" title="All 2 branches missed.">        for (NettyHook nettyHook : this.nettyHookList) {</span>
+<span class="nc" id="L84">            nettyHook.doBeforeRequest(ctx, request);</span>
+<span class="nc" id="L85">        }</span>
+<span class="nc" id="L86">    }</span>
+
+    protected void processResponseMsg(ClusterMsg.Message response) {
+<span class="pc bpc" id="L89" title="1 of 2 branches missed.">        if (this.responseTable.containsKey(response.getIdentity())) {</span>
+<span class="fc" id="L90">            ResponseFuture responseFuture = this.responseTable.get(response.getIdentity());</span>
+<span class="fc" id="L91">            responseFuture.putResponse(response);</span>
+<span class="fc" id="L92">        } else {</span>
+<span class="nc" id="L93">            log.warn(&quot;receive response not in responseTable, identity: {}&quot;, response.getIdentity());</span>
+        }
+<span class="fc" id="L95">    }</span>
+
+    protected void sendMsgImpl(final Channel channel, final ClusterMsg.Message request) {
+<span class="fc" id="L98">        channel.writeAndFlush(request).addListener(future -&gt; {</span>
+<span class="pc bpc" id="L99" title="1 of 2 branches missed.">            if (!future.isSuccess()) {</span>
+<span class="nc" id="L100">                log.warn(&quot;send request message failed. address: {}, &quot;, channel.remoteAddress(), future.cause());</span>
+            }
+<span class="fc" id="L102">        });</span>
+<span class="fc" id="L103">    }</span>
+
+    protected ClusterMsg.Message sendMsgSyncImpl(final Channel channel, final ClusterMsg.Message request, final int timeoutMillis) {
+<span class="fc" id="L106">        final String identity = request.getIdentity();</span>
+
+        try {
+<span class="fc" id="L109">            ResponseFuture responseFuture = new ResponseFuture();</span>
+<span class="fc" id="L110">            this.responseTable.put(identity, responseFuture);</span>
+<span class="fc" id="L111">            channel.writeAndFlush(request).addListener(future -&gt; {</span>
+<span class="pc bpc" id="L112" title="1 of 2 branches missed.">                if (!future.isSuccess()) {</span>
+<span class="nc" id="L113">                    responseTable.remove(identity);</span>
+<span class="nc" id="L114">                    log.warn(&quot;send request message failed. request: {}, address: {}, &quot;, request, channel.remoteAddress(), future.cause());</span>
+                }
+<span class="fc" id="L116">            });</span>
+<span class="fc" id="L117">            ClusterMsg.Message response = responseFuture.waitResponse(timeoutMillis);</span>
+<span class="pc bpc" id="L118" title="1 of 2 branches missed.">            if (response == null) {</span>
+<span class="nc" id="L119">                log.warn(&quot;get response message failed, message is null&quot;);</span>
+            }
+<span class="fc" id="L121">            return response;</span>
+<span class="nc" id="L122">        } catch (InterruptedException e) {</span>
+<span class="nc" id="L123">            log.warn(&quot;get response message failed, &quot;, e);</span>
+        } finally {
+<span class="fc" id="L125">            responseTable.remove(identity);</span>
+        }
+<span class="nc" id="L127">        return null;</span>
+    }
+
+    protected void channelActive(ChannelHandlerContext ctx) throws Exception {
+<span class="pc bpc" id="L131" title="3 of 4 branches missed.">        if (this.nettyEventListener != null &amp;&amp; ctx.channel().isActive()) {</span>
+<span class="nc" id="L132">            this.nettyEventListener.onChannelActive(ctx.channel());</span>
+        }
+<span class="fc" id="L134">    }</span>
+
+    protected void channelIdle(ChannelHandlerContext ctx, Object evt) throws Exception {
+<span class="nc" id="L137">        IdleStateEvent event = (IdleStateEvent) evt;</span>
+<span class="nc bnc" id="L138" title="All 4 branches missed.">        if (this.nettyEventListener != null &amp;&amp; event.state() == IdleState.ALL_IDLE) {</span>
+<span class="nc" id="L139">            ctx.channel().closeFuture();</span>
+<span class="nc" id="L140">            this.nettyEventListener.onChannelIdle(ctx.channel());</span>
+        }
+<span class="nc" id="L142">    }</span>
+
+    protected boolean useEpoll() {
+<span class="pc bpc" id="L145" title="1 of 2 branches missed.">        return NetworkUtil.isLinuxPlatform()</span>
+<span class="pc bnc" id="L146" title="All 2 branches missed.">                &amp;&amp; Epoll.isAvailable();</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Pop3CollectImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.pop3</a> &gt; <span class="el_source">Pop3CollectImpl.java</span></div><h1>Pop3CollectImpl.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.collect.pop3;
+
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.net.pop3.POP3MessageInfo;
+import org.dromara.hertzbeat.collector.collect.AbstractCollect;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.common.constants.CollectorConstants;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.job.protocol.Pop3Protocol;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+
+import org.apache.commons.net.pop3.POP3SClient;
+import org.apache.commons.net.pop3.POP3Client;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+
+/**
+ * pop3 collect
+ * @author a-little-fool
+ */
+<span class="nc" id="L28">@Slf4j</span>
+public class Pop3CollectImpl extends AbstractCollect {
+
+    private final static String EMAIL_COUNT = &quot;email_count&quot;;
+    private final static String MAILBOX_SIZE = &quot;mailbox_size&quot;;
+
+<span class="nc" id="L34">    public Pop3CollectImpl() {</span>
+
+<span class="nc" id="L36">    }</span>
+
+    @Override
+    public void collect(CollectRep.MetricsData.Builder builder, long monitorId, String app, Metrics metrics) {
+<span class="nc" id="L40">        long startTime = System.currentTimeMillis();</span>
+
+        try {
+<span class="nc" id="L43">            validateParams(metrics);</span>
+<span class="nc" id="L44">        } catch (Exception e) {</span>
+<span class="nc" id="L45">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L46">            builder.setMsg(e.getMessage());</span>
+<span class="nc" id="L47">            return;</span>
+<span class="nc" id="L48">        }</span>
+
+<span class="nc" id="L50">        Pop3Protocol pop3Protocol = metrics.getPop3();</span>
+<span class="nc" id="L51">        POP3Client pop3Client = null;</span>
+<span class="nc" id="L52">        boolean ssl = Boolean.parseBoolean(pop3Protocol.getSsl());</span>
+        try {
+<span class="nc" id="L54">            pop3Client = createPOP3Client(pop3Protocol, ssl);</span>
+
+<span class="nc bnc" id="L56" title="All 2 branches missed.">            if (pop3Client.isConnected()) {</span>
+<span class="nc" id="L57">                long responseTime = System.currentTimeMillis() - startTime;</span>
+
+<span class="nc" id="L59">                obtainPop3Metrics(builder, pop3Client, metrics.getAliasFields(),</span>
+                        responseTime);
+<span class="nc" id="L61">            } else {</span>
+<span class="nc" id="L62">                builder.setCode(CollectRep.Code.UN_CONNECTABLE);</span>
+<span class="nc" id="L63">                builder.setMsg(&quot;Peer connect failed，Timeout &quot; + pop3Protocol.getTimeout() + &quot;ms&quot;);</span>
+            }
+<span class="nc" id="L65">        } catch (IOException e1) {</span>
+<span class="nc" id="L66">            String errorMsg = CommonUtil.getMessageFromThrowable(e1);</span>
+<span class="nc" id="L67">            log.info(errorMsg);</span>
+<span class="nc" id="L68">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L69">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L70">        } catch (Exception e2) {</span>
+<span class="nc" id="L71">            String errorMsg = CommonUtil.getMessageFromThrowable(e2);</span>
+<span class="nc" id="L72">            log.info(errorMsg);</span>
+<span class="nc" id="L73">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L74">            builder.setMsg(errorMsg);</span>
+        } finally {
+<span class="nc bnc" id="L76" title="All 2 branches missed.">            if (pop3Client != null) {</span>
+                try {
+<span class="nc" id="L78">                    pop3Client.logout();</span>
+<span class="nc" id="L79">                    pop3Client.disconnect();</span>
+<span class="nc" id="L80">                } catch (IOException e) {</span>
+<span class="nc" id="L81">                    String errorMsg = CommonUtil.getMessageFromThrowable(e);</span>
+<span class="nc" id="L82">                    log.info(errorMsg);</span>
+<span class="nc" id="L83">                    builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L84">                    builder.setMsg(errorMsg);</span>
+<span class="nc" id="L85">                }</span>
+            }
+        }
+<span class="nc" id="L88">    }</span>
+
+    @Override
+    public String supportProtocol() {
+<span class="nc" id="L92">        return DispatchConstants.PROTOCOL_POP3;</span>
+    }
+
+    /**
+     * 校验参数
+     * @param metrics
+     * @throws Exception
+     */
+    private void validateParams(Metrics metrics) throws Exception {
+<span class="nc" id="L101">        Pop3Protocol pop3Protocol = metrics.getPop3();</span>
+<span class="nc bnc" id="L102" title="All 6 branches missed.">        if (metrics == null || pop3Protocol == null || pop3Protocol.isInvalid()) {</span>
+<span class="nc" id="L103">            throw new Exception(&quot;Pop3 collect must has pop3 params&quot;);</span>
+        }
+<span class="nc" id="L105">    }</span>
+
+    /**
+     * 创建POP3连接【支持SSL加密】
+     * @param pop3Protocol
+     * @param ssl
+     * @return
+     * @throws IOException
+     */
+    private POP3Client createPOP3Client(Pop3Protocol pop3Protocol, boolean ssl) throws Exception {
+<span class="nc" id="L115">        POP3Client pop3Client = null;</span>
+        // 判断是否启用 SSL 加密连接
+<span class="nc bnc" id="L117" title="All 2 branches missed.">        if (ssl) {</span>
+<span class="nc" id="L118">            pop3Client = new POP3SClient(true);</span>
+        } else {
+<span class="nc" id="L120">            pop3Client = new POP3Client();</span>
+        }
+        // 设置超时时间
+<span class="nc" id="L123">        int timeout = Integer.parseInt(pop3Protocol.getTimeout());</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">        if (timeout &gt; 0) {</span>
+<span class="nc" id="L125">            pop3Client.setConnectTimeout(timeout);</span>
+        }
+<span class="nc" id="L127">        pop3Client.setCharset(StandardCharsets.UTF_8);</span>
+        // 连接到POP3服务器
+<span class="nc" id="L129">        String host = pop3Protocol.getHost();</span>
+<span class="nc" id="L130">        int port = Integer.parseInt(pop3Protocol.getPort());</span>
+<span class="nc" id="L131">        pop3Client.connect(host, port);</span>
+        // 验证凭据
+<span class="nc" id="L133">        String email = pop3Protocol.getEmail();</span>
+<span class="nc" id="L134">        String authorize = pop3Protocol.getAuthorize();</span>
+<span class="nc" id="L135">        boolean isAuthenticated = pop3Client.login(email, authorize);</span>
+<span class="nc bnc" id="L136" title="All 2 branches missed.">        if (!isAuthenticated) {</span>
+<span class="nc" id="L137">            throw new Exception(&quot;Pop3 client authentication failed&quot;);</span>
+        }
+<span class="nc" id="L139">        return pop3Client;</span>
+    }
+
+    /**
+     * 获取Pop3指标信息
+     * @param builder
+     * @param pop3Client
+     * @param aliasFields
+     * @param responseTime
+     */
+    private void obtainPop3Metrics(CollectRep.MetricsData.Builder builder, POP3Client pop3Client,
+                                                 List&lt;String&gt; aliasFields, long responseTime) throws IOException {
+<span class="nc" id="L151">        Map&lt;String,Object&gt; pop3Metrics = parsePop3Metrics(pop3Client, aliasFields);</span>
+
+<span class="nc" id="L153">        CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L154" title="All 2 branches missed.">        for (String alias : aliasFields) {</span>
+<span class="nc" id="L155">            Object value = pop3Metrics.get(alias);</span>
+<span class="nc bnc" id="L156" title="All 2 branches missed.">            if (value != null) {</span>
+<span class="nc" id="L157">                valueRowBuilder.addColumns(String.valueOf(value));</span>
+            } else {
+<span class="nc bnc" id="L159" title="All 2 branches missed.">                if (CollectorConstants.RESPONSE_TIME.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L160">                    valueRowBuilder.addColumns(String.valueOf(responseTime));</span>
+                } else {
+<span class="nc" id="L162">                    valueRowBuilder.addColumns(CommonConstants.NULL_VALUE);</span>
+                }
+            }
+<span class="nc" id="L165">        }</span>
+<span class="nc" id="L166">        builder.addValues(valueRowBuilder);</span>
+<span class="nc" id="L167">    }</span>
+
+    private Map&lt;String,Object&gt; parsePop3Metrics(POP3Client pop3Client, List&lt;String&gt; aliasFields) throws IOException {
+<span class="nc" id="L170">        Map&lt;String,Object&gt; pop3Metrics = new HashMap&lt;&gt;(aliasFields.size());</span>
+<span class="nc" id="L171">        POP3MessageInfo status = pop3Client.status();</span>
+<span class="nc" id="L172">        int emailCount = 0;</span>
+<span class="nc" id="L173">        double mailboxSize = 0.0;</span>
+<span class="nc bnc" id="L174" title="All 2 branches missed.">        if (status != null) {</span>
+<span class="nc" id="L175">            emailCount = status.number;</span>
+            // byte -&gt; kb
+<span class="nc" id="L177">            mailboxSize = (double)status.size / 1024.0;</span>
+<span class="nc" id="L178">            pop3Metrics.put(EMAIL_COUNT, emailCount);</span>
+<span class="nc" id="L179">            pop3Metrics.put(MAILBOX_SIZE, mailboxSize);</span>
+        }
+<span class="nc" id="L181">        return pop3Metrics;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

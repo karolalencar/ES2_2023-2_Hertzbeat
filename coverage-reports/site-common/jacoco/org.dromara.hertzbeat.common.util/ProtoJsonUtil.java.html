@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ProtoJsonUtil.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.util</a> &gt; <span class="el_source">ProtoJsonUtil.java</span></div><h1>ProtoJsonUtil.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.common.util;
+
+import com.google.protobuf.Message;
+import com.google.protobuf.util.JsonFormat;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * protobuf json convert util
+ * @author tomsun28
+ */
+<span class="nc" id="L28">@Slf4j</span>
+<span class="nc" id="L29">public class ProtoJsonUtil {</span>
+
+<span class="nc" id="L31">    private static final JsonFormat.Printer PRINTER = JsonFormat.printer();</span>
+<span class="nc" id="L32">    private static final JsonFormat.Parser PARSER = JsonFormat.parser();</span>
+
+    /**
+     * protobuf to json
+     * @param proto protobuf
+     * @return json
+     */
+    public static String toJsonStr(Message proto) {
+        try {
+<span class="nc" id="L41">            return PRINTER.print(proto);</span>
+<span class="nc" id="L42">        } catch (Exception e) {</span>
+<span class="nc" id="L43">            log.error(e.getMessage(), e);</span>
+<span class="nc" id="L44">            return null;</span>
+        }
+    }
+
+    /**
+     * json to protobuf
+     * @param json json str
+     * @param builder proto instance builder
+     * @return protobuf
+     */
+    public static Message toProtobuf(String json, Message.Builder builder) {
+        try {
+<span class="nc" id="L56">            PARSER.merge(json, builder);</span>
+<span class="nc" id="L57">            return builder.build();</span>
+<span class="nc" id="L58">        } catch (Exception e) {</span>
+<span class="nc" id="L59">            log.error(e.getMessage(), e);</span>
+<span class="nc" id="L60">            return null;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

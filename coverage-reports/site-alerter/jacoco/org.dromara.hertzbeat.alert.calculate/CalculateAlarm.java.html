@@ -1,0 +1,462 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CalculateAlarm.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-alerter</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.alert.calculate</a> &gt; <span class="el_source">CalculateAlarm.java</span></div><h1>CalculateAlarm.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.alert.calculate;
+
+import com.googlecode.aviator.AviatorEvaluator;
+import com.googlecode.aviator.Expression;
+import com.googlecode.aviator.exception.CompileExpressionErrorException;
+import com.googlecode.aviator.exception.ExpressionRuntimeException;
+import com.googlecode.aviator.exception.ExpressionSyntaxErrorException;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.dromara.hertzbeat.alert.AlerterWorkerPool;
+import org.dromara.hertzbeat.alert.dao.AlertMonitorDao;
+import org.dromara.hertzbeat.alert.reduce.AlarmCommonReduce;
+import org.dromara.hertzbeat.alert.service.AlertDefineService;
+import org.dromara.hertzbeat.alert.service.AlertService;
+import org.dromara.hertzbeat.alert.util.AlertTemplateUtil;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.alerter.Alert;
+import org.dromara.hertzbeat.common.entity.alerter.AlertDefine;
+import org.dromara.hertzbeat.common.entity.manager.Monitor;
+import org.dromara.hertzbeat.common.entity.manager.TagItem;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.queue.CommonDataQueue;
+import org.dromara.hertzbeat.common.support.event.MonitorDeletedEvent;
+import org.dromara.hertzbeat.common.support.event.SystemConfigChangeEvent;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+import org.dromara.hertzbeat.common.util.ResourceBundleUtil;
+import org.springframework.context.event.EventListener;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
+
+import javax.persistence.criteria.Predicate;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+import static org.dromara.hertzbeat.common.constants.CommonConstants.*;
+
+/**
+ * Calculate alarms based on the alarm definition rules and collected data
+ * @author tom
+ */
+@Component
+<span class="nc" id="L61">@Slf4j</span>
+public class CalculateAlarm {
+
+    private static final String SYSTEM_VALUE_ROW_COUNT = &quot;system_value_row_count&quot;;
+
+    /**
+     * The alarm in the process is triggered
+     * 触发中告警信息
+     * key - monitorId+alertDefineId 为普通阈值告警 ｜ The alarm is a common threshold alarm
+     * key - monitorId 为任务状态可用性可达性告警 ｜ Indicates the monitoring status availability reachability alarm
+     */
+    private final Map&lt;String, Alert&gt; triggeredAlertMap;
+    /**
+     * The not recover alert
+     * key - monitorId + alertDefineId + (instance)
+     */
+    private final Map&lt;String, Alert&gt; notRecoveredAlertMap;
+    private final AlerterWorkerPool workerPool;
+    private final CommonDataQueue dataQueue;
+    private final AlertDefineService alertDefineService;
+    private final AlarmCommonReduce alarmCommonReduce;
+    private ResourceBundle bundle;
+    private final AlertService alertService;
+
+    public CalculateAlarm(AlerterWorkerPool workerPool, CommonDataQueue dataQueue,
+                          AlertDefineService alertDefineService, AlertMonitorDao monitorDao,
+<span class="nc" id="L87">                          AlarmCommonReduce alarmCommonReduce, AlertService alertService) {</span>
+<span class="nc" id="L88">        this.workerPool = workerPool;</span>
+<span class="nc" id="L89">        this.dataQueue = dataQueue;</span>
+<span class="nc" id="L90">        this.alarmCommonReduce = alarmCommonReduce;</span>
+<span class="nc" id="L91">        this.alertDefineService = alertDefineService;</span>
+<span class="nc" id="L92">        this.alertService = alertService;</span>
+<span class="nc" id="L93">        this.bundle = ResourceBundleUtil.getBundle(&quot;alerter&quot;);</span>
+<span class="nc" id="L94">        this.triggeredAlertMap = new ConcurrentHashMap&lt;&gt;(128);</span>
+<span class="nc" id="L95">        this.notRecoveredAlertMap = new ConcurrentHashMap&lt;&gt;(128);</span>
+        // Initialize stateAlertMap
+<span class="nc" id="L97">        List&lt;Monitor&gt; monitors = monitorDao.findMonitorsByStatus(CommonConstants.UN_AVAILABLE_CODE);</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">        if (monitors != null) {</span>
+<span class="nc bnc" id="L99" title="All 2 branches missed.">            for (Monitor monitor : monitors) {</span>
+<span class="nc" id="L100">                HashMap&lt;String, String&gt; tags = new HashMap&lt;&gt;(8);</span>
+<span class="nc" id="L101">                tags.put(TAG_MONITOR_ID, String.valueOf(monitor.getId()));</span>
+<span class="nc" id="L102">                tags.put(TAG_MONITOR_NAME, monitor.getName());</span>
+<span class="nc" id="L103">                tags.put(TAG_MONITOR_APP, monitor.getApp());</span>
+<span class="nc" id="L104">                this.notRecoveredAlertMap.put(monitor.getId() + CommonConstants.AVAILABILITY,</span>
+<span class="nc" id="L105">                        Alert.builder().tags(tags).target(AVAILABILITY).status(UN_AVAILABLE_CODE).build());</span>
+<span class="nc" id="L106">            }</span>
+        }
+<span class="nc" id="L108">        startCalculate();</span>
+<span class="nc" id="L109">    }</span>
+
+    private void startCalculate() {
+<span class="nc" id="L112">        Runnable runnable = () -&gt; {</span>
+<span class="nc bnc" id="L113" title="All 2 branches missed.">            while (!Thread.currentThread().isInterrupted()) {</span>
+                try {
+<span class="nc" id="L115">                    CollectRep.MetricsData metricsData = dataQueue.pollMetricsDataToAlerter();</span>
+<span class="nc bnc" id="L116" title="All 2 branches missed.">                    if (metricsData != null) {</span>
+<span class="nc" id="L117">                        calculate(metricsData);</span>
+                    }
+<span class="nc" id="L119">                } catch (InterruptedException ignored) {</span>
+
+<span class="nc" id="L121">                } catch (Exception e) {</span>
+<span class="nc" id="L122">                    log.error(&quot;calculate alarm error: {}.&quot;, e.getMessage(), e);</span>
+<span class="nc" id="L123">                }</span>
+            }
+<span class="nc" id="L125">        };</span>
+<span class="nc" id="L126">        workerPool.executeJob(runnable);</span>
+<span class="nc" id="L127">        workerPool.executeJob(runnable);</span>
+<span class="nc" id="L128">        workerPool.executeJob(runnable);</span>
+<span class="nc" id="L129">    }</span>
+
+    private void calculate(CollectRep.MetricsData metricsData) {
+<span class="nc" id="L132">        long currentTimeMilli = System.currentTimeMillis();</span>
+<span class="nc" id="L133">        long monitorId = metricsData.getId();</span>
+<span class="nc" id="L134">        String app = metricsData.getApp();</span>
+<span class="nc" id="L135">        String metrics = metricsData.getMetrics();</span>
+        // If the metrics whose scheduling priority is 0 has the status of collecting response data UN_REACHABLE/UN_CONNECTABLE,
+        // the highest severity alarm is generated to monitor the status change
+<span class="nc bnc" id="L138" title="All 2 branches missed.">        if (metricsData.getPriority() == 0) {</span>
+<span class="nc" id="L139">            handlerAvailableMetrics(monitorId, app, metricsData);</span>
+        }
+        // Query the alarm definitions associated with the metrics of the monitoring type
+        // field - define[]
+<span class="nc" id="L143">        Map&lt;String, List&lt;AlertDefine&gt;&gt; defineMap = alertDefineService.getMonitorBindAlertDefines(monitorId, app, metrics);</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">        if (defineMap.isEmpty()) {</span>
+<span class="nc" id="L145">            return;</span>
+        }
+<span class="nc" id="L147">        List&lt;CollectRep.Field&gt; fields = metricsData.getFieldsList();</span>
+<span class="nc" id="L148">        Map&lt;String, Object&gt; fieldValueMap = new HashMap&lt;&gt;(16);</span>
+<span class="nc" id="L149">        int valueRowCount = metricsData.getValuesCount();</span>
+<span class="nc bnc" id="L150" title="All 2 branches missed.">        for (Map.Entry&lt;String, List&lt;AlertDefine&gt;&gt; entry : defineMap.entrySet()) {</span>
+<span class="nc" id="L151">            List&lt;AlertDefine&gt; defines = entry.getValue();</span>
+<span class="nc bnc" id="L152" title="All 2 branches missed.">            for (AlertDefine define : defines) {</span>
+<span class="nc" id="L153">                final String expr = define.getExpr();</span>
+
+<span class="nc bnc" id="L155" title="All 2 branches missed.">                if (StringUtils.isBlank(expr)) {</span>
+<span class="nc" id="L156">                    continue;</span>
+                }
+
+<span class="nc bnc" id="L159" title="All 2 branches missed.">                if (expr.contains(SYSTEM_VALUE_ROW_COUNT)) {</span>
+<span class="nc" id="L160">                    fieldValueMap.put(SYSTEM_VALUE_ROW_COUNT, valueRowCount);</span>
+                    try {
+<span class="nc" id="L162">                        boolean match = execAlertExpression(fieldValueMap, expr);</span>
+<span class="nc bnc" id="L163" title="All 2 branches missed.">                        if (match) {</span>
+                            // If the threshold rule matches, the number of times the threshold has been triggered is determined and an alarm is triggered
+                            // 阈值规则匹配，判断已触发阈值次数，触发告警
+<span class="nc" id="L166">                            afterThresholdRuleMatch(currentTimeMilli, monitorId, app, metrics, fieldValueMap, define);</span>
+                            // 若此阈值已被触发，则其它数据行的触发忽略
+<span class="nc" id="L168">                            continue;</span>
+<span class="nc bnc" id="L169" title="All 2 branches missed.">                        } else if (define.isRecoverNotice()) {</span>
+<span class="nc" id="L170">                            String notResolvedAlertKey = String.valueOf(monitorId) + define.getId() + null;</span>
+<span class="nc" id="L171">                            handleRecoveredAlert(currentTimeMilli, monitorId, app, define, expr, notResolvedAlertKey);</span>
+                        }
+<span class="nc" id="L173">                    } catch (Exception e) {</span>
+<span class="nc" id="L174">                        log.warn(e.getMessage(), e);</span>
+<span class="nc" id="L175">                    }</span>
+                }
+<span class="nc bnc" id="L177" title="All 2 branches missed.">                for (CollectRep.ValueRow valueRow : metricsData.getValuesList()) {</span>
+
+<span class="nc bnc" id="L179" title="All 2 branches missed.">                    if (CollectionUtils.isEmpty(valueRow.getColumnsList())) {</span>
+<span class="nc" id="L180">                        continue;</span>
+                    }
+<span class="nc" id="L182">                    fieldValueMap.clear();</span>
+<span class="nc" id="L183">                    fieldValueMap.put(SYSTEM_VALUE_ROW_COUNT, valueRowCount);</span>
+<span class="nc" id="L184">                    StringBuilder instanceBuilder = new StringBuilder();</span>
+<span class="nc bnc" id="L185" title="All 2 branches missed.">                    for (int index = 0; index &lt; valueRow.getColumnsList().size(); index++) {</span>
+<span class="nc" id="L186">                        String valueStr = valueRow.getColumns(index);</span>
+<span class="nc bnc" id="L187" title="All 2 branches missed.">                        if (CommonConstants.NULL_VALUE.equals(valueStr)) {</span>
+<span class="nc" id="L188">                            continue;</span>
+                        }
+
+<span class="nc" id="L191">                        final CollectRep.Field field = fields.get(index);</span>
+<span class="nc" id="L192">                        final int fieldType = field.getType();</span>
+
+<span class="nc bnc" id="L194" title="All 2 branches missed.">                        if (fieldType == CommonConstants.TYPE_NUMBER) {</span>
+                            final Double doubleValue;
+<span class="nc bnc" id="L196" title="All 2 branches missed.">                            if ((doubleValue = CommonUtil.parseStrDouble(valueStr)) != null) {</span>
+<span class="nc" id="L197">                                fieldValueMap.put(field.getName(), doubleValue);</span>
+                            }
+<span class="nc bnc" id="L199" title="All 2 branches missed.">                        } else if (fieldType == CommonConstants.TYPE_TIME) {</span>
+                            final Integer integerValue;
+<span class="nc bnc" id="L201" title="All 2 branches missed.">                            if ((integerValue = CommonUtil.parseStrInteger(valueStr)) != null) {</span>
+<span class="nc" id="L202">                                fieldValueMap.put(field.getName(), integerValue);</span>
+                            }
+<span class="nc" id="L204">                        } else {</span>
+<span class="nc bnc" id="L205" title="All 2 branches missed.">                            if (StringUtils.isNotEmpty(valueStr)) {</span>
+<span class="nc" id="L206">                                fieldValueMap.put(field.getName(), valueStr);</span>
+                            }
+                        }
+
+<span class="nc bnc" id="L210" title="All 2 branches missed.">                        if (field.getLabel()) {</span>
+<span class="nc" id="L211">                            instanceBuilder.append(valueStr).append(&quot;-&quot;);</span>
+                        }
+                    }
+                    try {
+<span class="nc" id="L215">                        boolean match = execAlertExpression(fieldValueMap, expr);</span>
+<span class="nc bnc" id="L216" title="All 2 branches missed.">                        if (match) {</span>
+                            // If the threshold rule matches, the number of times the threshold has been triggered is determined and an alarm is triggered
+                            // 阈值规则匹配，判断已触发阈值次数，触发告警
+<span class="nc" id="L219">                            afterThresholdRuleMatch(currentTimeMilli, monitorId, app, metrics, fieldValueMap, define);</span>
+                            // 若此阈值已被触发，则其它数据行的触发忽略
+<span class="nc" id="L221">                            break;</span>
+<span class="nc bnc" id="L222" title="All 2 branches missed.">                        } else if (define.isRecoverNotice()) {</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">                            String notResolvedAlertKey = String.valueOf(monitorId) + define.getId() + (instanceBuilder.length() == 0 ? null : instanceBuilder.toString());</span>
+<span class="nc" id="L224">                            handleRecoveredAlert(currentTimeMilli, monitorId, app, define, expr, notResolvedAlertKey);</span>
+                        }
+<span class="nc" id="L226">                    } catch (Exception e) {</span>
+<span class="nc" id="L227">                        log.warn(e.getMessage(), e);</span>
+<span class="nc" id="L228">                    }</span>
+<span class="nc" id="L229">                }</span>
+<span class="nc" id="L230">            }</span>
+<span class="nc" id="L231">        }</span>
+<span class="nc" id="L232">    }</span>
+
+    private void handleRecoveredAlert(long currentTimeMilli, long monitorId, String app, AlertDefine define, String expr, String notResolvedAlertKey) {
+<span class="nc" id="L235">        Alert notResolvedAlert = notRecoveredAlertMap.remove(notResolvedAlertKey);</span>
+<span class="nc bnc" id="L236" title="All 2 branches missed.">        if (notResolvedAlert != null) {</span>
+            // Sending an alarm Restore
+<span class="nc" id="L238">            Map&lt;String, String&gt; tags = notResolvedAlert.getTags();</span>
+<span class="nc" id="L239">            String content = this.bundle.getString(&quot;alerter.alarm.recover&quot;) + &quot; : &quot; + expr;</span>
+<span class="nc" id="L240">            Alert resumeAlert = Alert.builder()</span>
+<span class="nc" id="L241">                    .tags(tags)</span>
+<span class="nc" id="L242">                    .target(define.getApp() + &quot;.&quot; + define.getMetric() + &quot;.&quot; + define.getField())</span>
+<span class="nc" id="L243">                    .content(content)</span>
+<span class="nc" id="L244">                    .priority(CommonConstants.ALERT_PRIORITY_CODE_WARNING)</span>
+<span class="nc" id="L245">                    .status(CommonConstants.ALERT_STATUS_CODE_RESTORED)</span>
+<span class="nc" id="L246">                    .firstAlarmTime(currentTimeMilli)</span>
+<span class="nc" id="L247">                    .lastAlarmTime(currentTimeMilli)</span>
+<span class="nc" id="L248">                    .triggerTimes(1)</span>
+<span class="nc" id="L249">                    .build();</span>
+<span class="nc" id="L250">            alarmCommonReduce.reduceAndSendAlarm(resumeAlert);</span>
+        }
+<span class="nc" id="L252">    }</span>
+
+    private void afterThresholdRuleMatch(long currentTimeMilli, long monitorId, String app, String metrics, Map&lt;String, Object&gt; fieldValueMap, AlertDefine define) {
+<span class="nc" id="L255">        String monitorAlertKey = String.valueOf(monitorId) + define.getId();</span>
+<span class="nc" id="L256">        Alert triggeredAlert = triggeredAlertMap.get(monitorAlertKey);</span>
+<span class="nc bnc" id="L257" title="All 2 branches missed.">        if (triggeredAlert != null) {</span>
+<span class="nc" id="L258">            int times = triggeredAlert.getTriggerTimes() + 1;</span>
+<span class="nc" id="L259">            triggeredAlert.setTriggerTimes(times);</span>
+<span class="nc" id="L260">            triggeredAlert.setFirstAlarmTime(currentTimeMilli);</span>
+<span class="nc" id="L261">            triggeredAlert.setLastAlarmTime(currentTimeMilli);</span>
+<span class="nc bnc" id="L262" title="All 2 branches missed.">            int defineTimes = define.getTimes() == null ? 1 : define.getTimes();</span>
+<span class="nc bnc" id="L263" title="All 2 branches missed.">            if (times &gt;= defineTimes) {</span>
+<span class="nc" id="L264">                String notResolvedAlertKey = String.valueOf(monitorId) + define.getId() + fieldValueMap.get(&quot;instance&quot;);</span>
+<span class="nc" id="L265">                triggeredAlertMap.remove(monitorAlertKey);</span>
+<span class="nc" id="L266">                notRecoveredAlertMap.put(notResolvedAlertKey, triggeredAlert);</span>
+<span class="nc" id="L267">                alarmCommonReduce.reduceAndSendAlarm(triggeredAlert.clone());</span>
+            }
+<span class="nc" id="L269">        } else {</span>
+<span class="nc" id="L270">            fieldValueMap.put(&quot;app&quot;, app);</span>
+<span class="nc" id="L271">            fieldValueMap.put(&quot;metrics&quot;, metrics);</span>
+<span class="nc" id="L272">            fieldValueMap.put(&quot;metric&quot;, define.getField());</span>
+<span class="nc" id="L273">            Map&lt;String, String&gt; tags = new HashMap&lt;&gt;(6);</span>
+<span class="nc" id="L274">            tags.put(CommonConstants.TAG_MONITOR_ID, String.valueOf(monitorId));</span>
+<span class="nc" id="L275">            tags.put(CommonConstants.TAG_MONITOR_APP, app);</span>
+<span class="nc" id="L276">            tags.put(CommonConstants.TAG_THRESHOLD_ID, String.valueOf(define.getId()));</span>
+<span class="nc bnc" id="L277" title="All 2 branches missed.">            if (!CollectionUtils.isEmpty(define.getTags())) {</span>
+<span class="nc bnc" id="L278" title="All 2 branches missed.">                for (TagItem tagItem : define.getTags()) {</span>
+<span class="nc" id="L279">                    fieldValueMap.put(tagItem.getName(), tagItem.getValue());</span>
+<span class="nc" id="L280">                    tags.put(tagItem.getName(), tagItem.getValue());</span>
+<span class="nc" id="L281">                }</span>
+            }
+<span class="nc" id="L283">            Alert alert = Alert.builder()</span>
+<span class="nc" id="L284">                    .tags(tags)</span>
+<span class="nc" id="L285">                    .priority(define.getPriority())</span>
+<span class="nc" id="L286">                    .status(ALERT_STATUS_CODE_PENDING)</span>
+<span class="nc" id="L287">                    .target(app + &quot;.&quot; + metrics + &quot;.&quot; + define.getField())</span>
+<span class="nc" id="L288">                    .triggerTimes(1)</span>
+<span class="nc" id="L289">                    .firstAlarmTime(currentTimeMilli)</span>
+<span class="nc" id="L290">                    .lastAlarmTime(currentTimeMilli)</span>
+                    // Keyword matching and substitution in the template
+<span class="nc" id="L292">                    .content(AlertTemplateUtil.render(define.getTemplate(), fieldValueMap))</span>
+<span class="nc" id="L293">                    .build();</span>
+<span class="nc bnc" id="L294" title="All 2 branches missed.">            int defineTimes = define.getTimes() == null ? 1 : define.getTimes();</span>
+<span class="nc bnc" id="L295" title="All 2 branches missed.">            if (1 &gt;= defineTimes) {</span>
+<span class="nc" id="L296">                String notResolvedAlertKey = String.valueOf(monitorId) + define.getId() + fieldValueMap.get(&quot;instance&quot;);</span>
+<span class="nc" id="L297">                notRecoveredAlertMap.put(notResolvedAlertKey, alert);</span>
+<span class="nc" id="L298">                alarmCommonReduce.reduceAndSendAlarm(alert);</span>
+<span class="nc" id="L299">            } else {</span>
+<span class="nc" id="L300">                triggeredAlertMap.put(monitorAlertKey, alert);</span>
+            }
+        }
+<span class="nc" id="L303">    }</span>
+
+    private boolean execAlertExpression(Map&lt;String, Object&gt; fieldValueMap, String expr) {
+<span class="nc" id="L306">        Boolean match = false;</span>
+        try {
+<span class="nc" id="L308">            Expression expression = AviatorEvaluator.compile(expr, true);</span>
+<span class="nc" id="L309">            match = (Boolean) expression.execute(fieldValueMap);</span>
+<span class="nc" id="L310">        } catch (CompileExpressionErrorException |</span>
+                 ExpressionSyntaxErrorException compileException) {
+<span class="nc" id="L312">            log.error(&quot;Alert Define Rule: {} Compile Error: {}.&quot;, expr, compileException.getMessage());</span>
+<span class="nc" id="L313">        } catch (ExpressionRuntimeException expressionRuntimeException) {</span>
+<span class="nc" id="L314">            log.error(&quot;Alert Define Rule: {} Run Error: {}.&quot;, expr, expressionRuntimeException.getMessage());</span>
+<span class="nc" id="L315">        } catch (Exception e) {</span>
+<span class="nc" id="L316">            log.error(&quot;Alert Define Rule: {} Run Error: {}.&quot;, e, e.getMessage());</span>
+<span class="nc" id="L317">        }</span>
+<span class="nc bnc" id="L318" title="All 4 branches missed.">        return match != null &amp;&amp; match;</span>
+    }
+
+    private void handlerAvailableMetrics(long monitorId, String app, CollectRep.MetricsData metricsData) {
+        // TODO CACHE getMonitorBindAlertAvaDefine
+<span class="nc" id="L323">        AlertDefine avaAlertDefine = alertDefineService.getMonitorBindAlertAvaDefine(monitorId, app, CommonConstants.AVAILABILITY);</span>
+<span class="nc bnc" id="L324" title="All 2 branches missed.">        if (avaAlertDefine == null) {</span>
+<span class="nc" id="L325">            return;</span>
+        }
+<span class="nc" id="L327">        long currentTimeMill = System.currentTimeMillis();</span>
+<span class="nc bnc" id="L328" title="All 2 branches missed.">        if (metricsData.getCode() != CollectRep.Code.SUCCESS) {</span>
+<span class="nc" id="L329">            Alert preAlert = triggeredAlertMap.get(String.valueOf(monitorId));</span>
+<span class="nc" id="L330">            Map&lt;String, String&gt; tags = new HashMap&lt;&gt;(6);</span>
+<span class="nc" id="L331">            tags.put(CommonConstants.TAG_MONITOR_ID, String.valueOf(monitorId));</span>
+<span class="nc" id="L332">            tags.put(CommonConstants.TAG_MONITOR_APP, app);</span>
+<span class="nc" id="L333">            tags.put(CommonConstants.TAG_THRESHOLD_ID, String.valueOf(avaAlertDefine.getId()));</span>
+<span class="nc" id="L334">            tags.put(&quot;metrics&quot;, CommonConstants.AVAILABILITY);</span>
+<span class="nc" id="L335">            tags.put(&quot;code&quot;, metricsData.getCode().name());</span>
+<span class="nc" id="L336">            Map&lt;String, Object&gt; valueMap = tags.entrySet().stream()</span>
+<span class="nc" id="L337">                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));</span>
+
+<span class="nc bnc" id="L339" title="All 2 branches missed.">            if (!CollectionUtils.isEmpty(avaAlertDefine.getTags())) {</span>
+<span class="nc bnc" id="L340" title="All 2 branches missed.">                for (TagItem tagItem : avaAlertDefine.getTags()) {</span>
+<span class="nc" id="L341">                    valueMap.put(tagItem.getName(), tagItem.getValue());</span>
+<span class="nc" id="L342">                    tags.put(tagItem.getName(), tagItem.getValue());</span>
+<span class="nc" id="L343">                }</span>
+            }
+<span class="nc bnc" id="L345" title="All 2 branches missed.">            if (preAlert == null) {</span>
+<span class="nc" id="L346">                Alert.AlertBuilder alertBuilder = Alert.builder()</span>
+<span class="nc" id="L347">                        .tags(tags)</span>
+<span class="nc" id="L348">                        .priority(avaAlertDefine.getPriority())</span>
+<span class="nc" id="L349">                        .status(ALERT_STATUS_CODE_PENDING)</span>
+<span class="nc" id="L350">                        .target(CommonConstants.AVAILABILITY)</span>
+<span class="nc" id="L351">                        .content(AlertTemplateUtil.render(avaAlertDefine.getTemplate(), valueMap))</span>
+<span class="nc" id="L352">                        .firstAlarmTime(currentTimeMill)</span>
+<span class="nc" id="L353">                        .lastAlarmTime(currentTimeMill)</span>
+<span class="nc" id="L354">                        .triggerTimes(1);</span>
+<span class="nc bnc" id="L355" title="All 4 branches missed.">                if (avaAlertDefine.getTimes() == null || avaAlertDefine.getTimes() &lt;= 1) {</span>
+<span class="nc" id="L356">                    String notResolvedAlertKey = monitorId + CommonConstants.AVAILABILITY;</span>
+<span class="nc" id="L357">                    notRecoveredAlertMap.put(notResolvedAlertKey, alertBuilder.build());</span>
+<span class="nc" id="L358">                    alarmCommonReduce.reduceAndSendAlarm(alertBuilder.build().clone());</span>
+<span class="nc" id="L359">                } else {</span>
+<span class="nc" id="L360">                    alertBuilder.status(CommonConstants.ALERT_STATUS_CODE_NOT_REACH);</span>
+                }
+<span class="nc" id="L362">                triggeredAlertMap.put(String.valueOf(monitorId), alertBuilder.build());</span>
+<span class="nc" id="L363">            } else {</span>
+<span class="nc" id="L364">                int times = preAlert.getTriggerTimes() + 1;</span>
+<span class="nc bnc" id="L365" title="All 2 branches missed.">                if (preAlert.getStatus() == ALERT_STATUS_CODE_PENDING) {</span>
+<span class="nc" id="L366">                    times = 1;</span>
+<span class="nc" id="L367">                    preAlert.setContent(AlertTemplateUtil.render(avaAlertDefine.getTemplate(), valueMap));</span>
+<span class="nc" id="L368">                    preAlert.setTags(tags);</span>
+                }
+<span class="nc" id="L370">                preAlert.setTriggerTimes(times);</span>
+<span class="nc" id="L371">                preAlert.setFirstAlarmTime(currentTimeMill);</span>
+<span class="nc" id="L372">                preAlert.setLastAlarmTime(currentTimeMill);</span>
+<span class="nc bnc" id="L373" title="All 2 branches missed.">                int defineTimes = avaAlertDefine.getTimes() == null ? 1 : avaAlertDefine.getTimes();</span>
+<span class="nc bnc" id="L374" title="All 2 branches missed.">                if (times &gt;= defineTimes) {</span>
+<span class="nc" id="L375">                    preAlert.setStatus(ALERT_STATUS_CODE_PENDING);</span>
+<span class="nc" id="L376">                    String notResolvedAlertKey = monitorId + CommonConstants.AVAILABILITY;</span>
+<span class="nc" id="L377">                    notRecoveredAlertMap.put(notResolvedAlertKey, preAlert.clone());</span>
+<span class="nc" id="L378">                    alarmCommonReduce.reduceAndSendAlarm(preAlert.clone());</span>
+<span class="nc" id="L379">                } else {</span>
+<span class="nc" id="L380">                    preAlert.setStatus(CommonConstants.ALERT_STATUS_CODE_NOT_REACH);</span>
+                }
+            }
+<span class="nc" id="L383">        } else {</span>
+            // Check whether an availability or unreachable alarm is generated before the association monitoring
+            // and send a clear alarm to clear the monitoring status
+            // 判断关联监控之前是否有可用性或者不可达告警,发送恢复告警进行任务状态恢复
+<span class="nc" id="L387">            String notResolvedAlertKey = monitorId + CommonConstants.AVAILABILITY;</span>
+<span class="nc" id="L388">            Alert notResolvedAlert = notRecoveredAlertMap.remove(notResolvedAlertKey);</span>
+<span class="nc bnc" id="L389" title="All 2 branches missed.">            if (notResolvedAlert != null) {</span>
+                // Sending an alarm Restore
+<span class="nc" id="L391">                Map&lt;String, String&gt; tags = notResolvedAlert.getTags();</span>
+<span class="nc bnc" id="L392" title="All 2 branches missed.">                if (!avaAlertDefine.isRecoverNotice()) {</span>
+<span class="nc" id="L393">                    tags.put(CommonConstants.IGNORE, CommonConstants.IGNORE);</span>
+                }
+<span class="nc" id="L395">                String content = this.bundle.getString(&quot;alerter.availability.recover&quot;);</span>
+<span class="nc" id="L396">                Alert resumeAlert = Alert.builder()</span>
+<span class="nc" id="L397">                        .tags(tags)</span>
+<span class="nc" id="L398">                        .target(CommonConstants.AVAILABILITY)</span>
+<span class="nc" id="L399">                        .content(content)</span>
+<span class="nc" id="L400">                        .priority(CommonConstants.ALERT_PRIORITY_CODE_WARNING)</span>
+<span class="nc" id="L401">                        .status(CommonConstants.ALERT_STATUS_CODE_RESTORED)</span>
+<span class="nc" id="L402">                        .firstAlarmTime(currentTimeMill)</span>
+<span class="nc" id="L403">                        .lastAlarmTime(currentTimeMill)</span>
+<span class="nc" id="L404">                        .triggerTimes(1)</span>
+<span class="nc" id="L405">                        .build();</span>
+<span class="nc" id="L406">                alarmCommonReduce.reduceAndSendAlarm(resumeAlert);</span>
+<span class="nc" id="L407">                Runnable updateStatusJob = () -&gt; {</span>
+                    // todo update pre all type alarm status 
+<span class="nc" id="L409">                    updateAvailabilityAlertStatus(monitorId, resumeAlert);</span>
+<span class="nc" id="L410">                };</span>
+<span class="nc" id="L411">                workerPool.executeJob(updateStatusJob);</span>
+            }
+        }
+<span class="nc" id="L414">    }</span>
+
+    private void updateAvailabilityAlertStatus(long monitorId, Alert restoreAlert) {
+<span class="nc" id="L417">        List&lt;Alert&gt; availabilityAlerts = queryAvailabilityAlerts(monitorId, restoreAlert);</span>
+<span class="nc" id="L418">        availabilityAlerts.stream().parallel().forEach(alert -&gt; {</span>
+<span class="nc" id="L419">            log.info(&quot;updating alert status solved id: {}&quot;, alert.getId());</span>
+<span class="nc" id="L420">            alertService.editAlertStatus(ALERT_STATUS_CODE_SOLVED, List.of(alert.getId()));</span>
+<span class="nc" id="L421">        });</span>
+<span class="nc" id="L422">    }</span>
+
+    private List&lt;Alert&gt; queryAvailabilityAlerts(long monitorId, Alert restoreAlert) {
+        //create query condition
+<span class="nc" id="L426">        Specification&lt;Alert&gt; specification = (root, query, criteriaBuilder) -&gt; {</span>
+<span class="nc" id="L427">            List&lt;Predicate&gt; andList = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L429">            Predicate predicateTags = criteriaBuilder.like(root.get(&quot;tags&quot;).as(String.class), &quot;%&quot; + monitorId + &quot;%&quot;);</span>
+<span class="nc" id="L430">            andList.add(predicateTags);</span>
+
+<span class="nc" id="L432">            Predicate predicatePriority = criteriaBuilder.equal(root.get(&quot;priority&quot;), CommonConstants.ALERT_PRIORITY_CODE_EMERGENCY);</span>
+<span class="nc" id="L433">            andList.add(predicatePriority);</span>
+
+<span class="nc" id="L435">            Predicate predicateStatus = criteriaBuilder.equal(root.get(&quot;status&quot;), ALERT_STATUS_CODE_PENDING);</span>
+<span class="nc" id="L436">            andList.add(predicateStatus);</span>
+
+<span class="nc" id="L438">            Predicate predicateAlertTime = criteriaBuilder.lessThanOrEqualTo(root.get(&quot;lastAlarmTime&quot;), restoreAlert.getLastAlarmTime());</span>
+<span class="nc" id="L439">            andList.add(predicateAlertTime);</span>
+
+<span class="nc" id="L441">            Predicate[] predicates = new Predicate[andList.size()];</span>
+<span class="nc" id="L442">            return criteriaBuilder.and(andList.toArray(predicates));</span>
+        };
+
+        //query results
+<span class="nc" id="L446">        return alertService.getAlerts(specification);</span>
+    }
+
+    @EventListener(SystemConfigChangeEvent.class)
+    public void onSystemConfigChangeEvent(SystemConfigChangeEvent event) {
+<span class="nc" id="L451">        log.info(&quot;calculate alarm receive system config change event: {}.&quot;, event.getSource());</span>
+<span class="nc" id="L452">        this.bundle = ResourceBundleUtil.getBundle(&quot;alerter&quot;);</span>
+<span class="nc" id="L453">    }</span>
+
+    @EventListener(MonitorDeletedEvent.class)
+    public void onMonitorDeletedEvent(MonitorDeletedEvent event) {
+<span class="nc" id="L457">        log.info(&quot;calculate alarm receive monitor {} has been deleted.&quot;, event.getMonitorId());</span>
+<span class="nc" id="L458">        this.triggeredAlertMap.remove(String.valueOf(event.getMonitorId()));</span>
+<span class="nc" id="L459">    }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

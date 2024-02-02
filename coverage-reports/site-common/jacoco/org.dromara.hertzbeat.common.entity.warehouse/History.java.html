@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>History.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.entity.warehouse</a> &gt; <span class="el_source">History.java</span></div><h1>History.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.common.entity.warehouse;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import javax.persistence.*;
+
+import static io.swagger.v3.oas.annotations.media.Schema.AccessMode.READ_ONLY;
+import static io.swagger.v3.oas.annotations.media.Schema.AccessMode.READ_WRITE;
+
+/**
+ * metrics history data entity
+ * @author tom
+ */
+@Entity
+@Table(name = &quot;hzb_history&quot;, indexes = {
+        @Index(name = &quot;history_query_index&quot;, columnList = &quot;monitorId&quot;),
+        @Index(name = &quot;history_query_index&quot;, columnList = &quot;app&quot;),
+        @Index(name = &quot;history_query_index&quot;, columnList = &quot;metrics&quot;),
+        @Index(name = &quot;history_query_index&quot;, columnList = &quot;metric&quot;)
+})
+<span class="nc bnc" id="L25" title="All 94 branches missed.">@Data</span>
+<span class="nc" id="L26">@Builder</span>
+<span class="nc" id="L27">@AllArgsConstructor</span>
+<span class="nc" id="L28">@NoArgsConstructor</span>
+@Schema(description = &quot;Metrics History Data Entity | 指标数据历史实体&quot;)
+public class History {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Schema(description = &quot;指标数据历史实体主键索引ID&quot;, example = &quot;87584674384&quot;, accessMode = READ_ONLY)
+<span class="nc" id="L35">    private Long id;</span>
+
+    @Schema(title = &quot;Monitoring Id&quot;, example = &quot;87432674336&quot;, accessMode = READ_WRITE)
+<span class="nc" id="L38">    private Long monitorId;</span>
+
+    @Schema(title = &quot;Monitoring Type mysql oracle db2&quot;)
+<span class="nc" id="L41">    private String app;</span>
+
+    @Schema(title = &quot;Monitoring Metrics innodb disk cpu&quot;)
+<span class="nc" id="L44">    private String metrics;</span>
+
+    @Schema(title = &quot;Monitoring Metric usage speed count&quot;)
+<span class="nc" id="L47">    private String metric;</span>
+    
+    @Column(length = 5000)
+<span class="nc" id="L50">    private String instance;</span>
+
+    @Schema(title = &quot;Metric Type 0: Number 1：String&quot;)
+<span class="nc" id="L53">    private Byte metricType;</span>
+
+    @Schema(title = &quot;Metric String Value&quot;)
+    @Column(length = 2048)
+<span class="nc" id="L57">    private String str;</span>
+
+    @Schema(title = &quot;Metric Integer Value&quot;)
+<span class="nc" id="L60">    private Integer int32;</span>
+
+    @Schema(title = &quot;Metric Number Value&quot;)
+<span class="nc" id="L63">    private Double dou;</span>
+
+    @Schema(title = &quot;Collect Time&quot;)
+<span class="nc" id="L66">    private Long time;</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

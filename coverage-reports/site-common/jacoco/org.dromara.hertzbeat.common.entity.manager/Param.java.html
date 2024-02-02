@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Param.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.entity.manager</a> &gt; <span class="el_source">Param.java</span></div><h1>Param.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.common.entity.manager;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.hibernate.validator.constraints.Length;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import javax.persistence.*;
+import javax.validation.constraints.Max;
+import javax.validation.constraints.Min;
+import javax.validation.constraints.NotNull;
+import java.time.LocalDateTime;
+
+import static io.swagger.v3.oas.annotations.media.Schema.AccessMode.READ_ONLY;
+import static io.swagger.v3.oas.annotations.media.Schema.AccessMode.READ_WRITE;
+
+
+/**
+ * Monitor parameter values
+ * 监控参数值
+ * @author tomsun28
+ */
+@Entity
+@Table(name = &quot;hzb_param&quot;, indexes = { @Index(columnList = &quot;monitorId&quot;) },
+        uniqueConstraints = @UniqueConstraint(columnNames = {&quot;monitorId&quot;, &quot;field&quot;}))
+<span class="nc bnc" id="L48" title="All 56 branches missed.">@Data</span>
+<span class="nc" id="L49">@Builder</span>
+<span class="nc" id="L50">@AllArgsConstructor</span>
+<span class="nc" id="L51">@NoArgsConstructor</span>
+@Schema(description = &quot;Parameter Entity | 参数实体&quot;)
+@EntityListeners(AuditingEntityListener.class)
+public class Param {
+
+    /**
+     * Parameter primary key index ID
+     */
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Schema(title = &quot;参数主键索引ID&quot;, example = &quot;87584674384&quot;, accessMode = READ_ONLY)
+<span class="nc" id="L62">    private Long id;</span>
+
+    /**
+     * Monitor ID
+     * 监控任务ID
+     */
+    @Schema(title = &quot;监控任务ID&quot;, example = &quot;875846754543&quot;, accessMode = READ_WRITE)
+<span class="nc" id="L69">    private Long monitorId;</span>
+
+    /**
+     * Parameter Field Identifier
+     * 参数字段标识符
+     */
+    @Schema(title = &quot;参数标识符字段&quot;, example = &quot;port&quot;, accessMode = READ_WRITE)
+    @Length(max = 100)
+    @NotNull
+<span class="nc" id="L78">    private String field;</span>
+
+    /**
+     * Param Value
+     * 参数值
+     */
+    @Schema(title = &quot;参数值&quot;, example = &quot;8080&quot;, accessMode = READ_WRITE)
+    @Length(max = 8126)
+    @Column(name = &quot;`value`&quot;, length = 8126)
+<span class="nc" id="L87">    private String value;</span>
+
+    /**
+     * Parameter type 0: number 1: string 2: encrypted string 3: json string mapped by map
+     * 参数类型 0:数字 1:字符串 2:加密串 3:map映射的json串
+     */
+    @Schema(title = &quot;参数类型 0:数字 1:字符串 2:加密串 3:map映射的json串 4:arrays string&quot;, accessMode = READ_WRITE)
+    @Min(0)
+<span class="nc" id="L95">    private byte type;</span>
+
+    /**
+     * Record create time
+     */
+    @Schema(title = &quot;Record create time&quot;, example = &quot;1612198922000&quot;, accessMode = READ_ONLY)
+    @CreatedDate
+<span class="nc" id="L102">    private LocalDateTime gmtCreate;</span>
+
+    /**
+     * Record the latest modification time
+     */
+    @Schema(title = &quot;Record modify time&quot;, example = &quot;1612198444000&quot;, accessMode = READ_ONLY)
+    @LastModifiedDate
+<span class="nc" id="L109">    private LocalDateTime gmtUpdate;</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>
