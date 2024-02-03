@@ -116,8 +116,8 @@ public class CalculateAlarm {
                     if (metricsData != null) {
                         calculate(metricsData);
                     }
-                } catch (InterruptedException ignored) {
-
+                } catch (InterruptedException ignored) { // There is a change here: filling in the code block
+                    Thread.currentThread().interrupt();
                 } catch (Exception e) {
                     log.error("calculate alarm error: {}.", e.getMessage(), e);
                 }
