@@ -93,19 +93,19 @@ public class DispatcherAlarm implements InitializingBean {
         return false;
     }
 
-    private NoticeReceiver getOneReceiverById(Long id) {
-        return noticeConfigService.getOneReceiverById(id);
-    }
-
-    private NoticeTemplate getOneTemplateById(Long id) {
-        return noticeConfigService.getOneTemplateById(id);
-    }
-
-    private List<NoticeRule> matchNoticeRulesByAlert(Alert alert) {
-        return noticeConfigService.getReceiverFilterRule(alert);
-    }
-
     private class DispatchTask implements Runnable {
+
+        private NoticeReceiver getOneReceiverById(Long id) {
+            return noticeConfigService.getOneReceiverById(id);
+        }
+
+        private NoticeTemplate getOneTemplateById(Long id) {
+            return noticeConfigService.getOneTemplateById(id);
+        }
+
+        private List<NoticeRule> matchNoticeRulesByAlert(Alert alert) {
+            return noticeConfigService.getReceiverFilterRule(alert);
+        }
 
         @Override
         public void run() {
