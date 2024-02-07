@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SystemGeneralConfigServiceImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.service.impl</a> &gt; <span class="el_source">SystemGeneralConfigServiceImpl.java</span></div><h1>SystemGeneralConfigServiceImpl.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.manager.service.impl;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.support.event.SystemConfigChangeEvent;
+import org.dromara.hertzbeat.manager.dao.GeneralConfigDao;
+import org.dromara.hertzbeat.manager.pojo.dto.SystemConfig;
+import org.springframework.context.ApplicationContext;
+import org.springframework.stereotype.Service;
+
+import javax.annotation.Resource;
+import java.lang.reflect.Type;
+import java.util.Locale;
+import java.util.TimeZone;
+
+/**
+ * @author ceilzcx
+ * @since 4/7/2023
+ */
+@Service
+public class SystemGeneralConfigServiceImpl extends AbstractGeneralConfigServiceImpl&lt;SystemConfig&gt; {
+    
+<span class="fc" id="L24">    private static final Integer LANG_REGION_LENGTH = 2;</span>
+    
+    @Resource
+    private ApplicationContext applicationContext;
+    
+    /**
+     * 构造方法，传入GeneralConfigDao、ObjectMapper和type。
+     *
+     * &lt;p&gt;Constructor, passing in GeneralConfigDao, ObjectMapper and type.&lt;/p&gt;
+     *
+     * @param generalConfigDao 配置Dao对象
+     * @param objectMapper     JSON工具类对象
+     */
+    protected SystemGeneralConfigServiceImpl(GeneralConfigDao generalConfigDao, ObjectMapper objectMapper) {
+<span class="fc" id="L38">        super(generalConfigDao, objectMapper);</span>
+<span class="fc" id="L39">    }</span>
+    
+    @Override
+    public void handler(SystemConfig systemConfig) {
+<span class="nc bnc" id="L43" title="All 2 branches missed.">        if (systemConfig != null) {</span>
+<span class="nc bnc" id="L44" title="All 2 branches missed.">            if (systemConfig.getTimeZoneId() != null) {</span>
+<span class="nc" id="L45">                TimeZone.setDefault(TimeZone.getTimeZone(systemConfig.getTimeZoneId()));</span>
+            }
+<span class="nc bnc" id="L47" title="All 2 branches missed.">            if (systemConfig.getLocale() != null) {</span>
+<span class="nc" id="L48">                String[] arr = systemConfig.getLocale().split(CommonConstants.LOCALE_SEPARATOR);</span>
+<span class="nc bnc" id="L49" title="All 2 branches missed.">                if (arr.length == LANG_REGION_LENGTH) {</span>
+<span class="nc" id="L50">                    String language = arr[0];</span>
+<span class="nc" id="L51">                    String country = arr[1];</span>
+<span class="nc" id="L52">                    Locale.setDefault(new Locale(language, country));</span>
+                }
+            }
+<span class="nc" id="L55">            applicationContext.publishEvent(new SystemConfigChangeEvent(applicationContext));</span>
+        }
+<span class="nc" id="L57">    }</span>
+    
+    @Override
+    public String type() {
+<span class="fc" id="L61">        return &quot;system&quot;;</span>
+    }
+
+    /**
+     * 该方法用于获取NoticeSender类型的TypeReference，以供后续处理。
+     * This method is used to get the TypeReference of NoticeSender type for subsequent processing.
+     *
+     * @return NoticeSender类型的TypeReference
+     * a TypeReference of NoticeSender type
+     */
+    @Override
+    protected TypeReference&lt;SystemConfig&gt; getTypeReference() {
+<span class="fc" id="L73">        return new TypeReference&lt;&gt;() {</span>
+            @Override
+            public Type getType() {
+<span class="fc" id="L76">                return SystemConfig.class;</span>
+            }
+        };
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

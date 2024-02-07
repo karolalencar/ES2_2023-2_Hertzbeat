@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Tag.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.entity.manager</a> &gt; <span class="el_source">Tag.java</span></div><h1>Tag.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.common.entity.manager;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.CreatedBy;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedBy;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+import javax.persistence.*;
+import javax.validation.constraints.Max;
+import javax.validation.constraints.Min;
+import javax.validation.constraints.NotNull;
+import java.time.LocalDateTime;
+import java.util.Objects;
+
+import static io.swagger.v3.oas.annotations.media.Schema.AccessMode.READ_ONLY;
+import static io.swagger.v3.oas.annotations.media.Schema.AccessMode.READ_WRITE;
+
+/**
+ * Tag Entity
+ * @author tomsun28
+ */
+@Entity
+@Table(name = &quot;hzb_tag&quot;)
+<span class="nc" id="L46">@Data</span>
+<span class="nc" id="L47">@Builder</span>
+<span class="nc" id="L48">@AllArgsConstructor</span>
+<span class="nc" id="L49">@NoArgsConstructor</span>
+@Schema(description = &quot;Tag Entity | 标签实体&quot;)
+@EntityListeners(AuditingEntityListener.class)
+public class Tag {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Schema(title = &quot;Tag主键索引ID&quot;, example = &quot;87584674384&quot;, accessMode = READ_ONLY)
+<span class="nc" id="L57">    private Long id;</span>
+
+    @Schema(title = &quot;Tag Field | 标签名称&quot;, example = &quot;app&quot;, accessMode = READ_WRITE)
+    @NotNull
+<span class="nc" id="L61">    private String name;</span>
+
+    @Schema(title = &quot;Tag Value | 标签值&quot;, example = &quot;23&quot;, accessMode = READ_WRITE)
+    @Column(name = &quot;`value`&quot;, length = 2048)
+<span class="nc" id="L65">    private String value;</span>
+
+    @Schema(title = &quot;Tag Color | 标签颜色&quot;, example = &quot;#ffff&quot;, accessMode = READ_WRITE)
+<span class="nc" id="L68">    private String color;</span>
+
+    @Schema(title = &quot;标记类型 0:监控自动生成(monitorId,monitorName) 1: 用户生成 2: 系统预置&quot;, accessMode = READ_WRITE)
+    @Min(0)
+    @Max(3)
+<span class="nc" id="L73">    private byte type;</span>
+
+    @Schema(title = &quot;The creator of this record&quot;, example = &quot;tom&quot;, accessMode = READ_ONLY)
+    @CreatedBy
+<span class="nc" id="L77">    private String creator;</span>
+
+    @Schema(title = &quot;The modifier of this record&quot;, example = &quot;tom&quot;, accessMode = READ_ONLY)
+    @LastModifiedBy
+<span class="nc" id="L81">    private String modifier;</span>
+
+    @Schema(title = &quot;Record create time&quot;, example = &quot;1612198922000&quot;, accessMode = READ_ONLY)
+    @CreatedDate
+<span class="nc" id="L85">    private LocalDateTime gmtCreate;</span>
+
+    @Schema(title = &quot;Record modify time&quot;, example = &quot;1612198444000&quot;, accessMode = READ_ONLY)
+    @LastModifiedDate
+<span class="nc" id="L89">    private LocalDateTime gmtUpdate;</span>
+
+    @Override
+    public boolean equals(Object o) {
+<span class="nc bnc" id="L93" title="All 2 branches missed.">        if (this == o) {</span>
+<span class="nc" id="L94">            return true;</span>
+        }
+<span class="nc bnc" id="L96" title="All 4 branches missed.">        if (o == null || getClass() != o.getClass()) {</span>
+<span class="nc" id="L97">            return false;</span>
+        }
+<span class="nc" id="L99">        Tag tag = (Tag) o;</span>
+<span class="nc bnc" id="L100" title="All 4 branches missed.">        return Objects.equals(name, tag.name) &amp;&amp; Objects.equals(value, tag.value);</span>
+    }
+
+    @Override
+    public int hashCode() {
+<span class="nc" id="L105">        int hash = 7;</span>
+<span class="nc bnc" id="L106" title="All 4 branches missed.">        hash = 13 * hash + (name == null ? 0 : name.hashCode()) + (value == null ? 0 : value.hashCode());</span>
+<span class="nc" id="L107">        return hash;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

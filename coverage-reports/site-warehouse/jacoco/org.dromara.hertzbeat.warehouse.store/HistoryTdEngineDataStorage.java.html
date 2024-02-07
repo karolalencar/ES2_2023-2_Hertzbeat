@@ -1,0 +1,375 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>HistoryTdEngineDataStorage.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-warehouse</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.warehouse.store</a> &gt; <span class="el_source">HistoryTdEngineDataStorage.java</span></div><h1>HistoryTdEngineDataStorage.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.warehouse.store;
+
+import org.dromara.hertzbeat.common.entity.dto.Value;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.util.JsonUtil;
+import org.dromara.hertzbeat.warehouse.config.WarehouseProperties;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Primary;
+import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.Timestamp;
+import java.util.*;
+import java.util.regex.Pattern;
+
+/**
+ * tdengine data storage
+ * @author tom
+ *
+ */
+<span class="nc bnc" id="L47" title="All 2 branches missed.">@Primary</span>
+@Component
+@ConditionalOnProperty(prefix = &quot;warehouse.store.td-engine&quot;,
+        name = &quot;enabled&quot;, havingValue = &quot;true&quot;)
+<span class="nc" id="L51">@Slf4j</span>
+public class HistoryTdEngineDataStorage extends AbstractHistoryDataStorage {
+
+<span class="nc" id="L54">    private static final Pattern SQL_SPECIAL_STRING_PATTERN = Pattern.compile(&quot;(\\\\)|(')&quot;);</span>
+    private static final String INSTANCE_NULL = &quot;''&quot;;
+    private static final String INSERT_TABLE_DATA_SQL = &quot;INSERT INTO `%s` USING `%s` TAGS (%s) VALUES %s&quot;;
+    private static final String CREATE_SUPER_TABLE_SQL = &quot;CREATE STABLE IF NOT EXISTS `%s` %s TAGS (monitor BIGINT)&quot;;
+    private static final String NO_SUPER_TABLE_ERROR = &quot;Table does not exist&quot;;
+    private static final String QUERY_HISTORY_WITH_INSTANCE_SQL
+            = &quot;SELECT ts, instance, `%s` FROM `%s` WHERE instance = '%s' AND ts &gt;= now - %s order by ts desc&quot;;
+    private static final String QUERY_HISTORY_SQL
+            = &quot;SELECT ts, instance, `%s` FROM `%s` WHERE ts &gt;= now - %s order by ts desc&quot;;
+    private static final String QUERY_HISTORY_INTERVAL_WITH_INSTANCE_SQL
+            = &quot;SELECT first(ts), first(`%s`), avg(`%s`), min(`%s`), max(`%s`) FROM `%s` WHERE instance = '%s' AND ts &gt;= now - %s interval(4h)&quot;;
+    private static final String QUERY_INSTANCE_SQL
+            = &quot;SELECT DISTINCT instance FROM `%s` WHERE ts &gt;= now - 1w&quot;;
+
+    private static final String TABLE_NOT_EXIST
+            = &quot;Table does not exist&quot;;
+
+    private HikariDataSource hikariDataSource;
+    private final int tableStrColumnDefineMaxLength;
+
+<span class="nc" id="L74">    public HistoryTdEngineDataStorage(WarehouseProperties properties) {</span>
+<span class="nc bnc" id="L75" title="All 6 branches missed.">        if (properties == null || properties.getStore() == null || properties.getStore().getTdEngine() == null) {</span>
+<span class="nc" id="L76">            log.error(&quot;init error, please config Warehouse TdEngine props in application.yml&quot;);</span>
+<span class="nc" id="L77">            throw new IllegalArgumentException(&quot;please config Warehouse TdEngine props&quot;);</span>
+        }
+<span class="nc" id="L79">        tableStrColumnDefineMaxLength = properties.getStore().getTdEngine().getTableStrColumnDefineMaxLength();</span>
+<span class="nc" id="L80">        serverAvailable = initTdEngineDatasource(properties.getStore().getTdEngine());</span>
+<span class="nc" id="L81">    }</span>
+
+    private boolean initTdEngineDatasource(WarehouseProperties.StoreProperties.TdEngineProperties tdEngineProperties) {
+<span class="nc" id="L84">        HikariConfig config = new HikariConfig();</span>
+        // jdbc properties
+<span class="nc" id="L86">        config.setJdbcUrl(tdEngineProperties.getUrl());</span>
+<span class="nc" id="L87">        config.setUsername(tdEngineProperties.getUsername());</span>
+<span class="nc" id="L88">        config.setPassword(tdEngineProperties.getPassword());</span>
+<span class="nc" id="L89">        config.setDriverClassName(tdEngineProperties.getDriverClassName());</span>
+        //minimum number of idle connection
+<span class="nc" id="L91">        config.setMinimumIdle(10);</span>
+        //maximum number of connection in the pool
+<span class="nc" id="L93">        config.setMaximumPoolSize(10);</span>
+        //maximum wait milliseconds for get connection from pool
+<span class="nc" id="L95">        config.setConnectionTimeout(30000);</span>
+        // maximum lifetime for each connection
+<span class="nc" id="L97">        config.setMaxLifetime(0);</span>
+        // max idle time for recycle idle connection
+<span class="nc" id="L99">        config.setIdleTimeout(0);</span>
+        //validation query
+<span class="nc" id="L101">        config.setConnectionTestQuery(&quot;select server_status()&quot;);</span>
+        try {
+<span class="nc" id="L103">            this.hikariDataSource = new HikariDataSource(config);</span>
+<span class="nc" id="L104">        } catch (Exception e) {</span>
+<span class="nc" id="L105">            log.warn(&quot;\n\t------------------WARN WARN WARN------------------\n&quot; +</span>
+                    &quot;\t---------------Init TdEngine Failed---------------\n&quot; +
+                    &quot;\t--------------Please Config Tdengine--------------\n&quot; +
+                    &quot;\t---------Or Can Not Use Metric History Now---------\n&quot;);
+<span class="nc" id="L109">            return false;</span>
+<span class="nc" id="L110">        }</span>
+<span class="nc" id="L111">        return true;</span>
+    }
+
+    @Override
+    public void saveData(CollectRep.MetricsData metricsData) {
+<span class="nc bnc" id="L116" title="All 4 branches missed.">        if (!isServerAvailable() || metricsData.getCode() != CollectRep.Code.SUCCESS) {</span>
+<span class="nc" id="L117">            return;</span>
+        }
+<span class="nc bnc" id="L119" title="All 2 branches missed.">        if (metricsData.getValuesList().isEmpty()) {</span>
+<span class="nc" id="L120">            log.info(&quot;[warehouse tdengine] flush metrics data {} is null, ignore.&quot;, metricsData.getId());</span>
+<span class="nc" id="L121">            return;</span>
+        }
+<span class="nc" id="L123">        String monitorId = String.valueOf(metricsData.getId());</span>
+<span class="nc" id="L124">        String superTable = metricsData.getApp() + &quot;_&quot; + metricsData.getMetrics() + &quot;_super&quot;;</span>
+<span class="nc" id="L125">        String table = metricsData.getApp() + &quot;_&quot; + metricsData.getMetrics() + &quot;_&quot; + monitorId;</span>
+<span class="nc" id="L126">        List&lt;CollectRep.Field&gt; fields = metricsData.getFieldsList();</span>
+<span class="nc" id="L127">        StringBuilder sqlBuffer = new StringBuilder();</span>
+<span class="nc" id="L128">        int i = 0;</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">        for (CollectRep.ValueRow valueRow : metricsData.getValuesList()) {</span>
+<span class="nc" id="L130">            StringBuilder sqlRowBuffer = new StringBuilder(&quot;(&quot;);</span>
+<span class="nc" id="L131">            sqlRowBuffer.append(metricsData.getTime() + i++).append(&quot;, &quot;);</span>
+<span class="nc" id="L132">            Map&lt;String, String&gt; labels = new HashMap&lt;&gt;(8);</span>
+<span class="nc" id="L133">            sqlRowBuffer.append(&quot;'&quot;).append(&quot;%s&quot;).append(&quot;', &quot;);</span>
+<span class="nc bnc" id="L134" title="All 2 branches missed.">            for (int index = 0; index &lt; fields.size(); index++) {</span>
+<span class="nc" id="L135">                CollectRep.Field field = fields.get(index);</span>
+<span class="nc" id="L136">                String value = valueRow.getColumns(index);</span>
+<span class="nc bnc" id="L137" title="All 2 branches missed.">                if (field.getType() == CommonConstants.TYPE_NUMBER) {</span>
+                    // number data
+<span class="nc bnc" id="L139" title="All 2 branches missed.">                    if (CommonConstants.NULL_VALUE.equals(value)) {</span>
+<span class="nc" id="L140">                        sqlRowBuffer.append(&quot;NULL&quot;);</span>
+                    } else {
+                        try {
+<span class="nc" id="L143">                            double number = Double.parseDouble(value);</span>
+<span class="nc" id="L144">                            sqlRowBuffer.append(number);</span>
+<span class="nc" id="L145">                        } catch (Exception e) {</span>
+<span class="nc" id="L146">                            log.warn(e.getMessage());</span>
+<span class="nc" id="L147">                            sqlRowBuffer.append(&quot;NULL&quot;);</span>
+<span class="nc" id="L148">                        }</span>
+                    }
+                } else {
+                    // string
+<span class="nc bnc" id="L152" title="All 2 branches missed.">                    if (CommonConstants.NULL_VALUE.equals(value)) {</span>
+<span class="nc" id="L153">                        sqlRowBuffer.append(&quot;NULL&quot;);</span>
+                    } else {
+<span class="nc" id="L155">                        sqlRowBuffer.append(&quot;'&quot;).append(formatStringValue(value)).append(&quot;'&quot;);</span>
+                    }
+                }
+<span class="nc bnc" id="L158" title="All 4 branches missed.">                if (field.getLabel() &amp;&amp; !CommonConstants.NULL_VALUE.equals(value)) {</span>
+<span class="nc" id="L159">                    labels.put(field.getName(), formatStringValue(value));</span>
+                }
+<span class="nc bnc" id="L161" title="All 2 branches missed.">                if (index != fields.size() - 1) {</span>
+<span class="nc" id="L162">                    sqlRowBuffer.append(&quot;, &quot;);</span>
+                }
+            }
+<span class="nc" id="L165">            sqlRowBuffer.append(&quot;)&quot;);</span>
+<span class="nc" id="L166">            sqlBuffer.append(&quot; &quot;).append(String.format(sqlRowBuffer.toString(), formatStringValue(JsonUtil.toJson(labels))));</span>
+<span class="nc" id="L167">        }</span>
+<span class="nc" id="L168">        String insertDataSql = String.format(INSERT_TABLE_DATA_SQL, table, superTable, monitorId, sqlBuffer);</span>
+<span class="nc" id="L169">        log.debug(insertDataSql);</span>
+<span class="nc" id="L170">        Connection connection = null;</span>
+<span class="nc" id="L171">        Statement statement = null;</span>
+        try {
+<span class="nc" id="L173">            connection = hikariDataSource.getConnection();</span>
+<span class="nc" id="L174">            statement = connection.createStatement();</span>
+<span class="nc" id="L175">            statement.execute(insertDataSql);</span>
+<span class="nc" id="L176">            connection.close();</span>
+<span class="nc" id="L177">        } catch (Exception e) {</span>
+<span class="nc bnc" id="L178" title="All 2 branches missed.">            if (e.getMessage().contains(NO_SUPER_TABLE_ERROR)) {</span>
+                // stable not exists, create it
+<span class="nc" id="L180">                StringBuilder fieldSqlBuilder = new StringBuilder(&quot;(&quot;);</span>
+<span class="nc" id="L181">                fieldSqlBuilder.append(&quot;ts TIMESTAMP, &quot;);</span>
+<span class="nc" id="L182">                fieldSqlBuilder.append(&quot;instance NCHAR(&quot;).append(tableStrColumnDefineMaxLength).append(&quot;), &quot;);</span>
+<span class="nc bnc" id="L183" title="All 2 branches missed.">                for (int index = 0; index &lt; fields.size(); index++) {</span>
+<span class="nc" id="L184">                    CollectRep.Field field = fields.get(index);</span>
+<span class="nc" id="L185">                    String fieldName = field.getName();</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">                    if (field.getType() == CommonConstants.TYPE_NUMBER) {</span>
+<span class="nc" id="L187">                        fieldSqlBuilder.append(&quot;`&quot;).append(fieldName).append(&quot;` &quot;).append(&quot;DOUBLE&quot;);</span>
+                    } else {
+<span class="nc" id="L189">                        fieldSqlBuilder.append(&quot;`&quot;).append(fieldName).append(&quot;` &quot;).append(&quot;NCHAR(&quot;)</span>
+<span class="nc" id="L190">                                .append(tableStrColumnDefineMaxLength).append(&quot;)&quot;);</span>
+                    }
+<span class="nc bnc" id="L192" title="All 2 branches missed.">                    if (index != fields.size() - 1) {</span>
+<span class="nc" id="L193">                        fieldSqlBuilder.append(&quot;, &quot;);</span>
+                    }
+                }
+<span class="nc" id="L196">                fieldSqlBuilder.append(&quot;)&quot;);</span>
+<span class="nc" id="L197">                String createTableSql = String.format(CREATE_SUPER_TABLE_SQL, superTable, fieldSqlBuilder);</span>
+                try {
+<span class="nc bnc" id="L199" title="All 4 branches missed.">                    assert statement != null;</span>
+<span class="nc" id="L200">                    log.info(&quot;[tdengine-data]: create {} use sql: {}.&quot;, superTable, createTableSql);</span>
+<span class="nc" id="L201">                    statement.execute(createTableSql);</span>
+<span class="nc" id="L202">                    statement.execute(insertDataSql);</span>
+<span class="nc" id="L203">                } catch (Exception createTableException) {</span>
+<span class="nc" id="L204">                    log.error(e.getMessage(), createTableException);</span>
+<span class="nc" id="L205">                }</span>
+<span class="nc" id="L206">            } else {</span>
+<span class="nc" id="L207">                log.error(e.getMessage());</span>
+            }
+        } finally {
+            try {
+<span class="nc bnc" id="L211" title="All 4 branches missed.">                assert connection != null;</span>
+<span class="nc" id="L212">                connection.close();</span>
+<span class="nc" id="L213">            } catch (Exception e) {</span>
+<span class="nc" id="L214">                log.error(e.getMessage());</span>
+<span class="nc" id="L215">            }</span>
+        }
+<span class="nc" id="L217">    }</span>
+
+    private String formatStringValue(String value){
+<span class="nc" id="L220">        String formatValue = SQL_SPECIAL_STRING_PATTERN.matcher(value).replaceAll(&quot;\\\\$0&quot;);</span>
+        // bugfix Argument list too long
+<span class="nc bnc" id="L222" title="All 4 branches missed.">        if (formatValue != null &amp;&amp; formatValue.length() &gt; tableStrColumnDefineMaxLength) {</span>
+<span class="nc" id="L223">            formatValue = formatValue.substring(0, tableStrColumnDefineMaxLength);</span>
+        }
+<span class="nc" id="L225">        return formatValue;</span>
+    }
+
+    @Override
+    public void destroy() {
+<span class="nc bnc" id="L230" title="All 2 branches missed.">        if (hikariDataSource != null) {</span>
+<span class="nc" id="L231">            hikariDataSource.close();</span>
+        }
+<span class="nc" id="L233">    }</span>
+    
+    @Override
+    public Map&lt;String, List&lt;Value&gt;&gt; getHistoryMetricData(Long monitorId, String app, String metrics, String metric, String label, String history) {
+<span class="nc" id="L237">        String table = app + &quot;_&quot; + metrics + &quot;_&quot; + monitorId;</span>
+<span class="nc bnc" id="L238" title="All 2 branches missed.">        String selectSql =  label == null ? String.format(QUERY_HISTORY_SQL, metric, table, history) :</span>
+<span class="nc" id="L239">                String.format(QUERY_HISTORY_WITH_INSTANCE_SQL, metric, table, label, history);</span>
+<span class="nc" id="L240">        log.debug(selectSql);</span>
+<span class="nc" id="L241">        Connection connection = null;</span>
+<span class="nc" id="L242">        Map&lt;String, List&lt;Value&gt;&gt; instanceValuesMap = new HashMap&lt;&gt;(8);</span>
+        try {
+<span class="nc bnc" id="L244" title="All 2 branches missed.">            if (!serverAvailable) {</span>
+<span class="nc" id="L245">                log.error(&quot;\n\t---------------TdEngine Init Failed---------------\n&quot; +</span>
+                        &quot;\t--------------Please Config Tdengine--------------\n&quot; +
+                        &quot;\t----------Can Not Use Metric History Now----------\n&quot;);
+<span class="nc" id="L248">                return instanceValuesMap;</span>
+            }
+<span class="nc" id="L250">            connection = hikariDataSource.getConnection();</span>
+<span class="nc" id="L251">            Statement statement = connection.createStatement();</span>
+<span class="nc" id="L252">            ResultSet resultSet = statement.executeQuery(selectSql);</span>
+<span class="nc bnc" id="L253" title="All 2 branches missed.">            while (resultSet.next()) {</span>
+<span class="nc" id="L254">                Timestamp ts = resultSet.getTimestamp(1);</span>
+<span class="nc bnc" id="L255" title="All 2 branches missed.">                if (ts == null) {</span>
+<span class="nc" id="L256">                    log.error(&quot;warehouse tdengine query result timestamp is null, ignore. {}.&quot;, selectSql);</span>
+<span class="nc" id="L257">                    continue;</span>
+                }
+<span class="nc" id="L259">                String instanceValue = resultSet.getString(2);</span>
+<span class="nc bnc" id="L260" title="All 4 branches missed.">                if (instanceValue == null || &quot;&quot;.equals(instanceValue)) {</span>
+<span class="nc" id="L261">                    instanceValue = &quot;&quot;;</span>
+                }
+<span class="nc" id="L263">                double value = resultSet.getDouble(3);</span>
+<span class="nc" id="L264">                String strValue = new BigDecimal(value).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+<span class="nc" id="L265">                List&lt;Value&gt; valueList = instanceValuesMap.computeIfAbsent(instanceValue, k -&gt; new LinkedList&lt;&gt;());</span>
+<span class="nc" id="L266">                valueList.add(new Value(strValue, ts.getTime() / 100 * 100));</span>
+<span class="nc" id="L267">            }</span>
+<span class="nc" id="L268">            resultSet.close();</span>
+<span class="nc" id="L269">            return instanceValuesMap;</span>
+<span class="nc" id="L270">        } catch (SQLException sqlException) {</span>
+<span class="nc" id="L271">          String msg = sqlException.getMessage();</span>
+<span class="nc bnc" id="L272" title="All 4 branches missed.">          if (msg != null &amp;&amp; !msg.contains(TABLE_NOT_EXIST)) {</span>
+<span class="nc" id="L273">              log.warn(sqlException.getMessage());</span>
+          }
+<span class="nc" id="L275">        } catch (Exception e) {</span>
+<span class="nc" id="L276">            log.error(e.getMessage(), e);</span>
+        } finally {
+            try {
+<span class="nc bnc" id="L279" title="All 4 branches missed.">                assert connection != null;</span>
+<span class="nc" id="L280">                connection.close();</span>
+<span class="nc" id="L281">            } catch (Exception e) {</span>
+<span class="nc" id="L282">                log.error(e.getMessage());</span>
+<span class="nc" id="L283">            }</span>
+        }
+<span class="nc" id="L285">        return instanceValuesMap;</span>
+    }
+
+    @Override
+    public Map&lt;String, List&lt;Value&gt;&gt; getHistoryIntervalMetricData(Long monitorId, String app, String metrics,
+                                                                 String metric, String label, String history) {
+<span class="nc bnc" id="L291" title="All 2 branches missed.">        if (!serverAvailable) {</span>
+<span class="nc" id="L292">            log.error(&quot;\n\t---------------TdEngine Init Failed---------------\n&quot; +</span>
+                    &quot;\t--------------Please Config Tdengine--------------\n&quot; +
+                    &quot;\t----------Can Not Use Metric History Now----------\n&quot;);
+<span class="nc" id="L295">            return Collections.emptyMap();</span>
+        }
+<span class="nc" id="L297">        String table = app + &quot;_&quot; + metrics + &quot;_&quot; + monitorId;</span>
+<span class="nc" id="L298">        List&lt;String&gt; instances = new LinkedList&lt;&gt;();</span>
+<span class="nc bnc" id="L299" title="All 2 branches missed.">        if (label != null) {</span>
+<span class="nc" id="L300">            instances.add(label);</span>
+        }
+<span class="nc bnc" id="L302" title="All 2 branches missed.">        if (instances.isEmpty()) {</span>
+            // 若未指定instance，需查询当前指标数据前1周有多少个instance
+<span class="nc" id="L304">            String queryInstanceSql = String.format(QUERY_INSTANCE_SQL, table);</span>
+<span class="nc" id="L305">            Connection connection = null;</span>
+            try {
+<span class="nc" id="L307">                connection = hikariDataSource.getConnection();</span>
+<span class="nc" id="L308">                Statement statement = connection.createStatement();</span>
+<span class="nc" id="L309">                ResultSet resultSet = statement.executeQuery(queryInstanceSql);</span>
+<span class="nc bnc" id="L310" title="All 2 branches missed.">                while (resultSet.next()) {</span>
+<span class="nc" id="L311">                    String instanceValue = resultSet.getString(1);</span>
+<span class="nc bnc" id="L312" title="All 4 branches missed.">                    if (instanceValue == null || &quot;&quot;.equals(instanceValue)) {</span>
+<span class="nc" id="L313">                        instances.add(&quot;''&quot;);</span>
+                    } else {
+<span class="nc" id="L315">                        instances.add(instanceValue);</span>
+                    }
+<span class="nc" id="L317">                }</span>
+<span class="nc" id="L318">            } catch (Exception e) {</span>
+<span class="nc" id="L319">                log.error(e.getMessage());</span>
+            } finally {
+                try {
+<span class="nc bnc" id="L322" title="All 4 branches missed.">                    assert connection != null;</span>
+<span class="nc" id="L323">                    connection.close();</span>
+<span class="nc" id="L324">                } catch (Exception e) {</span>
+<span class="nc" id="L325">                    log.error(e.getMessage());</span>
+<span class="nc" id="L326">                }</span>
+            }
+        }
+<span class="nc" id="L329">        Map&lt;String, List&lt;Value&gt;&gt; instanceValuesMap = new HashMap&lt;&gt;(instances.size());</span>
+<span class="nc bnc" id="L330" title="All 2 branches missed.">        for (String instanceValue : instances) {</span>
+<span class="nc bnc" id="L331" title="All 2 branches missed.">            if (INSTANCE_NULL.equals(instanceValue)) {</span>
+<span class="nc" id="L332">                instanceValue = &quot;&quot;;</span>
+            }
+<span class="nc" id="L334">            String selectSql = String.format(QUERY_HISTORY_INTERVAL_WITH_INSTANCE_SQL,</span>
+                            metric, metric, metric, metric, table, instanceValue, history);
+<span class="nc" id="L336">            log.debug(selectSql);</span>
+<span class="nc" id="L337">            List&lt;Value&gt; values = instanceValuesMap.computeIfAbsent(instanceValue, k -&gt; new LinkedList&lt;&gt;());</span>
+<span class="nc" id="L338">            Connection connection = null;</span>
+            try {
+<span class="nc" id="L340">                connection = hikariDataSource.getConnection();</span>
+<span class="nc" id="L341">                Statement statement = connection.createStatement();</span>
+<span class="nc" id="L342">                ResultSet resultSet = statement.executeQuery(selectSql);</span>
+<span class="nc bnc" id="L343" title="All 2 branches missed.">                while (resultSet.next()) {</span>
+<span class="nc" id="L344">                    Timestamp ts = resultSet.getTimestamp(1);</span>
+<span class="nc" id="L345">                    double origin = resultSet.getDouble(2);</span>
+<span class="nc" id="L346">                    String originStr = BigDecimal.valueOf(origin).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+<span class="nc" id="L347">                    double avg = resultSet.getDouble(3);</span>
+<span class="nc" id="L348">                    String avgStr = BigDecimal.valueOf(avg).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+<span class="nc" id="L349">                    double min = resultSet.getDouble(4);</span>
+<span class="nc" id="L350">                    String minStr = BigDecimal.valueOf(min).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+<span class="nc" id="L351">                    double max = resultSet.getDouble(5);</span>
+<span class="nc" id="L352">                    String maxStr = BigDecimal.valueOf(max).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+<span class="nc" id="L353">                    Value value = Value.builder()</span>
+<span class="nc" id="L354">                            .origin(originStr).mean(avgStr)</span>
+<span class="nc" id="L355">                            .min(minStr).max(maxStr)</span>
+<span class="nc" id="L356">                            .time(ts.getTime() / 100 * 100)</span>
+<span class="nc" id="L357">                            .build();</span>
+<span class="nc" id="L358">                    values.add(value);</span>
+<span class="nc" id="L359">                }</span>
+<span class="nc" id="L360">                resultSet.close();</span>
+<span class="nc" id="L361">            } catch (Exception e) {</span>
+<span class="nc" id="L362">                log.error(e.getMessage(), e);</span>
+            } finally {
+                try {
+<span class="nc bnc" id="L365" title="All 4 branches missed.">                    assert connection != null;</span>
+<span class="nc" id="L366">                    connection.close();</span>
+<span class="nc" id="L367">                } catch (Exception e) {</span>
+<span class="nc" id="L368">                    log.error(e.getMessage());</span>
+<span class="nc" id="L369">                }</span>
+            }
+<span class="nc" id="L371">        }</span>
+<span class="nc" id="L372">        return instanceValuesMap;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AesUtil.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.util</a> &gt; <span class="el_source">AesUtil.java</span></div><h1>AesUtil.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.common.util;
+
+import lombok.extern.slf4j.Slf4j;
+
+import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.NoSuchAlgorithmException;
+import java.util.Base64;
+
+/**
+ * AES Util
+ * @author tomsun28
+ */
+<span class="nc" id="L34">@Slf4j</span>
+public class AesUtil {
+
+    /**
+     *  默认加密秘钥 AES加密秘钥为约定16位，大于小于16位会报错
+     */
+    private static final String ENCODE_RULES = &quot;tomSun28HaHaHaHa&quot;;
+
+    /**
+     *  默认算法
+     */
+    private static final String ALGORITHM_STR = &quot;AES/CBC/PKCS5Padding&quot;;
+
+    /**
+     * 加密秘钥 AES加密秘钥为约定16位，大于小于16位会报错
+     */
+<span class="nc" id="L50">    private static String secretKey = ENCODE_RULES;</span>
+
+    private AesUtil() {}
+
+    public static void setDefaultSecretKey(String secretKeyNow) {
+<span class="nc" id="L55">        secretKey = secretKeyNow;</span>
+<span class="nc" id="L56">    }</span>
+
+    public static String aesEncode(String content) {
+<span class="nc" id="L59">        return aesEncode(content, secretKey);</span>
+    }
+
+    public static String aesDecode(String content) {
+<span class="nc" id="L63">        return aesDecode(content, secretKey);</span>
+    }
+
+    public static boolean isCiphertext(String text) {
+<span class="nc" id="L67">        return isCiphertext(text, secretKey);</span>
+    }
+
+    /**
+     * 加密明文 aes cbc模式
+     *
+     * @param content 明文
+     * @param encryptKey 密钥
+     * @return 密文
+     */
+    public static String aesEncode(String content, String encryptKey) {
+        try {
+<span class="nc" id="L79">            SecretKeySpec keySpec = new SecretKeySpec(encryptKey.getBytes(StandardCharsets.UTF_8), &quot;AES&quot;);</span>
+            //根据指定算法AES自成密码器
+<span class="nc" id="L81">            Cipher cipher = Cipher.getInstance(ALGORITHM_STR);</span>
+            //初始化密码器，第一个参数为加密(Encrypt_mode)或者解密解密(Decrypt_mode)操作，第二个参数为使用的KEY
+<span class="nc" id="L83">            cipher.init(Cipher.ENCRYPT_MODE, keySpec, new IvParameterSpec(encryptKey.getBytes(StandardCharsets.UTF_8)));</span>
+            //获取加密内容的字节数组(这里要设置为utf-8)不然内容中如果有中文和英文混合中文就会解密为乱码
+<span class="nc" id="L85">            byte[] byteEncode = content.getBytes(StandardCharsets.UTF_8);</span>
+            //根据密码器的初始化方式--加密：将数据加密
+<span class="nc" id="L87">            byte[] byteAes = cipher.doFinal(byteEncode);</span>
+            //将加密后的byte[]数据转换为Base64字符串
+<span class="nc" id="L89">            return new String(Base64.getEncoder().encode(byteAes),StandardCharsets.UTF_8);</span>
+<span class="nc" id="L90">        } catch (Exception e) {</span>
+<span class="nc" id="L91">            log.error(&quot;密文加密失败: {}&quot;, e.getMessage(), e);</span>
+<span class="nc" id="L92">            return content;</span>
+        }
+    }
+
+    /**
+     * 解密密文
+     *
+     * @param content 密文
+     * @param decryptKey 密钥
+     * @return 明文
+     */
+    public static String aesDecode(String content, String decryptKey) {
+        try {
+<span class="nc" id="L105">            SecretKeySpec keySpec = new SecretKeySpec(decryptKey.getBytes(StandardCharsets.UTF_8), &quot;AES&quot;);</span>
+
+            //根据指定算法AES自成密码器
+<span class="nc" id="L108">            Cipher cipher = Cipher.getInstance(ALGORITHM_STR);</span>
+            //初始化密码器，第一个参数为加密(Encrypt_mode)或者解密(Decrypt_mode)操作，第二个参数为使用的KEY
+<span class="nc" id="L110">            cipher.init(Cipher.DECRYPT_MODE, keySpec, new IvParameterSpec(decryptKey.getBytes(StandardCharsets.UTF_8)));</span>
+            //8.将加密并编码base64后的字符串内容base64解码成字节数组
+<span class="nc" id="L112">            byte[] bytesContent = Base64.getDecoder().decode(content);</span>
+<span class="nc" id="L113">            byte[] byteDecode = cipher.doFinal(bytesContent);</span>
+<span class="nc" id="L114">            return new String(byteDecode, StandardCharsets.UTF_8);</span>
+<span class="nc" id="L115">        } catch (NoSuchAlgorithmException e) {</span>
+<span class="nc" id="L116">            log.error(&quot;没有指定的加密算法::{}&quot;, e.getMessage(),e);</span>
+<span class="nc" id="L117">        } catch (IllegalBlockSizeException e) {</span>
+<span class="nc" id="L118">            log.error(&quot;非法的块大小::{}&quot;, e.getMessage(),e);</span>
+<span class="nc" id="L119">        } catch (NullPointerException e) {</span>
+<span class="nc" id="L120">            log.error(&quot;秘钥解析空指针异常::{}&quot;, e.getMessage(),e);</span>
+<span class="nc" id="L121">        } catch (Exception e) {</span>
+<span class="nc" id="L122">            log.error(&quot;秘钥AES解析出现未知错误::{}&quot;, e.getMessage(),e);</span>
+<span class="nc" id="L123">        }</span>
+<span class="nc" id="L124">        return content;</span>
+    }
+
+    /**
+     * 判断是否已经被加密
+     * @param text text
+     * @return true-是 false-否
+     */
+    public static boolean isCiphertext(String text, String decryptKey) {
+        // 先用是否被base64来判断是否已经被加密
+<span class="nc bnc" id="L134" title="All 2 branches missed.">        if (Base64Util.isBase64(text)) {</span>
+            // 若是base64 直接解密判断
+            try {
+<span class="nc" id="L137">                SecretKeySpec keySpec = new SecretKeySpec(decryptKey.getBytes(StandardCharsets.UTF_8), &quot;AES&quot;);</span>
+<span class="nc" id="L138">                Cipher cipher = Cipher.getInstance(ALGORITHM_STR);</span>
+<span class="nc" id="L139">                cipher.init(Cipher.DECRYPT_MODE, keySpec, new IvParameterSpec(decryptKey.getBytes(StandardCharsets.UTF_8)));</span>
+<span class="nc" id="L140">                byte[] bytesContent = Base64.getDecoder().decode(text);</span>
+<span class="nc" id="L141">                byte[] byteDecode = cipher.doFinal(bytesContent);</span>
+<span class="nc bnc" id="L142" title="All 2 branches missed.">                return byteDecode != null;</span>
+<span class="nc" id="L143">            } catch (Exception e) {</span>
+<span class="nc" id="L144">                return false;</span>
+            }
+        }
+<span class="nc" id="L147">        return false;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

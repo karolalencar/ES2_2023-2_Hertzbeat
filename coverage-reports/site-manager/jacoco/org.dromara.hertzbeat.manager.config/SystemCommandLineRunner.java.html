@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SystemCommandLineRunner.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.config</a> &gt; <span class="el_source">SystemCommandLineRunner.java</span></div><h1>SystemCommandLineRunner.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.manager.config;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.manager.GeneralConfig;
+import org.dromara.hertzbeat.manager.dao.GeneralConfigDao;
+import org.dromara.hertzbeat.manager.pojo.dto.SystemConfig;
+import org.dromara.hertzbeat.manager.service.impl.SystemGeneralConfigServiceImpl;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.stereotype.Component;
+
+import javax.annotation.Resource;
+import java.util.Locale;
+import java.util.TimeZone;
+
+/**
+ * @author ceilzcx
+ * @since 4/7/2023
+ */
+@Component
+<span class="fc" id="L21">public class SystemCommandLineRunner implements CommandLineRunner {</span>
+    
+<span class="fc" id="L23">    private static final Integer LANG_REGION_LENGTH = 2;</span>
+    
+    @Resource
+    private SystemGeneralConfigServiceImpl systemGeneralConfigService;
+    
+    @Resource
+    protected GeneralConfigDao generalConfigDao;
+    
+    @Resource
+    protected ObjectMapper objectMapper;
+
+    @Override
+    public void run(String... args) throws Exception {
+<span class="fc" id="L36">        SystemConfig systemConfig = systemGeneralConfigService.getConfig();</span>
+<span class="pc bpc" id="L37" title="1 of 2 branches missed.">        if (systemConfig != null) {</span>
+<span class="pc bpc" id="L38" title="1 of 2 branches missed.">            if (systemConfig.getTimeZoneId() != null) {</span>
+<span class="fc" id="L39">                TimeZone.setDefault(TimeZone.getTimeZone(systemConfig.getTimeZoneId()));</span>
+            }
+<span class="pc bpc" id="L41" title="1 of 2 branches missed.">            if (systemConfig.getLocale() != null) {</span>
+<span class="fc" id="L42">                String[] arr = systemConfig.getLocale().split(CommonConstants.LOCALE_SEPARATOR);</span>
+<span class="pc bpc" id="L43" title="1 of 2 branches missed.">                if (arr.length == LANG_REGION_LENGTH) {</span>
+<span class="fc" id="L44">                    String language = arr[0];</span>
+<span class="fc" id="L45">                    String country = arr[1];</span>
+<span class="fc" id="L46">                    Locale.setDefault(new Locale(language, country));   </span>
+                }
+<span class="fc" id="L48">            }</span>
+        } else {
+            // init system config data
+<span class="nc" id="L51">            systemConfig = SystemConfig.builder().timeZoneId(TimeZone.getDefault().getID())</span>
+<span class="nc" id="L52">                                   .locale(Locale.getDefault().getLanguage() + CommonConstants.LOCALE_SEPARATOR </span>
+<span class="nc" id="L53">                                                   + Locale.getDefault().getCountry())</span>
+<span class="nc" id="L54">                                   .build();</span>
+<span class="nc" id="L55">            String contentJson = objectMapper.writeValueAsString(systemConfig);</span>
+<span class="nc" id="L56">            GeneralConfig generalConfig2Save = GeneralConfig.builder()</span>
+<span class="nc" id="L57">                                                       .type(systemGeneralConfigService.type())</span>
+<span class="nc" id="L58">                                                       .content(contentJson)</span>
+<span class="nc" id="L59">                                                       .build();</span>
+<span class="nc" id="L60">            generalConfigDao.save(generalConfig2Save);</span>
+        }
+<span class="fc" id="L62">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

@@ -1,0 +1,441 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CollectUtil.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.util</a> &gt; <span class="el_source">CollectUtil.java</span></div><h1>CollectUtil.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.collector.util;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.google.gson.*;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.job.Configmap;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.util.JsonUtil;
+
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+/**
+ * util for collector
+ * @author tom
+ */
+<span class="fc" id="L37">@Slf4j</span>
+<span class="nc" id="L38">public class CollectUtil {</span>
+
+    private static final int DEFAULT_TIMEOUT = 60000;
+    private static final int HEX_STR_WIDTH = 2;
+    private static final String SMILING_PLACEHOLDER = &quot;^_^&quot;;
+    private static final String SMILING_PLACEHOLDER_REX = &quot;\\^_\\^&quot;;
+    private static final String SMILING_PLACEHOLDER_REGEX = &quot;(\\^_\\^)(\\w|-|$|\\.)+(\\^_\\^)&quot;;
+<span class="fc" id="L45">    private static final Pattern SMILING_PLACEHOLDER_REGEX_PATTERN = Pattern.compile(SMILING_PLACEHOLDER_REGEX);</span>
+    private static final String CRYING_PLACEHOLDER_REX = &quot;\\^o\\^&quot;;
+    private static final String CRYING_PLACEHOLDER_REGEX = &quot;(\\^o\\^)(\\w|-|$|\\.)+(\\^o\\^)&quot;;
+<span class="fc" id="L48">    private static final Pattern CRYING_PLACEHOLDER_REGEX_PATTERN = Pattern.compile(CRYING_PLACEHOLDER_REGEX);</span>
+<span class="fc" id="L49">    private static final List&lt;String&gt; UNIT_SYMBOLS = Arrays.asList(&quot;%&quot;, &quot;G&quot;, &quot;g&quot;, &quot;M&quot;, &quot;m&quot;, &quot;K&quot;, &quot;k&quot;, &quot;B&quot;, &quot;b&quot;);</span>
+
+    /**
+     * count match keyword number
+     *
+     * @param content content
+     * @param keyword keyword
+     * @return match num
+     */
+    public static int countMatchKeyword(String content, String keyword) {
+<span class="pc bpc" id="L59" title="3 of 8 branches missed.">        if (content == null || &quot;&quot;.equals(content) || keyword == null || &quot;&quot;.equals(keyword.trim())) {</span>
+<span class="fc" id="L60">            return 0;</span>
+        }
+        try {
+<span class="fc" id="L63">            Pattern pattern = Pattern.compile(keyword);</span>
+<span class="fc" id="L64">            Matcher matcher = pattern.matcher(content);</span>
+<span class="fc" id="L65">            int count = 0;</span>
+<span class="fc bfc" id="L66" title="All 2 branches covered.">            while (matcher.find()) {</span>
+<span class="fc" id="L67">                count++;</span>
+            }
+<span class="fc" id="L69">            return count;</span>
+<span class="nc" id="L70">        } catch (Exception e) {</span>
+<span class="nc" id="L71">            return 0;</span>
+        }
+    }
+
+    public static DoubleAndUnit extractDoubleAndUnitFromStr(String str) {
+<span class="pc bpc" id="L76" title="1 of 4 branches missed.">        if (str == null || &quot;&quot;.equals(str)) {</span>
+<span class="fc" id="L77">            return null;</span>
+        }
+<span class="fc" id="L79">        DoubleAndUnit doubleAndUnit = new DoubleAndUnit();</span>
+        try {
+<span class="nc" id="L81">            Double doubleValue = Double.parseDouble(str);</span>
+<span class="nc" id="L82">            doubleAndUnit.setValue(doubleValue);</span>
+<span class="nc" id="L83">            return doubleAndUnit;</span>
+<span class="fc" id="L84">        } catch (Exception e) {</span>
+<span class="fc" id="L85">            log.debug(e.getMessage());</span>
+        }
+        // extract unit from str value, eg: 23.43GB, 33KB, 44.22G
+        try {
+            // B KB MB GB % ....
+<span class="pc bpc" id="L90" title="1 of 2 branches missed.">            for (String unitSymbol : UNIT_SYMBOLS) {</span>
+<span class="fc" id="L91">                int index = str.indexOf(unitSymbol);</span>
+<span class="fc bfc" id="L92" title="All 2 branches covered.">                if (index == 0) {</span>
+<span class="fc" id="L93">                    Double doubleValue = 0d;</span>
+<span class="fc" id="L94">                    String unit = str.trim();</span>
+<span class="fc" id="L95">                    doubleAndUnit.setValue(doubleValue);</span>
+<span class="fc" id="L96">                    doubleAndUnit.setUnit(unit);</span>
+<span class="fc" id="L97">                    return doubleAndUnit;</span>
+                }
+<span class="fc bfc" id="L99" title="All 2 branches covered.">                if (index &gt; 0) {</span>
+<span class="fc" id="L100">                    Double doubleValue = Double.parseDouble(str.substring(0, index));</span>
+<span class="fc" id="L101">                    String unit = str.substring(index).trim();</span>
+<span class="fc" id="L102">                    doubleAndUnit.setValue(doubleValue);</span>
+<span class="fc" id="L103">                    doubleAndUnit.setUnit(unit);</span>
+<span class="fc" id="L104">                    return doubleAndUnit;</span>
+                }
+<span class="fc" id="L106">            }</span>
+<span class="nc" id="L107">        } catch (Exception e) {</span>
+<span class="nc" id="L108">            log.debug(e.getMessage());</span>
+<span class="nc" id="L109">        }</span>
+<span class="nc" id="L110">        return doubleAndUnit;</span>
+    }
+
+    /**
+     * double and unit
+     */
+<span class="fc" id="L116">    public static final class DoubleAndUnit {</span>
+
+        private Double value;
+        private String unit;
+
+        public Double getValue() {
+<span class="fc" id="L122">            return value;</span>
+        }
+
+        public void setValue(Double value) {
+<span class="fc" id="L126">            this.value = value;</span>
+<span class="fc" id="L127">        }</span>
+
+        public String getUnit() {
+<span class="fc" id="L130">            return unit;</span>
+        }
+
+        public void setUnit(String unit) {
+<span class="fc" id="L134">            this.unit = unit;</span>
+<span class="fc" id="L135">        }</span>
+    }
+
+    /**
+     * get timeout integer
+     *
+     * @param timeout timeout str
+     * @return timeout
+     */
+    public static int getTimeout(String timeout) {
+<span class="fc" id="L145">        return getTimeout(timeout, DEFAULT_TIMEOUT);</span>
+    }
+
+    /**
+     * get timeout integer or default value
+     *
+     * @param timeout        timeout str
+     * @param defaultTimeout default timeout
+     * @return timeout
+     */
+    public static int getTimeout(String timeout, int defaultTimeout) {
+<span class="pc bpc" id="L156" title="1 of 4 branches missed.">        if (timeout == null || &quot;&quot;.equals(timeout.trim())) {</span>
+<span class="fc" id="L157">            return defaultTimeout;</span>
+        }
+        try {
+<span class="fc" id="L160">            return Double.valueOf(timeout).intValue();</span>
+<span class="fc" id="L161">        } catch (Exception e) {</span>
+<span class="fc" id="L162">            return defaultTimeout;</span>
+        }
+    }
+
+    /**
+     * assert prom field
+     */
+    public static Boolean assertPromRequireField(String aliasField) {
+<span class="fc bfc" id="L170" title="All 4 branches covered.">        if (CommonConstants.PROM_TIME.equals(aliasField) || CommonConstants.PROM_VALUE.equals(aliasField)) {</span>
+<span class="fc" id="L171">            return true;</span>
+        }
+<span class="fc" id="L173">        return false;</span>
+    }
+
+
+    /**
+     * is contains cryPlaceholder ^o^xxx^o^
+     *
+     * @param jsonElement json element
+     * @return return true when contains
+     */
+    public static boolean containCryPlaceholder(JsonElement jsonElement) {
+<span class="fc" id="L184">        String jsonStr = jsonElement.toString();</span>
+<span class="fc" id="L185">        return CRYING_PLACEHOLDER_REGEX_PATTERN.matcher(jsonStr).find();</span>
+    }
+
+    public static boolean notContainCryPlaceholder(JsonElement jsonElement) {
+<span class="nc bnc" id="L189" title="All 2 branches missed.">        return !containCryPlaceholder(jsonElement);</span>
+    }
+
+    /**
+     * match existed cry placeholder fields ^o^field^o^
+     * @param jsonElement json element
+     * @return match field str
+     */
+    public static Set&lt;String&gt; matchCryPlaceholderField(JsonElement jsonElement) {
+<span class="nc" id="L198">        String jsonStr = jsonElement.toString();</span>
+<span class="nc" id="L199">        return CRYING_PLACEHOLDER_REGEX_PATTERN.matcher(jsonStr).results()</span>
+<span class="nc" id="L200">                .map(item -&gt; item.group().replaceAll(CRYING_PLACEHOLDER_REX, &quot;&quot;))</span>
+<span class="nc" id="L201">                .collect(Collectors.toSet());</span>
+    }
+
+    /**
+     * json parameter replacement
+     *
+     * @param jsonElement json
+     * @param configmap   parameter map
+     * @return json
+     */
+    public static JsonElement replaceCryPlaceholder(JsonElement jsonElement, Map&lt;String, Configmap&gt; configmap) {
+<span class="fc bfc" id="L212" title="All 2 branches covered.">        if (jsonElement.isJsonObject()) {</span>
+<span class="fc" id="L213">            JsonObject jsonObject = jsonElement.getAsJsonObject();</span>
+<span class="fc" id="L214">            Iterator&lt;Map.Entry&lt;String, JsonElement&gt;&gt; iterator = jsonObject.entrySet().iterator();</span>
+<span class="fc bfc" id="L215" title="All 2 branches covered.">            while (iterator.hasNext()) {</span>
+<span class="fc" id="L216">                Map.Entry&lt;String, JsonElement&gt; entry = iterator.next();</span>
+<span class="fc" id="L217">                JsonElement element = entry.getValue();</span>
+                // Replace normal VALUE value
+<span class="pc bpc" id="L219" title="1 of 2 branches missed.">                if (element.isJsonPrimitive()) {</span>
+                    // Check if there are special characters Replace
+<span class="fc" id="L221">                    String value = element.getAsString();</span>
+<span class="fc" id="L222">                    Matcher cryingMatcher = CRYING_PLACEHOLDER_REGEX_PATTERN.matcher(value);</span>
+<span class="fc bfc" id="L223" title="All 2 branches covered.">                    if (cryingMatcher.find()) {</span>
+<span class="fc" id="L224">                        cryingMatcher.reset();</span>
+<span class="fc bfc" id="L225" title="All 2 branches covered.">                        while (cryingMatcher.find()) {</span>
+<span class="fc" id="L226">                            String group = cryingMatcher.group();</span>
+<span class="fc" id="L227">                            String replaceField = group.replaceAll(CRYING_PLACEHOLDER_REX, &quot;&quot;);</span>
+<span class="fc" id="L228">                            Configmap param = configmap.get(replaceField);</span>
+<span class="pc bpc" id="L229" title="1 of 2 branches missed.">                            if (param != null) {</span>
+<span class="pc bpc" id="L230" title="1 of 2 branches missed.">                                if (param.getValue() == null) {</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">                                    if (group.length() == value.length()) {</span>
+<span class="nc" id="L232">                                        value = null;</span>
+<span class="nc" id="L233">                                        break;</span>
+                                    } else {
+<span class="nc" id="L235">                                        value = value.replace(group, &quot;&quot;);</span>
+                                    }
+                                } else {
+<span class="fc" id="L238">                                    value = value.replace(group, (String) param.getValue());</span>
+                                }
+                            }
+<span class="fc" id="L241">                        }</span>
+<span class="fc" id="L242">                        jsonObject.addProperty(entry.getKey(), value);</span>
+                    }
+<span class="fc" id="L244">                } else {</span>
+<span class="nc" id="L245">                    jsonObject.add(entry.getKey(), replaceCryPlaceholder(entry.getValue(), configmap));</span>
+                }
+<span class="fc" id="L247">            }</span>
+<span class="pc bpc" id="L248" title="1 of 2 branches missed.">        } else if (jsonElement.isJsonArray()) {</span>
+<span class="fc" id="L249">            JsonArray jsonArray = jsonElement.getAsJsonArray();</span>
+<span class="fc" id="L250">            Iterator&lt;JsonElement&gt; iterator = jsonArray.iterator();</span>
+<span class="fc" id="L251">            int index = 0;</span>
+<span class="fc bfc" id="L252" title="All 2 branches covered.">            while (iterator.hasNext()) {</span>
+<span class="fc" id="L253">                JsonElement element = iterator.next();</span>
+<span class="pc bpc" id="L254" title="1 of 2 branches missed.">                if (element.isJsonPrimitive()) {</span>
+                    // Check if there are special characters Replace
+<span class="nc" id="L256">                    String value = element.getAsString();</span>
+<span class="nc" id="L257">                    Matcher cryingMatcher = CRYING_PLACEHOLDER_REGEX_PATTERN.matcher(value);</span>
+<span class="nc bnc" id="L258" title="All 2 branches missed.">                    if (cryingMatcher.find()) {</span>
+<span class="nc" id="L259">                        cryingMatcher.reset();</span>
+<span class="nc bnc" id="L260" title="All 2 branches missed.">                        while (cryingMatcher.find()) {</span>
+<span class="nc" id="L261">                            String group = cryingMatcher.group();</span>
+<span class="nc" id="L262">                            String replaceField = group.replaceAll(CRYING_PLACEHOLDER_REX, &quot;&quot;);</span>
+<span class="nc" id="L263">                            Configmap param = configmap.get(replaceField);</span>
+<span class="nc bnc" id="L264" title="All 2 branches missed.">                            if (param != null) {</span>
+<span class="nc bnc" id="L265" title="All 2 branches missed.">                                if (param.getValue() == null) {</span>
+<span class="nc bnc" id="L266" title="All 2 branches missed.">                                    if (group.length() == value.length()) {</span>
+<span class="nc" id="L267">                                        value = null;</span>
+<span class="nc" id="L268">                                        break;</span>
+                                    } else {
+<span class="nc" id="L270">                                        value = value.replace(group, &quot;&quot;);</span>
+                                    }
+                                } else {
+<span class="nc" id="L273">                                    value = value.replace(group, (String) param.getValue());</span>
+                                }
+                            }
+<span class="nc" id="L276">                        }</span>
+<span class="nc bnc" id="L277" title="All 2 branches missed.">                        jsonArray.set(index, value == null ? JsonNull.INSTANCE : new JsonPrimitive(value));</span>
+                    }
+<span class="nc" id="L279">                } else {</span>
+<span class="fc" id="L280">                    jsonArray.set(index, replaceCryPlaceholder(element, configmap));</span>
+                }
+<span class="fc" id="L282">                index++;</span>
+<span class="fc" id="L283">            }</span>
+        }
+<span class="fc" id="L285">        return jsonElement;</span>
+    }
+
+    /**
+     * json parameter replacement
+     *
+     * @param jsonElement json
+     * @param configmap   parameter map
+     * @return json
+     */
+    public static JsonElement replaceSmilingPlaceholder(JsonElement jsonElement, Map&lt;String, Configmap&gt; configmap) {
+<span class="fc bfc" id="L296" title="All 2 branches covered.">        if (jsonElement.isJsonObject()) {</span>
+<span class="fc" id="L297">            JsonObject jsonObject = jsonElement.getAsJsonObject();</span>
+<span class="fc" id="L298">            Iterator&lt;Map.Entry&lt;String, JsonElement&gt;&gt; iterator = jsonObject.entrySet().iterator();</span>
+<span class="fc bfc" id="L299" title="All 2 branches covered.">            while (iterator.hasNext()) {</span>
+<span class="fc" id="L300">                Map.Entry&lt;String, JsonElement&gt; entry = iterator.next();</span>
+<span class="fc" id="L301">                JsonElement element = entry.getValue();</span>
+<span class="fc" id="L302">                String key = entry.getKey();</span>
+                // Replace the attributes of the KEY-VALUE case such as http headers params
+<span class="pc bpc" id="L304" title="4 of 6 branches missed.">                if (key != null &amp;&amp; key.startsWith(SMILING_PLACEHOLDER) &amp;&amp; key.endsWith(SMILING_PLACEHOLDER)) {</span>
+<span class="nc" id="L305">                    key = key.replaceAll(SMILING_PLACEHOLDER_REX, &quot;&quot;);</span>
+<span class="nc" id="L306">                    Configmap param = configmap.get(key);</span>
+<span class="nc bnc" id="L307" title="All 4 branches missed.">                    if (param != null &amp;&amp; param.getType() == CommonConstants.PARAM_TYPE_MAP) {</span>
+<span class="nc" id="L308">                        String jsonValue = (String) param.getValue();</span>
+<span class="nc" id="L309">                        TypeReference&lt;Map&lt;String, String&gt;&gt; typeReference = new TypeReference&lt;&gt;() {</span>
+                        };
+<span class="nc" id="L311">                        Map&lt;String, String&gt; map = JsonUtil.fromJson(jsonValue, typeReference);</span>
+<span class="nc bnc" id="L312" title="All 2 branches missed.">                        if (map != null) {</span>
+<span class="nc" id="L313">                            map.forEach((name, value) -&gt; {</span>
+<span class="nc bnc" id="L314" title="All 4 branches missed.">                                if (name != null &amp;&amp; !&quot;&quot;.equals(name.trim())) {</span>
+<span class="nc" id="L315">                                    jsonObject.addProperty(name, value);</span>
+                                }
+<span class="nc" id="L317">                            });</span>
+                        }
+                    }
+<span class="nc" id="L320">                    iterator.remove();</span>
+<span class="nc" id="L321">                    continue;</span>
+                }
+                // Replace normal VALUE value
+<span class="pc bpc" id="L324" title="1 of 2 branches missed.">                if (element.isJsonPrimitive()) {</span>
+                    // Check if there are special characters Replace
+<span class="fc" id="L326">                    String value = element.getAsString();</span>
+<span class="fc" id="L327">                    Matcher smilingMatcher = SMILING_PLACEHOLDER_REGEX_PATTERN.matcher(value);</span>
+<span class="fc bfc" id="L328" title="All 2 branches covered.">                    if (smilingMatcher.find()) {</span>
+<span class="fc" id="L329">                        smilingMatcher.reset();</span>
+<span class="fc bfc" id="L330" title="All 2 branches covered.">                        while (smilingMatcher.find()) {</span>
+<span class="fc" id="L331">                            String group = smilingMatcher.group();</span>
+<span class="fc" id="L332">                            String replaceField = group.replaceAll(SMILING_PLACEHOLDER_REX, &quot;&quot;);</span>
+<span class="fc" id="L333">                            Configmap param = configmap.get(replaceField);</span>
+<span class="pc bpc" id="L334" title="1 of 2 branches missed.">                            if (param != null) {</span>
+<span class="pc bpc" id="L335" title="1 of 2 branches missed.">                                if (param.getValue() == null) {</span>
+<span class="nc bnc" id="L336" title="All 2 branches missed.">                                    if (group.length() == value.length()) {</span>
+<span class="nc" id="L337">                                        value = null;</span>
+<span class="nc" id="L338">                                        break;</span>
+                                    } else {
+<span class="nc" id="L340">                                        value = value.replace(group, &quot;&quot;);</span>
+                                    }
+                                } else {
+<span class="fc" id="L343">                                    value = value.replace(group, (String) param.getValue());</span>
+                                }
+                            }
+<span class="fc" id="L346">                        }</span>
+<span class="fc" id="L347">                        jsonObject.addProperty(entry.getKey(), value);</span>
+                    }
+<span class="fc" id="L349">                } else {</span>
+<span class="nc" id="L350">                    jsonObject.add(entry.getKey(), replaceSmilingPlaceholder(entry.getValue(), configmap));</span>
+                }
+<span class="fc" id="L352">            }</span>
+<span class="pc bpc" id="L353" title="1 of 2 branches missed.">        } else if (jsonElement.isJsonArray()) {</span>
+<span class="fc" id="L354">            JsonArray jsonArray = jsonElement.getAsJsonArray();</span>
+<span class="fc" id="L355">            int index = 0;</span>
+<span class="fc bfc" id="L356" title="All 2 branches covered.">            while (index &lt; jsonArray.size()) {</span>
+<span class="fc" id="L357">                JsonElement element = jsonArray.get(index);</span>
+<span class="pc bpc" id="L358" title="1 of 2 branches missed.">                if (element.isJsonPrimitive()) {</span>
+                    // Check if there are special characters Replace
+<span class="nc" id="L360">                    String value = element.getAsString();</span>
+<span class="nc" id="L361">                    Matcher smilingMatcher = SMILING_PLACEHOLDER_REGEX_PATTERN.matcher(value);</span>
+<span class="nc bnc" id="L362" title="All 2 branches missed.">                    if (smilingMatcher.find()) {</span>
+<span class="nc" id="L363">                        smilingMatcher.reset();</span>
+<span class="nc" id="L364">                        String[] arrayValues = null;</span>
+<span class="nc bnc" id="L365" title="All 2 branches missed.">                        while (smilingMatcher.find()) {</span>
+<span class="nc" id="L366">                            String group = smilingMatcher.group();</span>
+<span class="nc" id="L367">                            String replaceField = group.replaceAll(SMILING_PLACEHOLDER_REX, &quot;&quot;);</span>
+<span class="nc" id="L368">                            Configmap param = configmap.get(replaceField);</span>
+<span class="nc bnc" id="L369" title="All 2 branches missed.">                            if (param != null) {</span>
+<span class="nc bnc" id="L370" title="All 2 branches missed.">                                if (param.getValue() == null) {</span>
+<span class="nc bnc" id="L371" title="All 2 branches missed.">                                    if (group.length() == value.length()) {</span>
+<span class="nc" id="L372">                                        value = null;</span>
+<span class="nc" id="L373">                                        break;</span>
+                                    } else {
+<span class="nc" id="L375">                                        value = value.replace(group, &quot;&quot;);</span>
+                                    }
+<span class="nc bnc" id="L377" title="All 2 branches missed.">                                } else if (param.getType() == CommonConstants.PARAM_TYPE_ARRAY) {</span>
+<span class="nc" id="L378">                                    arrayValues = String.valueOf(param.getValue()).split(&quot;,&quot;);</span>
+                                } else {
+<span class="nc" id="L380">                                    value = value.replace(group, (String) param.getValue());</span>
+                                }
+                            } else {
+<span class="nc" id="L383">                                value = null;</span>
+<span class="nc" id="L384">                                break;</span>
+                            }
+<span class="nc" id="L386">                        }</span>
+<span class="nc bnc" id="L387" title="All 2 branches missed.">                        if (arrayValues != null) {</span>
+<span class="nc" id="L388">                            jsonArray.remove(index);</span>
+<span class="nc" id="L389">                            index--;</span>
+<span class="nc bnc" id="L390" title="All 2 branches missed.">                            for (String arrayValue : arrayValues) {</span>
+<span class="nc" id="L391">                                jsonArray.add(arrayValue);</span>
+<span class="nc" id="L392">                                index++;</span>
+                            }
+                        } else {
+<span class="nc bnc" id="L395" title="All 2 branches missed.">                            jsonArray.set(index, value == null ? JsonNull.INSTANCE : new JsonPrimitive(value));</span>
+                        }
+                    }
+<span class="nc" id="L398">                } else {</span>
+<span class="fc" id="L399">                    jsonArray.set(index, replaceSmilingPlaceholder(element, configmap));</span>
+                }
+<span class="fc" id="L401">                index++;</span>
+<span class="fc" id="L402">            }</span>
+        }
+<span class="fc" id="L404">        return jsonElement;</span>
+    }
+
+    public static String replaceUriSpecialChar(String uri) {
+<span class="fc" id="L408">        uri = uri.replaceAll(&quot; &quot;, &quot;%20&quot;);</span>
+        // todo more special
+<span class="fc" id="L410">        return uri;</span>
+    }
+    
+
+    public static void replaceFieldsForPushStyleMonitor(Metrics metrics, Map&lt;String, Configmap&gt; configmap) {
+
+<span class="nc" id="L416">        List&lt;Metrics.Field&gt; pushFieldList = JsonUtil.fromJson((String) configmap.get(&quot;fields&quot;).getValue(), new TypeReference&lt;List&lt;Metrics.Field&gt;&gt;() {</span>
+        });
+<span class="nc" id="L418">        metrics.setFields(pushFieldList);</span>
+<span class="nc" id="L419">    }</span>
+
+    /**
+     * convert 16 hexString to byte[]
+     * eg: 302c0201010409636f6d6d756e697479a11c020419e502e7020100020100300e300c06082b060102010102000500
+     * 16进制字符串不区分大小写，返回的数组相同
+     * @param hexString 16 hexString
+     * @return byte[]
+     */
+    public static byte[] fromHexString(String hexString) {
+<span class="nc bnc" id="L429" title="All 4 branches missed.">        if (null == hexString || &quot;&quot;.equals(hexString.trim())) {</span>
+<span class="nc" id="L430">            return null;</span>
+        }
+<span class="nc" id="L432">        byte[] bytes = new byte[hexString.length() / HEX_STR_WIDTH];</span>
+        String hex;
+<span class="nc bnc" id="L434" title="All 2 branches missed.">        for (int i = 0; i &lt; hexString.length() / HEX_STR_WIDTH; i++) {</span>
+<span class="nc" id="L435">            hex = hexString.substring(i * HEX_STR_WIDTH, i * HEX_STR_WIDTH + HEX_STR_WIDTH);</span>
+<span class="nc" id="L436">            bytes[i] = (byte) Integer.parseInt(hex, 16);</span>
+        }
+<span class="nc" id="L438">        return bytes;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

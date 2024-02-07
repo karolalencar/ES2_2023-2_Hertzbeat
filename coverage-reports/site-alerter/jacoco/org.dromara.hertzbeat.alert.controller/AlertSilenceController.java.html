@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AlertSilenceController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-alerter</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.alert.controller</a> &gt; <span class="el_source">AlertSilenceController.java</span></div><h1>AlertSilenceController.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.alert.controller;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.dromara.hertzbeat.alert.service.AlertSilenceService;
+import org.dromara.hertzbeat.common.entity.alerter.AlertSilence;
+import org.dromara.hertzbeat.common.entity.dto.Message;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import javax.validation.Valid;
+
+
+import static org.dromara.hertzbeat.common.constants.CommonConstants.MONITOR_NOT_EXIST_CODE;
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
+
+/**
+ * Alarm Silence management API
+ * @author tom
+ */
+@Tag(name = &quot;Alert Silence API | 告警静默管理API&quot;)
+@RestController
+@RequestMapping(path = &quot;/api/alert/silence&quot;, produces = {APPLICATION_JSON_VALUE})
+<span class="nc" id="L43">public class AlertSilenceController {</span>
+
+    @Autowired
+    private AlertSilenceService alertSilenceService;
+
+    @PostMapping
+    @Operation(summary = &quot;New Alarm Silence | 新增告警静默&quot;, description = &quot;Added an alarm Silence | 新增一个告警静默&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; addNewAlertSilence(@Valid @RequestBody AlertSilence alertSilence) {
+<span class="nc" id="L51">        alertSilenceService.validate(alertSilence, false);</span>
+<span class="nc" id="L52">        alertSilenceService.addAlertSilence(alertSilence);</span>
+<span class="nc" id="L53">        return ResponseEntity.ok(Message.success(&quot;Add success&quot;));</span>
+    }
+
+    @PutMapping
+    @Operation(summary = &quot;Modifying an Alarm Silence | 修改告警静默&quot;, description = &quot;Modify an existing alarm Silence | 修改一个已存在告警静默&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; modifyAlertSilence(@Valid @RequestBody AlertSilence alertSilence) {
+<span class="nc" id="L59">        alertSilenceService.validate(alertSilence, true);</span>
+<span class="nc" id="L60">        alertSilenceService.modifyAlertSilence(alertSilence);</span>
+<span class="nc" id="L61">        return ResponseEntity.ok(Message.success(&quot;Modify success&quot;));</span>
+    }
+
+    @GetMapping(path = &quot;/{id}&quot;)
+    @Operation(summary = &quot;Querying Alarm Silence | 查询告警静默&quot;,
+            description = &quot;You can obtain alarm Silence information based on the alarm Silence ID | 根据告警静默ID获取告警静默信息&quot;)
+    public ResponseEntity&lt;Message&lt;AlertSilence&gt;&gt; getAlertSilence(
+            @Parameter(description = &quot;Alarm Silence ID ｜ 告警静默ID&quot;, example = &quot;6565463543&quot;) @PathVariable(&quot;id&quot;) long id) {
+<span class="nc" id="L69">        AlertSilence alertSilence = alertSilenceService.getAlertSilence(id);</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">        if (alertSilence == null) {</span>
+<span class="nc" id="L71">            return ResponseEntity.ok(Message.fail(MONITOR_NOT_EXIST_CODE, &quot;AlertSilence not exist.&quot;));</span>
+        } else {
+<span class="nc" id="L73">            return ResponseEntity.ok(Message.success(alertSilence));</span>
+        }
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

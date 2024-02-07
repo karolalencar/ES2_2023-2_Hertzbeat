@@ -1,0 +1,593 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>HttpCollectImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.http</a> &gt; <span class="el_source">HttpCollectImpl.java</span></div><h1>HttpCollectImpl.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.collector.collect.http;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import org.dromara.hertzbeat.collector.collect.AbstractCollect;
+import org.dromara.hertzbeat.collector.collect.common.http.CommonHttpClient;
+import org.dromara.hertzbeat.collector.collect.http.promethus.exporter.ExporterParser;
+import org.dromara.hertzbeat.collector.collect.http.promethus.exporter.MetricFamily;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.collector.util.CollectUtil;
+import org.dromara.hertzbeat.common.constants.CollectorConstants;
+import org.dromara.hertzbeat.collector.util.JsonPathParser;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.job.protocol.HttpProtocol;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+import org.dromara.hertzbeat.common.util.IpDomainUtil;
+import org.dromara.hertzbeat.collector.collect.http.promethus.AbstractPrometheusParse;
+import org.dromara.hertzbeat.collector.collect.http.promethus.PrometheusParseCreater;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.net.util.Base64;
+import org.apache.http.HttpHeaders;
+import org.apache.http.HttpHost;
+import org.apache.http.HttpStatus;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.AuthCache;
+import org.apache.http.client.ClientProtocolException;
+import org.apache.http.client.CredentialsProvider;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.client.methods.RequestBuilder;
+import org.apache.http.client.protocol.HttpClientContext;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.auth.DigestScheme;
+import org.apache.http.impl.client.BasicAuthCache;
+import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.protocol.HttpContext;
+import org.apache.http.util.EntityUtils;
+import org.springframework.http.HttpMethod;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+
+
+import javax.net.ssl.SSLException;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InterruptedIOException;
+import java.net.ConnectException;
+import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import static org.dromara.hertzbeat.common.constants.SignConstants.RIGHT_DASH;
+
+
+/**
+ * http https collect
+ *
+ * @author tomsun28
+ */
+<span class="nc" id="L92">@Slf4j</span>
+public class HttpCollectImpl extends AbstractCollect {
+    
+<span class="nc" id="L95">    private final Set&lt;Integer&gt; defaultSuccessStatusCodes = Stream.of(HttpStatus.SC_OK, HttpStatus.SC_CREATED,</span>
+<span class="nc" id="L96">            HttpStatus.SC_ACCEPTED, HttpStatus.SC_MULTIPLE_CHOICES, HttpStatus.SC_MOVED_PERMANENTLY,</span>
+<span class="nc" id="L97">            HttpStatus.SC_MOVED_TEMPORARILY).collect(Collectors.toSet());</span>
+    
+<span class="nc" id="L99">    public HttpCollectImpl() {</span>
+<span class="nc" id="L100">    }</span>
+    
+    @Override
+    public void collect(CollectRep.MetricsData.Builder builder,
+                        long monitorId, String app, Metrics metrics) {
+<span class="nc" id="L105">        long startTime = System.currentTimeMillis();</span>
+        try {
+<span class="nc" id="L107">            validateParams(metrics);</span>
+<span class="nc" id="L108">        } catch (Exception e) {</span>
+<span class="nc" id="L109">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L110">            builder.setMsg(e.getMessage());</span>
+<span class="nc" id="L111">            return;</span>
+<span class="nc" id="L112">        }</span>
+<span class="nc" id="L113">        HttpContext httpContext = createHttpContext(metrics.getHttp());</span>
+<span class="nc" id="L114">        HttpUriRequest request = createHttpRequest(metrics.getHttp());</span>
+        try {
+<span class="nc" id="L116">            CloseableHttpResponse response = CommonHttpClient.getHttpClient()</span>
+<span class="nc" id="L117">                                                     .execute(request, httpContext);</span>
+<span class="nc" id="L118">            int statusCode = response.getStatusLine().getStatusCode();</span>
+<span class="nc" id="L119">            boolean isSuccessInvoke = checkSuccessInvoke(metrics, statusCode);</span>
+<span class="nc" id="L120">            log.debug(&quot;http response status: {}&quot;, statusCode);</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">            if (!isSuccessInvoke) {</span>
+<span class="nc" id="L122">                builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L123">                builder.setMsg(&quot;StatusCode &quot; + statusCode);</span>
+<span class="nc" id="L124">                return;</span>
+            }
+            // todo 这里直接将InputStream转为了String, 对于prometheus exporter大数据来说, 会生成大对象, 可能会严重影响JVM内存空间
+            // todo 方法一、使用InputStream进行解析, 代码改动大; 方法二、手动触发gc, 可以参考dubbo for long i
+<span class="nc" id="L128">            String resp = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);</span>
+<span class="nc bnc" id="L129" title="All 4 branches missed.">            if (resp == null || &quot;&quot;.equals(resp)) {</span>
+<span class="nc" id="L130">                log.info(&quot;http response entity is empty, status: {}.&quot;, statusCode);</span>
+            }
+<span class="nc" id="L132">            Long responseTime = System.currentTimeMillis() - startTime;</span>
+<span class="nc" id="L133">            String parseType = metrics.getHttp().getParseType();</span>
+            try {
+<span class="nc bnc" id="L135" title="All 2 branches missed.">                if (DispatchConstants.PARSE_DEFAULT.equals(parseType)) {</span>
+<span class="nc" id="L136">                    parseResponseByDefault(resp, metrics.getAliasFields(), metrics.getHttp(), builder, responseTime);</span>
+<span class="nc bnc" id="L137" title="All 2 branches missed.">                } else if (DispatchConstants.PARSE_JSON_PATH.equals(parseType)) {</span>
+<span class="nc" id="L138">                    parseResponseByJsonPath(resp, metrics.getAliasFields(), metrics.getHttp(), builder, responseTime);</span>
+<span class="nc bnc" id="L139" title="All 2 branches missed.">                } else if (DispatchConstants.PARSE_PROM_QL.equalsIgnoreCase(parseType)) {</span>
+<span class="nc" id="L140">                    parseResponseByPromQl(resp, metrics.getAliasFields(), metrics.getHttp(), builder);</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">                } else if (DispatchConstants.PARSE_PROMETHEUS.equals(parseType)) {</span>
+<span class="nc" id="L142">                    parseResponseByPrometheusExporter(resp, metrics.getAliasFields(), builder);</span>
+<span class="nc bnc" id="L143" title="All 2 branches missed.">                } else if (DispatchConstants.PARSE_XML_PATH.equals(parseType)) {</span>
+<span class="nc" id="L144">                    parseResponseByXmlPath(resp, metrics.getAliasFields(), metrics.getHttp(), builder);</span>
+<span class="nc bnc" id="L145" title="All 2 branches missed.">                } else if (DispatchConstants.PARSE_WEBSITE.equals(parseType)) {</span>
+<span class="nc" id="L146">                    parseResponseByWebsite(resp, metrics.getAliasFields(), metrics.getHttp(), builder, responseTime);</span>
+<span class="nc bnc" id="L147" title="All 2 branches missed.">                } else if (DispatchConstants.PARSE_SITE_MAP.equals(parseType)) {</span>
+<span class="nc" id="L148">                    parseResponseBySiteMap(resp, metrics.getAliasFields(), builder);</span>
+                } else {
+<span class="nc" id="L150">                    parseResponseByDefault(resp, metrics.getAliasFields(), metrics.getHttp(), builder, responseTime);</span>
+                }
+<span class="nc" id="L152">            } catch (Exception e) {</span>
+<span class="nc" id="L153">                log.info(&quot;parse error: {}.&quot;, e.getMessage(), e);</span>
+<span class="nc" id="L154">                builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L155">                builder.setMsg(&quot;parse response data error:&quot; + e.getMessage());</span>
+<span class="nc" id="L156">            }</span>
+<span class="nc" id="L157">        } catch (ClientProtocolException e1) {</span>
+<span class="nc" id="L158">            String errorMsg = CommonUtil.getMessageFromThrowable(e1);</span>
+<span class="nc" id="L159">            log.error(errorMsg);</span>
+<span class="nc" id="L160">            builder.setCode(CollectRep.Code.UN_CONNECTABLE);</span>
+<span class="nc" id="L161">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L162">        } catch (UnknownHostException e2) {</span>
+<span class="nc" id="L163">            String errorMsg = CommonUtil.getMessageFromThrowable(e2);</span>
+<span class="nc" id="L164">            log.info(errorMsg);</span>
+<span class="nc" id="L165">            builder.setCode(CollectRep.Code.UN_REACHABLE);</span>
+<span class="nc" id="L166">            builder.setMsg(&quot;unknown host:&quot; + errorMsg);</span>
+<span class="nc" id="L167">        } catch (InterruptedIOException | ConnectException | SSLException e3) {</span>
+<span class="nc" id="L168">            String errorMsg = CommonUtil.getMessageFromThrowable(e3);</span>
+<span class="nc" id="L169">            log.info(errorMsg);</span>
+<span class="nc" id="L170">            builder.setCode(CollectRep.Code.UN_CONNECTABLE);</span>
+<span class="nc" id="L171">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L172">        } catch (IOException e4) {</span>
+<span class="nc" id="L173">            String errorMsg = CommonUtil.getMessageFromThrowable(e4);</span>
+<span class="nc" id="L174">            log.info(errorMsg);</span>
+<span class="nc" id="L175">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L176">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L177">        } catch (Exception e) {</span>
+<span class="nc" id="L178">            String errorMsg = CommonUtil.getMessageFromThrowable(e);</span>
+<span class="nc" id="L179">            log.error(errorMsg, e);</span>
+<span class="nc" id="L180">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L181">            builder.setMsg(errorMsg);</span>
+        } finally {
+<span class="nc bnc" id="L183" title="All 2 branches missed.">            if (request != null) {</span>
+<span class="nc" id="L184">                request.abort();</span>
+            }
+        }
+<span class="nc" id="L187">    }</span>
+    
+    @Override
+    public String supportProtocol() {
+<span class="nc" id="L191">        return DispatchConstants.PROTOCOL_HTTP;</span>
+    }
+    
+    private void validateParams(Metrics metrics) throws Exception {
+<span class="nc bnc" id="L195" title="All 4 branches missed.">        if (metrics == null || metrics.getHttp() == null) {</span>
+<span class="nc" id="L196">            throw new Exception(&quot;Http/Https collect must has http params&quot;);</span>
+        }
+<span class="nc" id="L198">        HttpProtocol httpProtocol = metrics.getHttp();</span>
+<span class="nc bnc" id="L199" title="All 2 branches missed.">        if (httpProtocol.getUrl() == null</span>
+<span class="nc bnc" id="L200" title="All 2 branches missed.">                    || &quot;&quot;.equals(httpProtocol.getUrl())</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">                    || !httpProtocol.getUrl().startsWith(RIGHT_DASH)) {</span>
+<span class="nc bnc" id="L202" title="All 2 branches missed.">            httpProtocol.setUrl(httpProtocol.getUrl() == null ? RIGHT_DASH : RIGHT_DASH + httpProtocol.getUrl().trim());</span>
+        }
+        
+<span class="nc bnc" id="L205" title="All 2 branches missed.">        if (CollectionUtils.isEmpty(httpProtocol.getSuccessCodes())) {</span>
+<span class="nc" id="L206">            httpProtocol.setSuccessCodes(List.of(&quot;200&quot;));</span>
+        }
+<span class="nc" id="L208">    }</span>
+    
+    private void parseResponseByWebsite(String resp, List&lt;String&gt; aliasFields, HttpProtocol http,
+                                        CollectRep.MetricsData.Builder builder, Long responseTime) {
+<span class="nc" id="L212">        CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc" id="L213">        int keywordNum = CollectUtil.countMatchKeyword(resp, http.getKeyword());</span>
+<span class="nc bnc" id="L214" title="All 2 branches missed.">        for (String alias : aliasFields) {</span>
+<span class="nc bnc" id="L215" title="All 2 branches missed.">            if (CollectorConstants.RESPONSE_TIME.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L216">                valueRowBuilder.addColumns(responseTime.toString());</span>
+<span class="nc bnc" id="L217" title="All 2 branches missed.">            } else if (CollectorConstants.KEYWORD.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L218">                valueRowBuilder.addColumns(Integer.toString(keywordNum));</span>
+            } else {
+<span class="nc" id="L220">                valueRowBuilder.addColumns(CommonConstants.NULL_VALUE);</span>
+            }
+<span class="nc" id="L222">        }</span>
+<span class="nc" id="L223">        builder.addValues(valueRowBuilder.build());</span>
+<span class="nc" id="L224">    }</span>
+    
+    private void parseResponseBySiteMap(String resp, List&lt;String&gt; aliasFields,
+                                        CollectRep.MetricsData.Builder builder) {
+<span class="nc" id="L228">        List&lt;String&gt; siteUrls = new LinkedList&lt;&gt;();</span>
+<span class="nc" id="L229">        boolean isXmlFormat = true;</span>
+        try {
+<span class="nc" id="L231">            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();</span>
+<span class="nc" id="L232">            DocumentBuilder db = dbf.newDocumentBuilder();</span>
+<span class="nc" id="L233">            Document document = db.parse(new ByteArrayInputStream(resp.getBytes(StandardCharsets.UTF_8)));</span>
+<span class="nc" id="L234">            NodeList urlList = document.getElementsByTagName(&quot;url&quot;);</span>
+<span class="nc bnc" id="L235" title="All 2 branches missed.">            for (int i = 0; i &lt; urlList.getLength(); i++) {</span>
+<span class="nc" id="L236">                Node urlNode = urlList.item(i);</span>
+<span class="nc" id="L237">                NodeList childNodes = urlNode.getChildNodes();</span>
+<span class="nc bnc" id="L238" title="All 2 branches missed.">                for (int k = 0; k &lt; childNodes.getLength(); k++) {</span>
+<span class="nc" id="L239">                    Node currentNode = childNodes.item(k);</span>
+                    // 区分出text类型的node以及element类型的node
+<span class="nc bnc" id="L241" title="All 4 branches missed.">                    if (currentNode.getNodeType() == Node.ELEMENT_NODE &amp;&amp; &quot;loc&quot;.equals(currentNode.getNodeName())) {</span>
+                        //获取了loc节点的值
+<span class="nc" id="L243">                        siteUrls.add(currentNode.getFirstChild().getNodeValue());</span>
+<span class="nc" id="L244">                        break;</span>
+                    }
+                }
+            }
+<span class="nc" id="L248">        } catch (Exception e) {</span>
+<span class="nc" id="L249">            log.warn(e.getMessage());</span>
+<span class="nc" id="L250">            isXmlFormat = false;</span>
+<span class="nc" id="L251">        }</span>
+        // 若xml解析失败 用txt格式解析
+<span class="nc bnc" id="L253" title="All 2 branches missed.">        if (!isXmlFormat) {</span>
+            try {
+<span class="nc" id="L255">                String[] urls = resp.split(&quot;\n&quot;);</span>
+                // 校验是否是URL
+<span class="nc bnc" id="L257" title="All 2 branches missed.">                if (IpDomainUtil.isHasSchema(urls[0])) {</span>
+<span class="nc" id="L258">                    siteUrls.addAll(Arrays.asList(urls));</span>
+                }
+<span class="nc" id="L260">            } catch (Exception e) {</span>
+<span class="nc" id="L261">                log.warn(e.getMessage(), e);</span>
+<span class="nc" id="L262">            }</span>
+        }
+        // 开始循环访问每个site url 采集其 http status code, responseTime, 异常信息
+<span class="nc bnc" id="L265" title="All 2 branches missed.">        for (String siteUrl : siteUrls) {</span>
+<span class="nc" id="L266">            String errorMsg = &quot;&quot;;</span>
+<span class="nc" id="L267">            Integer statusCode = null;</span>
+<span class="nc" id="L268">            long startTime = System.currentTimeMillis();</span>
+            try {
+<span class="nc" id="L270">                HttpGet httpGet = new HttpGet(siteUrl);</span>
+<span class="nc" id="L271">                CloseableHttpResponse response = CommonHttpClient.getHttpClient().execute(httpGet);</span>
+<span class="nc" id="L272">                statusCode = response.getStatusLine().getStatusCode();</span>
+<span class="nc" id="L273">                EntityUtils.consume(response.getEntity());</span>
+<span class="nc" id="L274">            } catch (ClientProtocolException e1) {</span>
+<span class="nc bnc" id="L275" title="All 2 branches missed.">                if (e1.getCause() != null) {</span>
+<span class="nc" id="L276">                    errorMsg = e1.getCause().getMessage();</span>
+                } else {
+<span class="nc" id="L278">                    errorMsg = e1.getMessage();</span>
+                }
+<span class="nc" id="L280">            } catch (UnknownHostException e2) {</span>
+<span class="nc" id="L281">                errorMsg = &quot;unknown host&quot;;</span>
+<span class="nc" id="L282">            } catch (InterruptedIOException | ConnectException | SSLException e3) {</span>
+<span class="nc" id="L283">                errorMsg = &quot;connect error: &quot; + e3.getMessage();</span>
+<span class="nc" id="L284">            } catch (IOException e4) {</span>
+<span class="nc" id="L285">                errorMsg = &quot;io error: &quot; + e4.getMessage();</span>
+<span class="nc" id="L286">            } catch (Exception e) {</span>
+<span class="nc" id="L287">                errorMsg = &quot;error: &quot; + e.getMessage();</span>
+<span class="nc" id="L288">            }</span>
+<span class="nc" id="L289">            long responseTime = System.currentTimeMillis() - startTime;</span>
+<span class="nc" id="L290">            CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">            for (String alias : aliasFields) {</span>
+<span class="nc bnc" id="L292" title="All 2 branches missed.">                if (CollectorConstants.URL.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L293">                    valueRowBuilder.addColumns(siteUrl);</span>
+<span class="nc bnc" id="L294" title="All 2 branches missed.">                } else if (CollectorConstants.STATUS_CODE.equalsIgnoreCase(alias)) {</span>
+<span class="nc bnc" id="L295" title="All 2 branches missed.">                    valueRowBuilder.addColumns(statusCode == null ?</span>
+<span class="nc" id="L296">                                                       CommonConstants.NULL_VALUE : String.valueOf(statusCode));</span>
+<span class="nc bnc" id="L297" title="All 2 branches missed.">                } else if (CollectorConstants.RESPONSE_TIME.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L298">                    valueRowBuilder.addColumns(String.valueOf(responseTime));</span>
+<span class="nc bnc" id="L299" title="All 2 branches missed.">                } else if (CollectorConstants.ERROR_MSG.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L300">                    valueRowBuilder.addColumns(errorMsg);</span>
+                } else {
+<span class="nc" id="L302">                    valueRowBuilder.addColumns(CommonConstants.NULL_VALUE);</span>
+                }
+<span class="nc" id="L304">            }</span>
+<span class="nc" id="L305">            builder.addValues(valueRowBuilder.build());</span>
+<span class="nc" id="L306">        }</span>
+<span class="nc" id="L307">    }</span>
+    
+    private void parseResponseByXmlPath(String resp, List&lt;String&gt; aliasFields, HttpProtocol http,
+                                        CollectRep.MetricsData.Builder builder) {
+<span class="nc" id="L311">    }</span>
+    
+    private void parseResponseByJsonPath(String resp, List&lt;String&gt; aliasFields, HttpProtocol http,
+                                         CollectRep.MetricsData.Builder builder, Long responseTime) {
+<span class="nc" id="L315">        List&lt;Object&gt; results = JsonPathParser.parseContentWithJsonPath(resp, http.getParseScript());</span>
+<span class="nc" id="L316">        int keywordNum = CollectUtil.countMatchKeyword(resp, http.getKeyword());</span>
+<span class="nc bnc" id="L317" title="All 2 branches missed.">        for (int i = 0; i &lt; results.size(); i++) {</span>
+<span class="nc" id="L318">            Object objectValue = results.get(i);</span>
+            // 监控目标版本问题可能出现属性不存在，为空时过滤。参考app-elasticsearch.yml的name: nodes
+<span class="nc bnc" id="L320" title="All 2 branches missed.">            if (objectValue == null) {</span>
+<span class="nc" id="L321">                continue;</span>
+            }
+<span class="nc bnc" id="L323" title="All 2 branches missed.">            if (objectValue instanceof Map) {</span>
+<span class="nc" id="L324">                Map&lt;String, Object&gt; stringMap = (Map&lt;String, Object&gt;) objectValue;</span>
+<span class="nc" id="L325">                CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L326" title="All 2 branches missed.">                for (String alias : aliasFields) {</span>
+<span class="nc" id="L327">                    Object value = stringMap.get(alias);</span>
+<span class="nc bnc" id="L328" title="All 2 branches missed.">                    if (value != null) {</span>
+<span class="nc" id="L329">                        valueRowBuilder.addColumns(String.valueOf(value));</span>
+                    } else {
+<span class="nc bnc" id="L331" title="All 2 branches missed.">                        if (alias.startsWith(&quot;$.&quot;)) {</span>
+<span class="nc" id="L332">                            List&lt;Object&gt; subResults = JsonPathParser.parseContentWithJsonPath(resp, http.getParseScript() + alias.substring(1));</span>
+<span class="nc bnc" id="L333" title="All 4 branches missed.">                            if (subResults != null &amp;&amp; subResults.size() &gt; i) {</span>
+<span class="nc" id="L334">                                Object resultValue = subResults.get(i);</span>
+<span class="nc bnc" id="L335" title="All 2 branches missed.">                                valueRowBuilder.addColumns(resultValue == null ? CommonConstants.NULL_VALUE : String.valueOf(resultValue));</span>
+<span class="nc" id="L336">                            } else {</span>
+<span class="nc" id="L337">                                valueRowBuilder.addColumns(CommonConstants.NULL_VALUE);</span>
+                            }
+<span class="nc bnc" id="L339" title="All 2 branches missed.">                        } else if (CollectorConstants.RESPONSE_TIME.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L340">                            valueRowBuilder.addColumns(responseTime.toString());</span>
+<span class="nc bnc" id="L341" title="All 2 branches missed.">                        } else if (CollectorConstants.KEYWORD.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L342">                            valueRowBuilder.addColumns(Integer.toString(keywordNum));</span>
+                        } else {
+<span class="nc" id="L344">                            valueRowBuilder.addColumns(CommonConstants.NULL_VALUE);</span>
+                        }
+                    }
+<span class="nc" id="L347">                }</span>
+<span class="nc" id="L348">                builder.addValues(valueRowBuilder.build());</span>
+<span class="nc bnc" id="L349" title="All 2 branches missed.">            } else if (objectValue instanceof String) {</span>
+<span class="nc" id="L350">                String stringValue = (String) objectValue;</span>
+<span class="nc" id="L351">                CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L352" title="All 2 branches missed.">                for (String alias : aliasFields) {</span>
+<span class="nc bnc" id="L353" title="All 2 branches missed.">                    if (CollectorConstants.RESPONSE_TIME.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L354">                        valueRowBuilder.addColumns(responseTime.toString());</span>
+<span class="nc bnc" id="L355" title="All 2 branches missed.">                    } else if (CollectorConstants.KEYWORD.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L356">                        valueRowBuilder.addColumns(Integer.toString(keywordNum));</span>
+                    } else {
+<span class="nc" id="L358">                        valueRowBuilder.addColumns(stringValue);</span>
+                    }
+<span class="nc" id="L360">                }</span>
+<span class="nc" id="L361">                builder.addValues(valueRowBuilder.build());</span>
+            }
+        }
+<span class="nc" id="L364">    }</span>
+    
+    private void parseResponseByPromQl(String resp, List&lt;String&gt; aliasFields, HttpProtocol http,
+                                       CollectRep.MetricsData.Builder builder) {
+<span class="nc" id="L368">        AbstractPrometheusParse prometheusParser = PrometheusParseCreater.getPrometheusParse();</span>
+<span class="nc" id="L369">        prometheusParser.handle(resp, aliasFields, http, builder);</span>
+<span class="nc" id="L370">    }</span>
+    
+<span class="nc" id="L372">    private static final Map&lt;Long, ExporterParser&gt; EXPORTER_PARSER_TABLE = new ConcurrentHashMap&lt;&gt;();</span>
+    
+    private void parseResponseByPrometheusExporter(String resp, List&lt;String&gt; aliasFields,
+                                                   CollectRep.MetricsData.Builder builder) {
+<span class="nc bnc" id="L376" title="All 2 branches missed.">        if (!EXPORTER_PARSER_TABLE.containsKey(builder.getId())) {</span>
+<span class="nc" id="L377">            EXPORTER_PARSER_TABLE.put(builder.getId(), new ExporterParser());</span>
+        }
+<span class="nc" id="L379">        ExporterParser parser = EXPORTER_PARSER_TABLE.get(builder.getId());</span>
+<span class="nc" id="L380">        Map&lt;String, MetricFamily&gt; metricFamilyMap = parser.textToMetric(resp);</span>
+<span class="nc" id="L381">        String metrics = builder.getMetrics();</span>
+<span class="nc bnc" id="L382" title="All 2 branches missed.">        if (metricFamilyMap.containsKey(metrics)) {</span>
+<span class="nc" id="L383">            MetricFamily metricFamily = metricFamilyMap.get(metrics);</span>
+<span class="nc bnc" id="L384" title="All 2 branches missed.">            for (MetricFamily.Metric metric : metricFamily.getMetricList()) {</span>
+<span class="nc" id="L385">                Map&lt;String, String&gt; labelMap = metric.getLabelPair()</span>
+<span class="nc" id="L386">                                                       .stream()</span>
+<span class="nc" id="L387">                                                       .collect(Collectors.toMap(MetricFamily.Label::getName, MetricFamily.Label::getValue));</span>
+<span class="nc" id="L388">                CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L389" title="All 2 branches missed.">                for (String aliasField : aliasFields) {</span>
+<span class="nc bnc" id="L390" title="All 2 branches missed.">                    if (&quot;value&quot;.equals(aliasField)) {</span>
+<span class="nc bnc" id="L391" title="All 2 branches missed.">                        if (metric.getCounter() != null) {</span>
+<span class="nc" id="L392">                            valueRowBuilder.addColumns(String.valueOf(metric.getCounter().getValue()));</span>
+<span class="nc bnc" id="L393" title="All 2 branches missed.">                        } else if (metric.getGauge() != null) {</span>
+<span class="nc" id="L394">                            valueRowBuilder.addColumns(String.valueOf(metric.getGauge().getValue()));</span>
+<span class="nc bnc" id="L395" title="All 2 branches missed.">                        } else if (metric.getUntyped() != null) {</span>
+<span class="nc" id="L396">                            valueRowBuilder.addColumns(String.valueOf(metric.getUntyped().getValue()));</span>
+<span class="nc bnc" id="L397" title="All 2 branches missed.">                        } else if (metric.getInfo() != null) {</span>
+<span class="nc" id="L398">                            valueRowBuilder.addColumns(String.valueOf(metric.getInfo().getValue()));</span>
+                        }
+                    } else {
+<span class="nc" id="L401">                        valueRowBuilder.addColumns(labelMap.get(aliasField));</span>
+                    }
+<span class="nc" id="L403">                }</span>
+<span class="nc" id="L404">                builder.addValues(valueRowBuilder.build());</span>
+<span class="nc" id="L405">            }</span>
+        }
+<span class="nc" id="L407">    }</span>
+    
+    private void parseResponseByDefault(String resp, List&lt;String&gt; aliasFields, HttpProtocol http,
+                                        CollectRep.MetricsData.Builder builder, Long responseTime) {
+<span class="nc" id="L411">        JsonElement element = JsonParser.parseString(resp);</span>
+<span class="nc" id="L412">        int keywordNum = CollectUtil.countMatchKeyword(resp, http.getKeyword());</span>
+<span class="nc bnc" id="L413" title="All 2 branches missed.">        if (element.isJsonArray()) {</span>
+<span class="nc" id="L414">            JsonArray array = element.getAsJsonArray();</span>
+<span class="nc bnc" id="L415" title="All 2 branches missed.">            for (JsonElement jsonElement : array) {</span>
+<span class="nc" id="L416">                getValueFromJson(aliasFields, builder, responseTime, jsonElement, keywordNum);</span>
+<span class="nc" id="L417">            }</span>
+<span class="nc" id="L418">        } else {</span>
+<span class="nc" id="L419">            getValueFromJson(aliasFields, builder, responseTime, element, keywordNum);</span>
+        }
+<span class="nc" id="L421">    }</span>
+    
+    private void getValueFromJson(List&lt;String&gt; aliasFields, CollectRep.MetricsData.Builder builder, Long responseTime, JsonElement element, int keywordNum) {
+<span class="nc bnc" id="L424" title="All 2 branches missed.">        if (element.isJsonObject()) {</span>
+<span class="nc" id="L425">            JsonObject object = element.getAsJsonObject();</span>
+<span class="nc" id="L426">            CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L427" title="All 2 branches missed.">            for (String alias : aliasFields) {</span>
+<span class="nc" id="L428">                JsonElement valueElement = object.get(alias);</span>
+<span class="nc bnc" id="L429" title="All 2 branches missed.">                if (valueElement != null) {</span>
+<span class="nc" id="L430">                    String value = valueElement.getAsString();</span>
+<span class="nc" id="L431">                    valueRowBuilder.addColumns(value);</span>
+<span class="nc" id="L432">                } else {</span>
+<span class="nc bnc" id="L433" title="All 2 branches missed.">                    if (CollectorConstants.RESPONSE_TIME.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L434">                        valueRowBuilder.addColumns(responseTime.toString());</span>
+<span class="nc bnc" id="L435" title="All 2 branches missed.">                    } else if (CollectorConstants.KEYWORD.equalsIgnoreCase(alias)) {</span>
+<span class="nc" id="L436">                        valueRowBuilder.addColumns(Integer.toString(keywordNum));</span>
+                    } else {
+<span class="nc" id="L438">                        valueRowBuilder.addColumns(CommonConstants.NULL_VALUE);</span>
+                    }
+                }
+<span class="nc" id="L441">            }</span>
+<span class="nc" id="L442">            builder.addValues(valueRowBuilder.build());</span>
+        }
+<span class="nc" id="L444">    }</span>
+    
+    /**
+     * create httpContext
+     * @param httpProtocol http protocol
+     * @return context
+     */
+    public HttpContext createHttpContext(HttpProtocol httpProtocol) {
+<span class="nc" id="L452">        HttpProtocol.Authorization auth = httpProtocol.getAuthorization();</span>
+<span class="nc bnc" id="L453" title="All 4 branches missed.">        if (auth != null &amp;&amp; DispatchConstants.DIGEST_AUTH.equals(auth.getType())) {</span>
+<span class="nc" id="L454">            HttpClientContext clientContext = new HttpClientContext();</span>
+<span class="nc bnc" id="L455" title="All 2 branches missed.">            if (StringUtils.hasText(auth.getDigestAuthUsername())</span>
+<span class="nc bnc" id="L456" title="All 2 branches missed.">                        &amp;&amp; StringUtils.hasText(auth.getDigestAuthPassword())) {</span>
+<span class="nc" id="L457">                CredentialsProvider provider = new BasicCredentialsProvider();</span>
+<span class="nc" id="L458">                UsernamePasswordCredentials credentials</span>
+<span class="nc" id="L459">                        = new UsernamePasswordCredentials(auth.getDigestAuthUsername(), auth.getDigestAuthPassword());</span>
+<span class="nc" id="L460">                provider.setCredentials(AuthScope.ANY, credentials);</span>
+<span class="nc" id="L461">                AuthCache authCache = new BasicAuthCache();</span>
+<span class="nc" id="L462">                authCache.put(new HttpHost(httpProtocol.getHost(), Integer.parseInt(httpProtocol.getPort())), new DigestScheme());</span>
+<span class="nc" id="L463">                clientContext.setCredentialsProvider(provider);</span>
+<span class="nc" id="L464">                clientContext.setAuthCache(authCache);</span>
+<span class="nc" id="L465">                return clientContext;</span>
+            }
+        }
+<span class="nc" id="L468">        return null;</span>
+    }
+    
+    /**
+     * create http request
+     * @param httpProtocol http params
+     * @return http uri request
+     */
+    public HttpUriRequest createHttpRequest(HttpProtocol httpProtocol) {
+        RequestBuilder requestBuilder;
+<span class="nc" id="L478">        String httpMethod = httpProtocol.getMethod().toUpperCase();</span>
+<span class="nc bnc" id="L479" title="All 2 branches missed.">        if (HttpMethod.GET.matches(httpMethod)) {</span>
+<span class="nc" id="L480">            requestBuilder = RequestBuilder.get();</span>
+<span class="nc bnc" id="L481" title="All 2 branches missed.">        } else if (HttpMethod.POST.matches(httpMethod)) {</span>
+<span class="nc" id="L482">            requestBuilder = RequestBuilder.post();</span>
+<span class="nc bnc" id="L483" title="All 2 branches missed.">        } else if (HttpMethod.PUT.matches(httpMethod)) {</span>
+<span class="nc" id="L484">            requestBuilder = RequestBuilder.put();</span>
+<span class="nc bnc" id="L485" title="All 2 branches missed.">        } else if (HttpMethod.DELETE.matches(httpMethod)) {</span>
+<span class="nc" id="L486">            requestBuilder = RequestBuilder.delete();</span>
+<span class="nc bnc" id="L487" title="All 2 branches missed.">        } else if (HttpMethod.PATCH.matches(httpMethod)) {</span>
+<span class="nc" id="L488">            requestBuilder = RequestBuilder.patch();</span>
+        } else {
+            // not support the method
+<span class="nc" id="L491">            log.error(&quot;not support the http method: {}.&quot;, httpProtocol.getMethod());</span>
+<span class="nc" id="L492">            return null;</span>
+        }
+        // params
+<span class="nc" id="L495">        Map&lt;String, String&gt; params = httpProtocol.getParams();</span>
+<span class="nc bnc" id="L496" title="All 4 branches missed.">        if (params != null &amp;&amp; !params.isEmpty()) {</span>
+<span class="nc bnc" id="L497" title="All 2 branches missed.">            for (Map.Entry&lt;String, String&gt; param : params.entrySet()) {</span>
+<span class="nc bnc" id="L498" title="All 2 branches missed.">                if (StringUtils.hasText(param.getValue())) {</span>
+<span class="nc" id="L499">                    requestBuilder.addParameter(param.getKey(), param.getValue());</span>
+                }
+<span class="nc" id="L501">            }</span>
+        }
+        // The default request header can be overridden if customized
+        // keep-alive
+<span class="nc" id="L505">        requestBuilder.addHeader(HttpHeaders.CONNECTION, &quot;keep-alive&quot;);</span>
+<span class="nc" id="L506">        requestBuilder.addHeader(HttpHeaders.USER_AGENT, &quot;Mozilla/5.0 (Windows NT 6.1; WOW64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.76 Safari/537.36&quot;);</span>
+        // headers  The custom request header is overwritten here
+<span class="nc" id="L508">        Map&lt;String, String&gt; headers = httpProtocol.getHeaders();</span>
+<span class="nc bnc" id="L509" title="All 4 branches missed.">        if (headers != null &amp;&amp; !headers.isEmpty()) {</span>
+<span class="nc bnc" id="L510" title="All 2 branches missed.">            for (Map.Entry&lt;String, String&gt; header : headers.entrySet()) {</span>
+<span class="nc bnc" id="L511" title="All 2 branches missed.">                if (StringUtils.hasText(header.getValue())) {</span>
+<span class="nc" id="L512">                    requestBuilder.addHeader(CollectUtil.replaceUriSpecialChar(header.getKey()),</span>
+<span class="nc" id="L513">                            CollectUtil.replaceUriSpecialChar(header.getValue()));</span>
+                }
+<span class="nc" id="L515">            }</span>
+        }
+        // add accept
+<span class="nc bnc" id="L518" title="All 2 branches missed.">        if (DispatchConstants.PARSE_DEFAULT.equals(httpProtocol.getParseType())</span>
+<span class="nc bnc" id="L519" title="All 2 branches missed.">                    || DispatchConstants.PARSE_JSON_PATH.equals(httpProtocol.getParseType())) {</span>
+<span class="nc" id="L520">            requestBuilder.addHeader(HttpHeaders.ACCEPT, &quot;application/json&quot;);</span>
+<span class="nc bnc" id="L521" title="All 2 branches missed.">        } else if (DispatchConstants.PARSE_XML_PATH.equals(httpProtocol.getParseType())) {</span>
+<span class="nc" id="L522">            requestBuilder.addHeader(HttpHeaders.ACCEPT, &quot;text/xml,application/xml&quot;);</span>
+        } else {
+<span class="nc" id="L524">            requestBuilder.addHeader(HttpHeaders.ACCEPT, &quot;*/*&quot;);</span>
+        }
+        
+<span class="nc bnc" id="L527" title="All 2 branches missed.">        if (httpProtocol.getAuthorization() != null) {</span>
+<span class="nc" id="L528">            HttpProtocol.Authorization authorization = httpProtocol.getAuthorization();</span>
+<span class="nc bnc" id="L529" title="All 2 branches missed.">            if (DispatchConstants.BEARER_TOKEN.equalsIgnoreCase(authorization.getType())) {</span>
+<span class="nc" id="L530">                String value = DispatchConstants.BEARER + &quot; &quot; + authorization.getBearerTokenToken();</span>
+<span class="nc" id="L531">                requestBuilder.addHeader(HttpHeaders.AUTHORIZATION, value);</span>
+<span class="nc bnc" id="L532" title="All 2 branches missed.">            } else if (DispatchConstants.BASIC_AUTH.equals(authorization.getType())) {</span>
+<span class="nc bnc" id="L533" title="All 2 branches missed.">                if (StringUtils.hasText(authorization.getBasicAuthUsername())</span>
+<span class="nc bnc" id="L534" title="All 2 branches missed.">                            &amp;&amp; StringUtils.hasText(authorization.getBasicAuthPassword())) {</span>
+<span class="nc" id="L535">                    String authStr = authorization.getBasicAuthUsername() + &quot;:&quot; + authorization.getBasicAuthPassword();</span>
+<span class="nc" id="L536">                    String encodedAuth = new String(Base64.encodeBase64(authStr.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8);</span>
+<span class="nc" id="L537">                    requestBuilder.addHeader(HttpHeaders.AUTHORIZATION, DispatchConstants.BASIC + &quot; &quot; + encodedAuth);</span>
+                }
+            }
+        }
+        
+        // if it has payload, would override post params
+<span class="nc bnc" id="L543" title="All 2 branches missed.">        if (StringUtils.hasLength(httpProtocol.getPayload())) {</span>
+<span class="nc" id="L544">            requestBuilder.setEntity(new StringEntity(httpProtocol.getPayload(), StandardCharsets.UTF_8));</span>
+        }
+        
+        // uri
+<span class="nc" id="L548">        String uri = CollectUtil.replaceUriSpecialChar(httpProtocol.getUrl());</span>
+<span class="nc bnc" id="L549" title="All 2 branches missed.">        if (IpDomainUtil.isHasSchema(httpProtocol.getHost())) {</span>
+            
+<span class="nc" id="L551">            requestBuilder.setUri(httpProtocol.getHost() + &quot;:&quot; + httpProtocol.getPort() + uri);</span>
+        } else {
+<span class="nc" id="L553">            String ipAddressType = IpDomainUtil.checkIpAddressType(httpProtocol.getHost());</span>
+<span class="nc bnc" id="L554" title="All 2 branches missed.">            String baseUri = CollectorConstants.IPV6.equals(ipAddressType)</span>
+<span class="nc" id="L555">                                     ? String.format(&quot;[%s]:%s%s&quot;, httpProtocol.getHost(), httpProtocol.getPort(), uri)</span>
+<span class="nc" id="L556">                                     : String.format(&quot;%s:%s%s&quot;, httpProtocol.getHost(), httpProtocol.getPort(), uri);</span>
+<span class="nc" id="L557">            boolean ssl = Boolean.parseBoolean(httpProtocol.getSsl());</span>
+<span class="nc bnc" id="L558" title="All 2 branches missed.">            if (ssl) {</span>
+<span class="nc" id="L559">                requestBuilder.setUri(CollectorConstants.HTTPS_HEADER + baseUri);</span>
+            } else {
+<span class="nc" id="L561">                requestBuilder.setUri(CollectorConstants.HTTP_HEADER + baseUri);</span>
+            }
+        }
+        
+        // custom timeout
+<span class="nc" id="L566">        int timeout = CollectUtil.getTimeout(httpProtocol.getTimeout(), 0);</span>
+<span class="nc bnc" id="L567" title="All 2 branches missed.">        if (timeout &gt; 0) {</span>
+<span class="nc" id="L568">            RequestConfig requestConfig = RequestConfig.custom()</span>
+<span class="nc" id="L569">                                                  .setConnectTimeout(timeout)</span>
+<span class="nc" id="L570">                                                  .setSocketTimeout(timeout)</span>
+<span class="nc" id="L571">                                                  .setRedirectsEnabled(true)</span>
+<span class="nc" id="L572">                                                  .build();</span>
+<span class="nc" id="L573">            requestBuilder.setConfig(requestConfig);</span>
+        }
+<span class="nc" id="L575">        return requestBuilder.build();</span>
+    }
+    
+    private boolean checkSuccessInvoke(Metrics metrics, int statusCode) {
+<span class="nc" id="L579">        List&lt;String&gt; successCodes = metrics.getHttp().getSuccessCodes();</span>
+<span class="nc bnc" id="L580" title="All 2 branches missed.">        Set&lt;Integer&gt; successCodeSet = successCodes != null ? successCodes.stream().map(code -&gt; {</span>
+            try {
+<span class="nc" id="L582">                return Integer.valueOf(code);</span>
+<span class="nc" id="L583">            } catch (Exception ignored) {</span>
+<span class="nc" id="L584">                return null;</span>
+            }
+<span class="nc" id="L586">        }).filter(Objects::nonNull).collect(Collectors.toSet()) : defaultSuccessStatusCodes;</span>
+<span class="nc bnc" id="L587" title="All 2 branches missed.">        if (successCodeSet.isEmpty()) {</span>
+<span class="nc" id="L588">            successCodeSet = defaultSuccessStatusCodes;</span>
+        }
+<span class="nc" id="L590">        return successCodeSet.contains(statusCode);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

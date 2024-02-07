@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MetricFamily.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.http.promethus.exporter</a> &gt; <span class="el_source">MetricFamily.java</span></div><h1>MetricFamily.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.collect.http.promethus.exporter;
+
+import lombok.Data;
+import lombok.ToString;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * @author ceilzcx
+ *
+ */
+<span class="pc bnc" id="L13" title="All 38 branches missed.">@Data</span>
+<span class="nc" id="L14">@ToString</span>
+public class MetricFamily {
+    /**
+     * 指标名称
+     * metric name
+     */
+<span class="nc" id="L20">    private String name;</span>
+
+    /**
+     * 指标描述
+     * metric help
+     */
+<span class="nc" id="L26">    private String help;</span>
+
+    /**
+     * 指标类型
+     * metric type
+     */
+<span class="fc" id="L32">    private MetricType metricType;</span>
+
+    /**
+     * 具体的指标
+     */
+<span class="fc" id="L37">    private List&lt;Metric&gt; metricList;</span>
+
+<span class="pc bnc" id="L39" title="All 70 branches missed.">    @Data</span>
+    public static class Metric {
+
+        /**
+         * 标签数据, 主要对应{}内容
+         */
+<span class="fc" id="L45">        private List&lt;Label&gt; labelPair;</span>
+
+<span class="nc" id="L47">        private Info info;</span>
+
+<span class="nc" id="L49">        private Gauge gauge;</span>
+
+<span class="nc" id="L51">        private Counter counter;</span>
+
+<span class="fc" id="L53">        private Summary summary;</span>
+
+<span class="nc" id="L55">        private Untyped untyped;</span>
+
+<span class="nc" id="L57">        private Histogram histogram;</span>
+
+<span class="nc" id="L59">        private Long timestampMs;</span>
+    }
+
+<span class="pc bnc" id="L62" title="All 22 branches missed.">    @Data</span>
+    public static class Label {
+
+<span class="fc" id="L65">        private String name;</span>
+
+<span class="nc" id="L67">        private String value;</span>
+    }
+
+<span class="pc bnc" id="L70" title="All 8 branches missed.">    @Data</span>
+    public static class Info {
+
+<span class="nc" id="L73">        private double value;</span>
+
+    }
+
+<span class="pc bnc" id="L77" title="All 8 branches missed.">    @Data</span>
+    public static class Counter {
+
+<span class="nc" id="L80">        private double value;</span>
+
+        // Exemplar
+    }
+
+<span class="pc bnc" id="L85" title="All 8 branches missed.">    @Data</span>
+    public static class Gauge {
+
+<span class="nc" id="L88">        private double value;</span>
+    }
+
+<span class="nc bnc" id="L91" title="All 8 branches missed.">    @Data</span>
+    public static class Untyped {
+
+<span class="nc" id="L94">        private double value;</span>
+    }
+
+<span class="pc bnc" id="L97" title="All 18 branches missed.">    @Data</span>
+    public static class Summary {
+
+<span class="nc" id="L100">        private long count;</span>
+
+<span class="nc" id="L102">        private double sum;</span>
+
+<span class="fc" id="L104">        private List&lt;Quantile&gt; quantileList = new ArrayList&lt;&gt;();</span>
+    }
+
+<span class="pc bnc" id="L107" title="All 10 branches missed.">    @Data</span>
+    public static class Quantile {
+        /**
+         * 对应 prometheus 的 quantile 字段
+         */
+<span class="nc" id="L112">        private double xLabel;</span>
+
+<span class="nc" id="L114">        private double value;</span>
+    }
+
+<span class="nc bnc" id="L117" title="All 18 branches missed.">    @Data</span>
+    public static class Histogram {
+
+<span class="nc" id="L120">        private long count;</span>
+
+<span class="nc" id="L122">        private double sum;</span>
+
+<span class="nc" id="L124">        private List&lt;Bucket&gt; bucketList = new ArrayList&lt;&gt;();</span>
+    }
+
+<span class="nc bnc" id="L127" title="All 10 branches missed.">    @Data</span>
+    public static class Bucket {
+
+<span class="nc" id="L130">        private long cumulativeCount;</span>
+
+<span class="nc" id="L132">        private double upperBound;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CommonUtil.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.util</a> &gt; <span class="el_source">CommonUtil.java</span></div><h1>CommonUtil.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.common.util;
+
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalTime;
+import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * common util
+ * @author tomsun28
+ */
+<span class="fc" id="L35">@Slf4j</span>
+<span class="nc" id="L36">public class CommonUtil {</span>
+
+<span class="fc" id="L38">    private static final Pattern EMAIL_PATTERN = Pattern.compile(&quot;\\w+([-+.]\\w+)*@\\w+([-.]\\w+)*\\.\\w+([-.]\\w+)*&quot;);</span>
+
+<span class="fc" id="L40">    private static final Pattern PHONE_PATTERN = Pattern.compile(&quot;^(((13[0-9])|(14[0-9])|(15[0-9])|(16[0-9])|(19[0-9])|(18[0-9])|(17[0-9]))+\\d{8})?$&quot;);</span>
+
+    private static final int PHONE_LENGTH = 11;
+
+    /**
+     * 将字符串str转换为int数字类型
+     *
+     * @param str string
+     * @return double 数字
+     */
+    public static Integer parseStrInteger(final String str) {
+<span class="nc bnc" id="L51" title="All 2 branches missed.">        if (StringUtils.isBlank(str)) {</span>
+<span class="nc" id="L52">            return null;</span>
+        }
+
+        try {
+<span class="nc" id="L56">            return Integer.parseInt(str);</span>
+<span class="nc" id="L57">        } catch (Exception e) {</span>
+<span class="nc" id="L58">            log.debug(e.getMessage(), e);</span>
+<span class="nc" id="L59">            return null;</span>
+        }
+    }
+
+    /**
+     * 将字符串str转换为double数字类型
+     *
+     * @param str string
+     * @return double 数字
+     */
+    public static Double parseStrDouble(final String str) {
+<span class="nc bnc" id="L70" title="All 2 branches missed.">        if (StringUtils.isBlank(str)) {</span>
+<span class="nc" id="L71">            return null;</span>
+        }
+
+        try {
+<span class="nc" id="L75">            return Double.parseDouble(str);</span>
+<span class="nc" id="L76">        } catch (Exception e) {</span>
+<span class="nc" id="L77">            log.debug(e.getMessage(), e);</span>
+<span class="nc" id="L78">            return null;</span>
+        }
+    }
+
+    /**
+     * 将时间字符串str转换为秒
+     *
+     * @param str string
+     * @return double 数字
+     */
+    public static int parseTimeStrToSecond(final String str) {
+<span class="nc bnc" id="L89" title="All 2 branches missed.">        if (StringUtils.isEmpty(str)) {</span>
+<span class="nc" id="L90">            return -1;</span>
+        }
+
+        try {
+<span class="nc" id="L94">            return LocalTime.parse(str).toSecondOfDay();</span>
+<span class="nc" id="L95">        } catch (Exception e) {</span>
+<span class="nc" id="L96">            log.debug(e.getMessage(), e);</span>
+<span class="nc" id="L97">            return -1;</span>
+        }
+    }
+
+    /**
+     * 将字符串str,此字符串可能带单位,转换为double数字类型
+     * 将数值小数点限制到4位
+     *
+     * @param str  string
+     * @param unit 字符串单位
+     * @return string格式的 double 数字 小数点最大到4位
+     */
+    public static String parseDoubleStr(String str, String unit) {
+<span class="pc bpc" id="L110" title="1 of 2 branches missed.">        if (StringUtils.isBlank(str)) {</span>
+<span class="nc" id="L111">            return null;</span>
+        }
+
+        try {
+<span class="pc bpc" id="L115" title="1 of 4 branches missed.">            if (unit != null &amp;&amp; str.endsWith(unit)) {</span>
+<span class="fc" id="L116">                str = str.substring(0, str.length() - unit.length());</span>
+            }
+<span class="fc" id="L118">            BigDecimal bigDecimal = new BigDecimal(str);</span>
+<span class="fc" id="L119">            return bigDecimal.setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+<span class="nc" id="L120">        } catch (Exception e) {</span>
+<span class="nc" id="L121">            log.debug(e.getMessage(), e);</span>
+<span class="nc" id="L122">            return null;</span>
+        }
+    }
+
+    /**
+     * 邮箱格式校验
+     *
+     * @param email 邮箱
+     * @return 是否校验成功
+     */
+    public static boolean validateEmail(final String email) {
+<span class="pc bpc" id="L133" title="1 of 2 branches missed.">        if (StringUtils.isBlank(email)) {</span>
+<span class="nc" id="L134">            return false;</span>
+        }
+
+<span class="fc" id="L137">        Matcher m = EMAIL_PATTERN.matcher(email);</span>
+<span class="fc" id="L138">        return m.find();</span>
+    }
+
+    /**
+     * 手机号格式校验
+     *
+     * @param phoneNum 手机号
+     * @return 是否校验成功
+     */
+    public static boolean validatePhoneNum(final String phoneNum) {
+<span class="pc bpc" id="L148" title="2 of 4 branches missed.">        if (StringUtils.isBlank(phoneNum) || phoneNum.length() != PHONE_LENGTH) {</span>
+<span class="nc" id="L149">            return false;</span>
+        }
+
+<span class="fc" id="L152">        Matcher m = PHONE_PATTERN.matcher(phoneNum);</span>
+<span class="fc" id="L153">        return m.find();</span>
+    }
+
+    public static String getMessageFromThrowable(Throwable throwable) {
+<span class="nc bnc" id="L157" title="All 2 branches missed.">        if (throwable == null) {</span>
+<span class="nc" id="L158">            return &quot;throwable is null, unknown error.&quot;;</span>
+        }
+<span class="nc" id="L160">        String message = null;</span>
+<span class="nc" id="L161">        Throwable cause = throwable.getCause();</span>
+<span class="nc bnc" id="L162" title="All 2 branches missed.">        if (cause != null) {</span>
+<span class="nc" id="L163">            message = cause.getMessage();</span>
+        }
+<span class="nc bnc" id="L165" title="All 4 branches missed.">        if (message == null || &quot;&quot;.equals(message)) {</span>
+<span class="nc" id="L166">            message = throwable.getMessage();</span>
+        }
+<span class="nc bnc" id="L168" title="All 4 branches missed.">        if (message == null || &quot;&quot;.equals(message)) {</span>
+<span class="nc" id="L169">            message = throwable.getLocalizedMessage();</span>
+        }
+<span class="nc bnc" id="L171" title="All 4 branches missed.">        if (message == null || &quot;&quot;.equals(message)) {</span>
+<span class="nc" id="L172">            message = throwable.toString();</span>
+        }
+<span class="nc bnc" id="L174" title="All 4 branches missed.">        if (message == null || &quot;&quot;.equals(message)) {</span>
+<span class="nc" id="L175">            message = &quot;unknown error.&quot;;</span>
+        }
+<span class="nc" id="L177">        return message;</span>
+    }
+
+    public static String removeBlankLine(String value) {
+<span class="nc bnc" id="L181" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L182">            return null;</span>
+        }
+<span class="nc" id="L184">        return value.replaceAll(&quot;(?m)^\\s*$(\\n|\\r\\n)&quot;, &quot;&quot;);</span>
+    }
+
+    public static String getLangMappingValueFromI18nMap(String lang, Map&lt;String, String&gt; i18nMap) {
+<span class="nc bnc" id="L188" title="All 4 branches missed.">        if (i18nMap == null || i18nMap.isEmpty()) {</span>
+<span class="nc" id="L189">            return null;</span>
+        }
+<span class="nc" id="L191">        return Optional.ofNullable(i18nMap.get(lang))</span>
+<span class="nc" id="L192">                .orElse(i18nMap.values().stream()</span>
+<span class="nc" id="L193">                        .findFirst().orElse(null));</span>
+    }
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

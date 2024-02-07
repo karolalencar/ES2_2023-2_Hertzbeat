@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TagServiceImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.service.impl</a> &gt; <span class="el_source">TagServiceImpl.java</span></div><h1>TagServiceImpl.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.manager.service.impl;
+
+import org.apache.commons.collections.CollectionUtils;
+import org.dromara.hertzbeat.common.entity.manager.Monitor;
+import org.dromara.hertzbeat.common.entity.manager.Tag;
+import org.dromara.hertzbeat.manager.dao.TagDao;
+import org.dromara.hertzbeat.manager.service.TagService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+/**
+ * @author tom
+ *
+ */
+@Service
+@Transactional(rollbackFor = Exception.class)
+<span class="fc" id="L45">@Slf4j</span>
+<span class="fc" id="L46">public class TagServiceImpl implements TagService {</span>
+
+    @Autowired
+    private TagDao tagDao;
+
+    @Override
+    public void addTags(List&lt;Tag&gt; tags) {
+<span class="fc" id="L53">        tagDao.saveAll(tags);</span>
+<span class="fc" id="L54">    }</span>
+
+    @Override
+    public void modifyTag(Tag tag) {
+<span class="fc" id="L58">        Optional&lt;Tag&gt; tagOptional = tagDao.findById(tag.getId());</span>
+<span class="fc bfc" id="L59" title="All 2 branches covered.">        if (tagOptional.isPresent()) {</span>
+<span class="fc" id="L60">            tagDao.save(tag);</span>
+        } else {
+<span class="fc" id="L62">            throw new IllegalArgumentException(&quot;The tag is not existed&quot;);</span>
+        }
+<span class="fc" id="L64">    }</span>
+
+    @Override
+    public Page&lt;Tag&gt; getTags(Specification&lt;Tag&gt; specification, PageRequest pageRequest) {
+<span class="fc" id="L68">        return tagDao.findAll(specification, pageRequest);</span>
+    }
+
+    @Override
+    public void deleteTags(HashSet&lt;Long&gt; ids) {
+<span class="fc" id="L73">        tagDao.deleteTagsByIdIn(ids);</span>
+<span class="fc" id="L74">    }</span>
+
+    @Override
+    public List&lt;Tag&gt; listTag(Set&lt;Long&gt; ids) {
+<span class="nc" id="L78">        return tagDao.findByIdIn(ids);</span>
+    }
+
+    @Override
+    public void deleteMonitorSystemTags(Monitor monitor) {
+<span class="nc bnc" id="L83" title="All 2 branches missed.">        if (CollectionUtils.isNotEmpty(monitor.getTags())) {</span>
+<span class="nc bnc" id="L84" title="All 2 branches missed.">            List&lt;Tag&gt; tags = monitor.getTags().stream().filter(tag -&gt; tag.getType() == (byte) 0).collect(Collectors.toList());</span>
+<span class="nc" id="L85">            tagDao.deleteAll(tags);</span>
+        }
+<span class="nc" id="L87">    }</span>
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

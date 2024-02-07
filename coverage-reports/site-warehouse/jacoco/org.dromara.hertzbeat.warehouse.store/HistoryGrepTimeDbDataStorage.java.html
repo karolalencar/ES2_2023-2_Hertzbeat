@@ -1,0 +1,418 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>HistoryGrepTimeDbDataStorage.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-warehouse</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.warehouse.store</a> &gt; <span class="el_source">HistoryGrepTimeDbDataStorage.java</span></div><h1>HistoryGrepTimeDbDataStorage.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.warehouse.store;
+
+import io.greptime.models.*;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.arrow.flight.FlightRuntimeException;
+import org.dromara.hertzbeat.common.entity.dto.Value;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.util.JsonUtil;
+import org.dromara.hertzbeat.common.util.TimePeriodUtil;
+import org.dromara.hertzbeat.warehouse.config.WarehouseProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+import io.greptime.GreptimeDB;
+import io.greptime.options.GreptimeOptions;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Duration;
+import java.time.ZonedDateTime;
+import java.time.temporal.TemporalAmount;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * greptimeDB data storage
+ *
+ * @author zqr10159 tomsun28
+ *
+ */
+@Component
+@ConditionalOnProperty(prefix = &quot;warehouse.store.greptime&quot;,
+		name = &quot;enabled&quot;, havingValue = &quot;true&quot;)
+<span class="nc" id="L53">@Slf4j</span>
+public class HistoryGrepTimeDbDataStorage extends AbstractHistoryDataStorage {
+
+	/**
+	 * storage database
+	 */
+	private static final String STORAGE_DATABASE = &quot;hertzbeat&quot;;
+	private static final String QUERY_HISTORY_SQL
+			= &quot;SELECT CAST (ts AS Int64) ts, instance, \&quot;%s\&quot; FROM %s WHERE ts &gt;= %s and monitor_id = %s order by ts desc;&quot;;
+	private static final String QUERY_HISTORY_WITH_INSTANCE_SQL
+			= &quot;SELECT CAST (ts AS Int64) ts, instance, \&quot;%s\&quot; FROM %s WHERE ts &gt;= %s and monitor_id = %s and instance = %s order by ts desc;&quot;;
+	private static final String QUERY_INSTANCE_SQL
+			= &quot;SELECT DISTINCT instance FROM %s WHERE ts &gt;= now() - interval '1' WEEK&quot;;
+	private static final String QUERY_HISTORY_INTERVAL_WITH_INSTANCE_SQL
+			= &quot;SELECT first, avg ,max, min FROM (SELECT \&quot;%s\&quot; as first FROM %s WHERE monitor_id = %s and ts &gt;= %s and ts &lt; %s ORDER BY ts LIMIT 1) LEFT JOIN (SELECT avg(\&quot;%s\&quot;) as avg, min(\&quot;%s\&quot;) as min, max(\&quot;%s\&quot;) as max FROM %s WHERE ts &gt;= %s and ts &lt; %s) ON 1=1&quot;;
+	private static final String TABLE_NOT_EXIST = &quot;not exist&quot;;
+	private static final String DATABASE_NOT_EXIST = &quot;not exist&quot;;
+	private GreptimeDB greptimeDb;
+
+<span class="nc" id="L72">	public HistoryGrepTimeDbDataStorage(WarehouseProperties properties) {</span>
+<span class="nc" id="L73">		this.serverAvailable = this.initDbSession(properties.getStore().getGreptime());</span>
+<span class="nc" id="L74">	}</span>
+
+	private boolean initDbSession(WarehouseProperties.StoreProperties.GreptimeProperties properties) {
+<span class="nc" id="L77">		String endpoint = properties.getEndpoint();</span>
+<span class="nc" id="L78">		GreptimeOptions opts = GreptimeOptions.newBuilder(endpoint)</span>
+<span class="nc" id="L79">				.writeMaxRetries(1)</span>
+<span class="nc" id="L80">				.readMaxRetries(2)</span>
+<span class="nc" id="L81">				.routeTableRefreshPeriodSeconds(-1)</span>
+<span class="nc" id="L82">				.build();</span>
+<span class="nc" id="L83">		greptimeDb = new GreptimeDB();</span>
+<span class="nc bnc" id="L84" title="All 2 branches missed.">		if (!greptimeDb.init(opts)) {</span>
+<span class="nc" id="L85">			log.error(&quot;Fail to start Greptime client&quot;);</span>
+<span class="nc" id="L86">			return false;</span>
+		}
+<span class="nc" id="L88">		return createDatabase();</span>
+	}
+
+	/**
+	 * Checks if the database exists; if not, creates the Database.
+	 * 检查数据库是否存在；如果不存在，则创建该数据库
+	 */
+	private boolean createDatabase() {
+		// 查询现有数据库
+<span class="nc" id="L97">		QueryRequest showDatabases = QueryRequest.newBuilder()</span>
+<span class="nc" id="L98">				.exprType(SelectExprType.Sql)</span>
+<span class="nc" id="L99">				.ql(&quot;SHOW DATABASES;&quot;)</span>
+<span class="nc" id="L100">				.build();</span>
+<span class="nc" id="L101">		Result&lt;QueryOk, Err&gt; result = null;</span>
+		try {
+<span class="nc" id="L103">			CompletableFuture&lt;Result&lt;QueryOk, Err&gt;&gt; future = greptimeDb.query(showDatabases);</span>
+<span class="nc" id="L104">			result = future.get();</span>
+<span class="nc" id="L105">		} catch (Exception e) {</span>
+<span class="nc" id="L106">			log.info(&quot;TABLE_NOT_EXIST: {}&quot;, e.getMessage());</span>
+<span class="nc" id="L107">			String msg = e.getMessage();</span>
+<span class="nc bnc" id="L108" title="All 4 branches missed.">			if (msg != null &amp;&amp; !msg.contains(DATABASE_NOT_EXIST)) {</span>
+<span class="nc" id="L109">				log.warn(msg);</span>
+			}
+
+<span class="nc" id="L112">		}</span>
+		// Check if the database exists;
+		// 检查现有数据库是否包括“hertzbeat”
+<span class="nc" id="L115">		boolean isDatabaseExist = false;</span>
+<span class="nc bnc" id="L116" title="All 4 branches missed.">		if (result != null &amp;&amp; result.isOk()) {</span>
+<span class="nc" id="L117">			QueryOk queryOk = result.getOk();</span>
+<span class="nc" id="L118">			SelectRows rows = queryOk.getRows();</span>
+<span class="nc" id="L119">			List&lt;Row&gt; rowsList = rows.collect();</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">			for (Row row : rowsList) {</span>
+<span class="nc bnc" id="L121" title="All 2 branches missed.">				for (io.greptime.models.Value value : row.values()) {</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">					if (STORAGE_DATABASE.equals(value.value().toString())) {</span>
+<span class="nc" id="L123">						log.info(&quot;Exist Database {}&quot;, STORAGE_DATABASE);</span>
+<span class="nc" id="L124">						isDatabaseExist = true;</span>
+<span class="nc" id="L125">						break;</span>
+					}
+<span class="nc" id="L127">				}</span>
+<span class="nc" id="L128">			}</span>
+		}
+		// If it does not exist, create database
+		// 如果“hertzbeat”数据库不存在，则创建该数据库
+<span class="nc bnc" id="L132" title="All 2 branches missed.">		if (!isDatabaseExist) {</span>
+<span class="nc" id="L133">			QueryRequest createDatabase = QueryRequest.newBuilder()</span>
+<span class="nc" id="L134">					.exprType(SelectExprType.Sql)</span>
+<span class="nc" id="L135">					.ql(&quot;CREATE DATABASE %s;&quot;, STORAGE_DATABASE)</span>
+<span class="nc" id="L136">					.build();</span>
+			try {
+<span class="nc" id="L138">				CompletableFuture&lt;Result&lt;QueryOk, Err&gt;&gt; createFuture = greptimeDb.query(createDatabase);</span>
+<span class="nc" id="L139">				isDatabaseExist = createFuture.get().isOk();</span>
+<span class="nc" id="L140">				log.info(&quot;Database {} does not exist,and has been created&quot;, STORAGE_DATABASE);</span>
+<span class="nc" id="L141">			} catch (InterruptedException | ExecutionException e) {</span>
+<span class="nc" id="L142">				log.error(&quot;Error creating database&quot;);</span>
+<span class="nc" id="L143">			}</span>
+		}
+<span class="nc" id="L145">		return isDatabaseExist;</span>
+	}
+
+	@Override
+	void saveData(CollectRep.MetricsData metricsData) {
+<span class="nc bnc" id="L150" title="All 4 branches missed.">		if (!isServerAvailable() || metricsData.getCode() != CollectRep.Code.SUCCESS) {</span>
+<span class="nc" id="L151">			return;</span>
+		}
+<span class="nc bnc" id="L153" title="All 2 branches missed.">		if (metricsData.getValuesList().isEmpty()) {</span>
+<span class="nc" id="L154">			log.info(&quot;[warehouse greptime] flush metrics data {} is null, ignore.&quot;, metricsData.getId());</span>
+<span class="nc" id="L155">			return;</span>
+		}
+<span class="nc" id="L157">		String monitorId = String.valueOf(metricsData.getId());</span>
+<span class="nc" id="L158">		String table = metricsData.getApp() + &quot;_&quot; + metricsData.getMetrics();</span>
+<span class="nc" id="L159">		TableSchema.Builder tableSchemaBuilder = TableSchema.newBuilder(TableName.with(STORAGE_DATABASE, table));</span>
+
+<span class="nc" id="L161">		List&lt;SemanticType&gt; semanticTypes = new LinkedList&lt;&gt;(Arrays.asList(SemanticType.Tag, SemanticType.Tag, SemanticType.Timestamp));</span>
+<span class="nc" id="L162">		List&lt;ColumnDataType&gt; dataTypes = new LinkedList&lt;&gt;(Arrays.asList(ColumnDataType.String, ColumnDataType.String, ColumnDataType.TimestampMillisecond));</span>
+<span class="nc" id="L163">		List&lt;String&gt; columnNames = new LinkedList&lt;&gt;(Arrays.asList(&quot;monitor_id&quot;, &quot;instance&quot;, &quot;ts&quot;));</span>
+
+<span class="nc" id="L165">		List&lt;CollectRep.Field&gt; fieldsList = metricsData.getFieldsList();</span>
+<span class="nc bnc" id="L166" title="All 2 branches missed.">		for (CollectRep.Field field : fieldsList) {</span>
+<span class="nc" id="L167">			semanticTypes.add(SemanticType.Field);</span>
+<span class="nc" id="L168">			columnNames.add(field.getName());</span>
+			// handle field type
+<span class="nc bnc" id="L170" title="All 2 branches missed.">			if (field.getType() == CommonConstants.TYPE_NUMBER) {</span>
+<span class="nc" id="L171">				dataTypes.add(ColumnDataType.Float64);</span>
+<span class="nc bnc" id="L172" title="All 2 branches missed.">			} else if (field.getType() == CommonConstants.TYPE_STRING) {</span>
+<span class="nc" id="L173">				dataTypes.add(ColumnDataType.String);</span>
+			}
+<span class="nc" id="L175">		}</span>
+<span class="nc" id="L176">		tableSchemaBuilder.semanticTypes(semanticTypes.toArray(new SemanticType[0]));</span>
+<span class="nc" id="L177">		tableSchemaBuilder.dataTypes(dataTypes.toArray(new ColumnDataType[0]));</span>
+<span class="nc" id="L178">		tableSchemaBuilder.columnNames(columnNames.toArray(new String[0]));</span>
+<span class="nc" id="L179">		WriteRows rows = WriteRows.newBuilder(tableSchemaBuilder.build()).build();</span>
+		try {
+<span class="nc" id="L181">			long now = System.currentTimeMillis();</span>
+<span class="nc" id="L182">			Object[] values = new Object[3 + fieldsList.size()];</span>
+<span class="nc" id="L183">			values[0] = monitorId;</span>
+<span class="nc" id="L184">			values[2] = now;</span>
+<span class="nc bnc" id="L185" title="All 2 branches missed.">			for (CollectRep.ValueRow valueRow : metricsData.getValuesList()) {</span>
+<span class="nc" id="L186">				Map&lt;String, String&gt; labels = new HashMap&lt;&gt;(8);</span>
+<span class="nc bnc" id="L187" title="All 2 branches missed.">				for (int i = 0; i &lt; fieldsList.size(); i++) {</span>
+<span class="nc bnc" id="L188" title="All 2 branches missed.">					if (!CommonConstants.NULL_VALUE.equals(valueRow.getColumns(i))) {</span>
+<span class="nc" id="L189">						CollectRep.Field field = fieldsList.get(i);</span>
+<span class="nc bnc" id="L190" title="All 2 branches missed.">						if (field.getType() == CommonConstants.TYPE_NUMBER) {</span>
+<span class="nc" id="L191">							values[3 + i] = Double.parseDouble(valueRow.getColumns(i));</span>
+<span class="nc bnc" id="L192" title="All 2 branches missed.">						} else if (field.getType() == CommonConstants.TYPE_STRING) {</span>
+<span class="nc" id="L193">							values[3 + i] = valueRow.getColumns(i);</span>
+						}
+<span class="nc bnc" id="L195" title="All 2 branches missed.">						if (field.getLabel()) {</span>
+<span class="nc" id="L196">							labels.put(field.getName(), String.valueOf(values[3 + i]));</span>
+						}
+<span class="nc" id="L198">					} else {</span>
+<span class="nc" id="L199">						values[3 + i] = null;</span>
+					}
+				}
+<span class="nc" id="L202">				values[1] = JsonUtil.toJson(labels);</span>
+<span class="nc" id="L203">				rows.insert(values);</span>
+<span class="nc" id="L204">			}</span>
+<span class="nc" id="L205">			rows.finish();</span>
+<span class="nc" id="L206">			CompletableFuture&lt;Result&lt;WriteOk, Err&gt;&gt; writeFuture = greptimeDb.write(rows);</span>
+			try {
+<span class="nc" id="L208">				Result&lt;WriteOk, Err&gt; result = writeFuture.get(10, TimeUnit.SECONDS);</span>
+<span class="nc bnc" id="L209" title="All 2 branches missed.">				if (result.isOk()) {</span>
+<span class="nc" id="L210">					log.debug(&quot;[warehouse greptime]-Write successful&quot;);</span>
+				} else {
+<span class="nc" id="L212">					log.warn(&quot;[warehouse greptime]--Write failed: {}&quot;, result.getErr().getFailedQl());</span>
+				}
+<span class="nc" id="L214">			} catch (Throwable throwable) {</span>
+<span class="nc" id="L215">				log.error(&quot;[warehouse greptime]--Error occurred: {}&quot;, throwable.getMessage());</span>
+<span class="nc" id="L216">			}</span>
+<span class="nc" id="L217">		} catch (Exception e) {</span>
+<span class="nc" id="L218">			log.error(e.getMessage(), e);</span>
+<span class="nc" id="L219">		}</span>
+<span class="nc" id="L220">	}</span>
+
+	@Override
+	public Map&lt;String, List&lt;Value&gt;&gt; getHistoryMetricData(Long monitorId, String app, String metrics, String metric,
+														 String label, String history) {
+<span class="nc" id="L225">		Map&lt;String, List&lt;Value&gt;&gt; instanceValuesMap = new HashMap&lt;&gt;(8);</span>
+<span class="nc bnc" id="L226" title="All 2 branches missed.">		if (!isServerAvailable()) {</span>
+<span class="nc" id="L227">			log.error(&quot;\n\t---------------Greptime Init Failed---------------\n&quot; +</span>
+					&quot;\t--------------Please Config Greptime--------------\n&quot; +
+					&quot;\t----------Can Not Use Metric History Now----------\n&quot;);
+<span class="nc" id="L230">			return instanceValuesMap;</span>
+		}
+<span class="nc" id="L232">		long expireTime = getExpireTimeFromToken(history);</span>
+<span class="nc" id="L233">		String table = app + &quot;_&quot; + metrics;</span>
+<span class="nc bnc" id="L234" title="All 2 branches missed.">		String selectSql = label == null ?</span>
+<span class="nc" id="L235">				String.format(QUERY_HISTORY_SQL, metric, table, expireTime, monitorId)</span>
+<span class="nc" id="L236">				: String.format(QUERY_HISTORY_WITH_INSTANCE_SQL, metric, table, expireTime, monitorId, label);</span>
+<span class="nc" id="L237">		log.debug(&quot;selectSql: {}&quot;, selectSql);</span>
+<span class="nc" id="L238">		QueryRequest request = QueryRequest.newBuilder()</span>
+<span class="nc" id="L239">				.exprType(SelectExprType.Sql)</span>
+<span class="nc" id="L240">				.databaseName(STORAGE_DATABASE)</span>
+<span class="nc" id="L241">				.ql(selectSql)</span>
+<span class="nc" id="L242">				.build();</span>
+		try {
+<span class="nc" id="L244">			CompletableFuture&lt;Result&lt;QueryOk, Err&gt;&gt; future = greptimeDb.query(request);</span>
+<span class="nc" id="L245">			Result&lt;QueryOk, Err&gt; result = future.get();</span>
+<span class="nc bnc" id="L246" title="All 4 branches missed.">			if (result != null &amp;&amp; result.isOk()) {</span>
+<span class="nc" id="L247">				QueryOk queryOk = result.getOk();</span>
+<span class="nc" id="L248">				SelectRows rows = queryOk.getRows();</span>
+<span class="nc" id="L249">				List&lt;Map&lt;String, Object&gt;&gt; maps = rows.collectToMaps();</span>
+				List&lt;Value&gt; valueList;
+<span class="nc bnc" id="L251" title="All 2 branches missed.">				for (Map&lt;String, Object&gt; map : maps) {</span>
+<span class="nc bnc" id="L252" title="All 2 branches missed.">					String instanceValue = map.get(&quot;instance&quot;) == null ? &quot;&quot; : map.get(&quot;instance&quot;).toString();</span>
+<span class="nc" id="L253">					Object valueObj = map.get(metric);</span>
+<span class="nc bnc" id="L254" title="All 2 branches missed.">					if (valueObj == null) {</span>
+<span class="nc" id="L255">						continue;</span>
+					}
+<span class="nc" id="L257">					String strValue = new BigDecimal(valueObj.toString()).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+<span class="nc" id="L258">					valueList = instanceValuesMap.computeIfAbsent(instanceValue, k -&gt; new LinkedList&lt;&gt;());</span>
+<span class="nc" id="L259">					valueList.add(new Value(strValue, (long) map.get(&quot;ts&quot;)));</span>
+<span class="nc" id="L260">				}</span>
+			}
+<span class="nc" id="L262">		} catch (FlightRuntimeException e) {</span>
+<span class="nc" id="L263">			String msg = e.getMessage();</span>
+<span class="nc bnc" id="L264" title="All 4 branches missed.">			if (msg != null &amp;&amp; msg.contains(TABLE_NOT_EXIST)) {</span>
+<span class="nc" id="L265">				List&lt;Value&gt; valueList = instanceValuesMap.computeIfAbsent(metric, k -&gt; new LinkedList&lt;&gt;());</span>
+<span class="nc" id="L266">				valueList.add(new Value(null, System.currentTimeMillis()));</span>
+<span class="nc" id="L267">				log.info(&quot;[warehouse greptime]-TABLE_NOT_EXIST: {}&quot;, table);</span>
+			}
+<span class="nc" id="L269">		} catch (Exception e) {</span>
+<span class="nc" id="L270">			log.error(e.getMessage(), e);</span>
+<span class="nc" id="L271">		}</span>
+<span class="nc" id="L272">		return instanceValuesMap;</span>
+	}
+
+	private long getExpireTimeFromToken(String history) {
+		long expireTime;
+		try {
+<span class="nc" id="L278">			TemporalAmount temporalAmount = TimePeriodUtil.parseTokenTime(history);</span>
+<span class="nc" id="L279">			ZonedDateTime dateTime = ZonedDateTime.now().minus(temporalAmount);</span>
+<span class="nc" id="L280">			expireTime = dateTime.toEpochSecond() * 1000;</span>
+<span class="nc" id="L281">		} catch (Exception e) {</span>
+<span class="nc" id="L282">			log.error(&quot;parse history time error: {}. use default: 6h&quot;, e.getMessage());</span>
+<span class="nc" id="L283">			ZonedDateTime dateTime = ZonedDateTime.now().minus(Duration.ofHours(6));</span>
+<span class="nc" id="L284">			expireTime = dateTime.toEpochSecond() * 1000;</span>
+<span class="nc" id="L285">		}</span>
+<span class="nc" id="L286">		return expireTime;</span>
+	}
+
+	@Override
+	public Map&lt;String, List&lt;Value&gt;&gt; getHistoryIntervalMetricData(Long monitorId, String app, String metrics,
+																 String metric, String label, String history) {
+<span class="nc" id="L292">		Map&lt;String, List&lt;Value&gt;&gt; instanceValuesMap = new HashMap&lt;&gt;(8);</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">		if (!isServerAvailable()) {</span>
+<span class="nc" id="L294">			log.error(&quot;\n\t---------------Greptime Init Failed---------------\n&quot; +</span>
+					&quot;\t--------------Please Config Greptime--------------\n&quot; +
+					&quot;\t----------Can Not Use Metric History Now----------\n&quot;);
+<span class="nc" id="L297">			return instanceValuesMap;</span>
+		}
+<span class="nc" id="L299">		String table = app + &quot;_&quot; + metrics;</span>
+<span class="nc" id="L300">		List&lt;String&gt; instances = new LinkedList&lt;&gt;();</span>
+<span class="nc bnc" id="L301" title="All 2 branches missed.">		if (label != null) {</span>
+<span class="nc" id="L302">			instances.add(label);</span>
+		}
+<span class="nc bnc" id="L304" title="All 2 branches missed.">		if (instances.isEmpty()) {</span>
+<span class="nc" id="L305">			String selectSql = String.format(QUERY_INSTANCE_SQL, table);</span>
+<span class="nc" id="L306">			log.debug(&quot;selectSql: {}&quot;, selectSql);</span>
+<span class="nc" id="L307">			QueryRequest request = QueryRequest.newBuilder()</span>
+<span class="nc" id="L308">					.exprType(SelectExprType.Sql)</span>
+<span class="nc" id="L309">					.databaseName(STORAGE_DATABASE)</span>
+<span class="nc" id="L310">					.ql(selectSql)</span>
+<span class="nc" id="L311">					.build();</span>
+			try {
+<span class="nc" id="L313">				CompletableFuture&lt;Result&lt;QueryOk, Err&gt;&gt; future = greptimeDb.query(request);</span>
+<span class="nc" id="L314">				Result&lt;QueryOk, Err&gt; result = future.get();</span>
+<span class="nc bnc" id="L315" title="All 4 branches missed.">				if (result != null &amp;&amp; result.isOk()) {</span>
+<span class="nc" id="L316">					QueryOk queryOk = result.getOk();</span>
+<span class="nc" id="L317">					SelectRows rows = queryOk.getRows();</span>
+<span class="nc bnc" id="L318" title="All 2 branches missed.">					while (rows.hasNext()) {</span>
+<span class="nc" id="L319">						Row row = rows.next();</span>
+<span class="nc bnc" id="L320" title="All 2 branches missed.">						if (row != null) {</span>
+<span class="nc" id="L321">							List&lt;io.greptime.models.Value&gt; values = row.values();</span>
+<span class="nc bnc" id="L322" title="All 2 branches missed.">							for (io.greptime.models.Value value : values) {</span>
+<span class="nc" id="L323">								log.debug(&quot;value:{}&quot;, value.value());</span>
+<span class="nc" id="L324">								Object instanceValue = value.value();</span>
+<span class="nc bnc" id="L325" title="All 4 branches missed.">								if (instanceValue == null || &quot;&quot;.equals(instanceValue)) {</span>
+<span class="nc" id="L326">									instances.add(&quot;''&quot;);</span>
+								} else {
+<span class="nc" id="L328">									instances.add(instanceValue.toString());</span>
+								}
+<span class="nc" id="L330">							}</span>
+						}
+
+<span class="nc" id="L333">					}</span>
+				}
+<span class="nc" id="L335">			} catch (FlightRuntimeException e) {</span>
+<span class="nc" id="L336">				String msg = e.getMessage();</span>
+<span class="nc bnc" id="L337" title="All 4 branches missed.">				if (msg != null &amp;&amp; msg.contains(TABLE_NOT_EXIST)) {</span>
+<span class="nc" id="L338">					log.info(&quot;[warehouse greptime]-TABLE_NOT_EXIST: {}&quot;, table);</span>
+				}
+<span class="nc" id="L340">			} catch (Exception e) {</span>
+<span class="nc" id="L341">				log.error(e.getMessage(), e);</span>
+<span class="nc" id="L342">			}</span>
+		}
+		// TODO greptime未找到合适的sql函数处理，暂时使用代码实现，将来greptime更新文档改用sql实现
+		long endTime;
+<span class="nc" id="L346">		long startTime = getExpireTimeFromToken(history);</span>
+
+<span class="nc" id="L348">		Calendar cal = Calendar.getInstance();</span>
+
+<span class="nc" id="L350">		long interval = System.currentTimeMillis() - startTime;</span>
+<span class="nc" id="L351">		long fourHourCount = TimeUnit.MILLISECONDS.toHours(interval) / 4;</span>
+<span class="nc bnc" id="L352" title="All 2 branches missed.">		for (int i = 0; i &lt; fourHourCount; i++) {</span>
+<span class="nc" id="L353">			cal.clear();</span>
+<span class="nc" id="L354">			cal.setTimeInMillis(startTime);</span>
+<span class="nc" id="L355">			cal.add(Calendar.HOUR_OF_DAY, 4);</span>
+<span class="nc" id="L356">			endTime = cal.getTimeInMillis();</span>
+
+<span class="nc bnc" id="L358" title="All 2 branches missed.">			for (String instanceValue : instances) {</span>
+<span class="nc" id="L359">				String selectSql = String.format(QUERY_HISTORY_INTERVAL_WITH_INSTANCE_SQL, metric, table, monitorId, startTime, endTime, metric, metric, metric, table, startTime, endTime);</span>
+
+<span class="nc" id="L361">				log.debug(&quot;selectSql: {}&quot;, selectSql);</span>
+<span class="nc" id="L362">				QueryRequest request = QueryRequest.newBuilder()</span>
+<span class="nc" id="L363">						.exprType(SelectExprType.Sql)</span>
+<span class="nc" id="L364">						.databaseName(STORAGE_DATABASE)</span>
+<span class="nc" id="L365">						.ql(selectSql)</span>
+<span class="nc" id="L366">						.build();</span>
+<span class="nc" id="L367">				List&lt;Value&gt; values = instanceValuesMap.computeIfAbsent(instanceValue, k -&gt; new LinkedList&lt;&gt;());</span>
+				try {
+<span class="nc" id="L369">					CompletableFuture&lt;Result&lt;QueryOk, Err&gt;&gt; future = greptimeDb.query(request);</span>
+<span class="nc" id="L370">					Result&lt;QueryOk, Err&gt; result = future.get();</span>
+<span class="nc" id="L371">					log.debug(&quot;result:{}&quot;, result);</span>
+<span class="nc bnc" id="L372" title="All 4 branches missed.">					if (result != null &amp;&amp; result.isOk()) {</span>
+<span class="nc" id="L373">						QueryOk queryOk = result.getOk();</span>
+<span class="nc" id="L374">						SelectRows rows = queryOk.getRows();</span>
+<span class="nc" id="L375">						String[] col = new String[4];</span>
+<span class="nc bnc" id="L376" title="All 2 branches missed.">						while (rows.hasNext()) {</span>
+<span class="nc" id="L377">							Row row = rows.next();</span>
+<span class="nc bnc" id="L378" title="All 2 branches missed.">							if (!row.values().isEmpty()) {</span>
+<span class="nc bnc" id="L379" title="All 2 branches missed.">								for (int j = 0; j &lt; row.values().size(); j++) {</span>
+<span class="nc" id="L380">									log.debug(&quot;value:{}&quot;, row.values().get(j));</span>
+<span class="nc" id="L381">									String colStr = new BigDecimal(row.values().get(j).value().toString()).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+<span class="nc" id="L382">									col[j] = colStr;</span>
+								}
+<span class="nc" id="L384">								Value valueBuild = Value.builder()</span>
+<span class="nc" id="L385">										.origin(col[0]).mean(col[1])</span>
+<span class="nc" id="L386">										.min(col[2]).max(col[3])</span>
+<span class="nc" id="L387">										.time(System.currentTimeMillis())</span>
+<span class="nc" id="L388">										.build();</span>
+<span class="nc" id="L389">								values.add(valueBuild);</span>
+							}
+<span class="nc" id="L391">						}</span>
+<span class="nc" id="L392">						log.debug(&quot;[warehouse greptime] values:{}&quot;, values);</span>
+					}
+<span class="nc" id="L394">				} catch (FlightRuntimeException e) {</span>
+<span class="nc" id="L395">					String msg = e.getMessage();</span>
+<span class="nc bnc" id="L396" title="All 4 branches missed.">					if (msg != null &amp;&amp; msg.contains(TABLE_NOT_EXIST)) {</span>
+<span class="nc" id="L397">						List&lt;Value&gt; valueList = instanceValuesMap.computeIfAbsent(metric, k -&gt; new LinkedList&lt;&gt;());</span>
+<span class="nc" id="L398">						valueList.add(new Value(null, System.currentTimeMillis()));</span>
+<span class="nc" id="L399">						log.info(&quot;[warehouse greptime]-TABLE_NOT_EXIST: {}&quot;, table);</span>
+					}
+<span class="nc" id="L401">				} catch (Exception e) {</span>
+<span class="nc" id="L402">					log.error(e.getMessage(), e);</span>
+<span class="nc" id="L403">				}</span>
+<span class="nc" id="L404">			}</span>
+<span class="nc" id="L405">			startTime = endTime;</span>
+		}
+
+<span class="nc" id="L408">		return instanceValuesMap;</span>
+	}
+
+	@Override
+	public void destroy() {
+<span class="nc bnc" id="L413" title="All 2 branches missed.">		if (this.greptimeDb != null) {</span>
+<span class="nc" id="L414">			this.greptimeDb.shutdownGracefully();</span>
+		}
+<span class="nc" id="L416">	}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AlertSilence.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.entity.alerter</a> &gt; <span class="el_source">AlertSilence.java</span></div><h1>AlertSilence.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.common.entity.alerter;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.dromara.hertzbeat.common.entity.manager.JsonByteListAttributeConverter;
+import org.dromara.hertzbeat.common.entity.manager.JsonTagListAttributeConverter;
+import org.dromara.hertzbeat.common.entity.manager.TagItem;
+import org.hibernate.validator.constraints.Length;
+import org.springframework.data.annotation.CreatedBy;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedBy;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import javax.persistence.*;
+import javax.validation.constraints.NotNull;
+import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
+import java.util.List;
+
+import static io.swagger.v3.oas.annotations.media.Schema.AccessMode.READ_ONLY;
+import static io.swagger.v3.oas.annotations.media.Schema.AccessMode.READ_WRITE;
+
+/**
+ * Alert Silence strategy entity
+ * @author tomsun28
+ */
+@Entity
+@Table(name = &quot;hzb_alert_silence&quot;)
+<span class="nc bnc" id="L50" title="All 118 branches missed.">@Data</span>
+<span class="nc" id="L51">@Builder</span>
+<span class="nc" id="L52">@AllArgsConstructor</span>
+<span class="nc" id="L53">@NoArgsConstructor</span>
+@Schema(description = &quot;Alert Silence Policy Entity | 告警静默策略实体&quot;)
+@EntityListeners(AuditingEntityListener.class)
+public class AlertSilence {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Schema(title = &quot;Alert Silence Policy Entity Primary Key Index ID&quot;,
+            description = &quot;告警静默策略实体主键索引ID&quot;,
+            example = &quot;87584674384&quot;, accessMode = READ_ONLY)
+<span class="nc" id="L63">    private Long id;</span>
+
+    @Schema(title = &quot;Policy name&quot;,
+            description = &quot;策略名称&quot;,
+            example = &quot;silence-1&quot;, accessMode = READ_WRITE)
+    @Length(max = 100)
+    @NotNull
+<span class="nc" id="L70">    private String name;</span>
+
+<span class="nc" id="L72">    @Schema(title = &quot;Whether to enable this policy&quot;,</span>
+            description = &quot;是否启用此策略&quot;,
+            example = &quot;true&quot;, accessMode = READ_WRITE)
+<span class="nc" id="L75">    private boolean enable = true;</span>
+    
+<span class="nc" id="L77">    @Schema(title = &quot;Whether to match all&quot;,</span>
+            description = &quot;是否应用匹配所有&quot;,
+            example = &quot;true&quot;, accessMode = READ_WRITE)
+<span class="nc" id="L80">    private boolean matchAll = true;</span>
+
+    @Schema(title = &quot;Silence type 0: once, 1:cyc&quot;,
+            description = &quot;静默类型 0:一次性静默 1:周期性静默&quot;, accessMode = READ_WRITE)
+    @NotNull
+<span class="nc" id="L85">    private Byte type;</span>
+
+    @Schema(title = &quot;Silenced alerts num&quot;,
+            description = &quot;已静默告警次数&quot;, accessMode = READ_WRITE)
+<span class="nc" id="L89">    private Integer times;</span>
+
+    @Schema(title = &quot;Alarm Level 0:High-Emergency-Critical Alarm 1:Medium-Critical-Critical Alarm 2:Low-Warning-Warning&quot;,
+            example = &quot;[1]&quot;, accessMode = READ_WRITE)
+    @Convert(converter = JsonByteListAttributeConverter.class)
+<span class="nc" id="L94">    private List&lt;Byte&gt; priorities;</span>
+
+    @Schema(description = &quot;匹配告警信息标签(monitorId:xxx,monitorName:xxx)&quot;, example = &quot;{name: key1, value: value1}&quot;,
+            accessMode = READ_WRITE)
+    @Convert(converter = JsonTagListAttributeConverter.class)
+    @Column(length = 2048)
+<span class="nc" id="L100">    private List&lt;TagItem&gt; tags;</span>
+
+    @Schema(title = &quot;周期性静默时有效 星期几,多选,全选或空则为每天 7:周日 1:周一 2:周二 3:周三 4:周四 5:周五 6:周六&quot;, example = &quot;[0,1]&quot;, accessMode = READ_WRITE)
+    @Convert(converter = JsonByteListAttributeConverter.class)
+<span class="nc" id="L104">    private List&lt;Byte&gt; days;</span>
+
+    @Schema(title = &quot;限制时间段起始&quot;, example = &quot;00:00:00&quot;, accessMode = READ_WRITE)
+<span class="nc" id="L107">    private ZonedDateTime periodStart;</span>
+
+    @Schema(title = &quot;限制时间段截止&quot;, example = &quot;23:59:59&quot;, accessMode = READ_WRITE)
+<span class="nc" id="L110">    private ZonedDateTime periodEnd;</span>
+
+    @Schema(title = &quot;The creator of this record&quot;, example = &quot;tom&quot;, accessMode = READ_ONLY)
+    @CreatedBy
+<span class="nc" id="L114">    private String creator;</span>
+
+    @Schema(title = &quot;This record was last modified by&quot;, example = &quot;tom&quot;, accessMode = READ_ONLY)
+    @LastModifiedBy
+<span class="nc" id="L118">    private String modifier;</span>
+
+    @Schema(title = &quot;This record creation time (millisecond timestamp)&quot;, accessMode = READ_ONLY)
+    @CreatedDate
+<span class="nc" id="L122">    private LocalDateTime gmtCreate;</span>
+
+    @Schema(title = &quot;Record the latest modification time (timestamp in milliseconds)&quot;, accessMode = READ_ONLY)
+    @LastModifiedDate
+<span class="nc" id="L126">    private LocalDateTime gmtUpdate;</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

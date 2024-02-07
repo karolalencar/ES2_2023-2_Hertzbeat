@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SmtpCollectImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.smtp</a> &gt; <span class="el_source">SmtpCollectImpl.java</span></div><h1>SmtpCollectImpl.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.collect.smtp;
+
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.net.smtp.SMTP;
+import org.dromara.hertzbeat.collector.collect.AbstractCollect;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.collector.util.CollectUtil;
+import org.dromara.hertzbeat.common.constants.CollectorConstants;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.job.protocol.SmtpProtocol;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+
+import java.io.IOException;
+import java.net.SocketException;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
+/**
+ * @author dongfeng
+ */
+<span class="nc" id="L26">@Slf4j</span>
+public class SmtpCollectImpl extends AbstractCollect {
+<span class="nc" id="L28">    public SmtpCollectImpl() {</span>
+<span class="nc" id="L29">    }</span>
+
+    @Override
+    public void collect(CollectRep.MetricsData.Builder builder, long monitorId, String app, Metrics metrics) {
+<span class="nc" id="L33">        long startTime = System.currentTimeMillis();</span>
+<span class="nc bnc" id="L34" title="All 4 branches missed.">        if (metrics == null || metrics.getSmtp() == null) {</span>
+<span class="nc" id="L35">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L36">            builder.setMsg(&quot;Smtp collect must has Smtp params&quot;);</span>
+<span class="nc" id="L37">            return;</span>
+        }
+<span class="nc" id="L39">        SmtpProtocol smtpProtocol = metrics.getSmtp();</span>
+<span class="nc" id="L40">        String host = smtpProtocol.getHost();</span>
+<span class="nc" id="L41">        String port = smtpProtocol.getPort();</span>
+<span class="nc" id="L42">        int timeout = CollectUtil.getTimeout(smtpProtocol.getTimeout());</span>
+<span class="nc" id="L43">        SMTP smtp = null;</span>
+        try {
+<span class="nc" id="L45">            smtp = new SMTP();</span>
+<span class="nc" id="L46">            smtp.setConnectTimeout(timeout);</span>
+<span class="nc" id="L47">            smtp.setCharset(StandardCharsets.UTF_8);</span>
+<span class="nc" id="L48">            smtp.connect(host, Integer.parseInt(port));</span>
+<span class="nc bnc" id="L49" title="All 2 branches missed.">            if (smtp.isConnected()) {</span>
+<span class="nc" id="L50">                long responseTime = System.currentTimeMillis() - startTime;</span>
+<span class="nc" id="L51">                List&lt;String&gt; aliasFields = metrics.getAliasFields();</span>
+
+<span class="nc" id="L53">                Map&lt;String, String&gt; resultMap = execCmdAndParseResult(smtp, smtpProtocol.getCmd(), smtpProtocol);</span>
+<span class="nc" id="L54">                resultMap.put(CollectorConstants.RESPONSE_TIME, Long.toString(responseTime));</span>
+<span class="nc bnc" id="L55" title="All 2 branches missed.">                if (resultMap.size() &lt; aliasFields.size()) {</span>
+<span class="nc" id="L56">                    log.error(&quot;smtp response data not enough: {}&quot;, resultMap);</span>
+<span class="nc" id="L57">                    builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L58">                    builder.setMsg(&quot;The cmd execution results do not match the expected number of metrics.&quot;);</span>
+<span class="nc" id="L59">                    return;</span>
+                }
+<span class="nc" id="L61">                CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L62" title="All 2 branches missed.">                for (String field : aliasFields) {</span>
+<span class="nc" id="L63">                    String fieldValue = resultMap.get(field);</span>
+<span class="nc" id="L64">                    valueRowBuilder.addColumns(Objects.requireNonNullElse(fieldValue, CommonConstants.NULL_VALUE));</span>
+<span class="nc" id="L65">                }</span>
+<span class="nc" id="L66">                builder.addValues(valueRowBuilder.build());</span>
+<span class="nc" id="L67">            } else {</span>
+<span class="nc" id="L68">                builder.setCode(CollectRep.Code.UN_CONNECTABLE);</span>
+<span class="nc" id="L69">                builder.setMsg(&quot;Peer connect failed，Timeout &quot; + timeout + &quot;ms&quot;);</span>
+<span class="nc" id="L70">                return;</span>
+            }
+<span class="nc" id="L72">            smtp.disconnect();</span>
+<span class="nc" id="L73">        } catch (SocketException socketException) {</span>
+<span class="nc" id="L74">            String errorMsg = CommonUtil.getMessageFromThrowable(socketException);</span>
+<span class="nc" id="L75">            log.debug(errorMsg);</span>
+<span class="nc" id="L76">            builder.setCode(CollectRep.Code.UN_CONNECTABLE);</span>
+<span class="nc" id="L77">            builder.setMsg(&quot;The peer refused to connect: service port does not listening or firewall: &quot; + errorMsg);</span>
+<span class="nc" id="L78">        } catch (IOException ioException) {</span>
+<span class="nc" id="L79">            String errorMsg = CommonUtil.getMessageFromThrowable(ioException);</span>
+<span class="nc" id="L80">            log.info(errorMsg);</span>
+<span class="nc" id="L81">            builder.setCode(CollectRep.Code.UN_CONNECTABLE);</span>
+<span class="nc" id="L82">            builder.setMsg(&quot;Peer connect failed: &quot; + errorMsg);</span>
+<span class="nc" id="L83">        } catch (Exception e) {</span>
+<span class="nc" id="L84">            String errorMsg = CommonUtil.getMessageFromThrowable(e);</span>
+<span class="nc" id="L85">            log.warn(errorMsg, e);</span>
+<span class="nc" id="L86">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L87">            builder.setMsg(errorMsg);</span>
+        } finally {
+<span class="nc bnc" id="L89" title="All 2 branches missed.">            if (smtp != null) {</span>
+                try {
+<span class="nc" id="L91">                    smtp.disconnect();</span>
+<span class="nc" id="L92">                } catch (Exception e) {</span>
+<span class="nc" id="L93">                    log.warn(e.getMessage());</span>
+<span class="nc" id="L94">                }</span>
+            }
+        }
+<span class="nc" id="L97">    }</span>
+
+    @Override
+    public String supportProtocol() {
+<span class="nc" id="L101">        return DispatchConstants.PROTOCOL_SMTP;</span>
+    }
+
+    private static Map&lt;String, String&gt; execCmdAndParseResult(SMTP smtp, String cmd, SmtpProtocol smtpProtocol) throws IOException {
+<span class="nc" id="L105">        Map&lt;String, String&gt; result = new HashMap&lt;&gt;(8);</span>
+        // 存入smtp连接的响应
+<span class="nc" id="L107">        result.put(&quot;smtpBanner&quot;, smtp.getReplyString());</span>
+<span class="nc" id="L108">        smtp.helo(smtpProtocol.getEmail());</span>
+        // 获取helo的响应
+<span class="nc" id="L110">        String replyString = smtp.getReplyString();</span>
+<span class="nc" id="L111">        result.put(&quot;heloInfo&quot;, replyString);</span>
+<span class="nc" id="L112">        String[] lines = replyString.split(&quot;\n&quot;);</span>
+<span class="nc bnc" id="L113" title="All 2 branches missed.">        for (String line : lines) {</span>
+<span class="nc bnc" id="L114" title="All 2 branches missed.">            if (line.startsWith(&quot;250&quot;)) {</span>
+<span class="nc" id="L115">                result.put(&quot;response&quot;, &quot;OK&quot;);</span>
+            }
+        }
+<span class="nc" id="L118">        return result;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

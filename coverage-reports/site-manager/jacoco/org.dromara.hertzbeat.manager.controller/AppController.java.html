@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AppController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.controller</a> &gt; <span class="el_source">AppController.java</span></div><h1>AppController.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.manager.controller;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.dromara.hertzbeat.common.entity.dto.Message;
+import org.dromara.hertzbeat.common.entity.job.Job;
+import org.dromara.hertzbeat.common.entity.manager.ParamDefine;
+import org.dromara.hertzbeat.manager.pojo.dto.Hierarchy;
+import org.dromara.hertzbeat.manager.pojo.dto.MonitorDefineDto;
+import org.dromara.hertzbeat.manager.service.AppService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import javax.validation.Valid;
+import java.util.List;
+import java.util.Locale;
+
+import static org.dromara.hertzbeat.common.constants.CommonConstants.FAIL_CODE;
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
+
+/**
+ * Monitoring Type Management API
+ * 监控类型管理API
+ *
+ * @author tomsun28
+ */
+@Tag(name = &quot;Monitor Type Manage API | 监控类型管理API&quot;)
+@RestController
+@RequestMapping(path = &quot;/api/apps&quot;, produces = {APPLICATION_JSON_VALUE})
+<span class="fc" id="L49">public class AppController {</span>
+
+<span class="fc" id="L51">    private static final String[] RISKY_STR_ARR = {&quot;ScriptEngineManager&quot;, &quot;URLClassLoader&quot;};</span>
+
+    @Autowired
+    private AppService appService;
+
+    @GetMapping(path = &quot;/{app}/params&quot;)
+    @Operation(summary = &quot;The structure of the input parameters required to specify the monitoring type according to the app query&quot;, description = &quot;根据app查询指定监控类型的需要输入参数的结构&quot;)
+    public ResponseEntity&lt;Message&lt;List&lt;ParamDefine&gt;&gt;&gt; queryAppParamDefines(
+            @Parameter(description = &quot;en: Monitoring type name,zh: 监控类型名称&quot;, example = &quot;api&quot;) @PathVariable(&quot;app&quot;) final String app) {
+<span class="fc" id="L60">        List&lt;ParamDefine&gt; paramDefines = appService.getAppParamDefines(app.toLowerCase());</span>
+<span class="fc" id="L61">        return ResponseEntity.ok(Message.success(paramDefines));</span>
+    }
+
+    @GetMapping(path = &quot;/{monitorId}/pushdefine&quot;)
+    @Operation(summary = &quot;The definition structure of the specified monitoring type according to the push query&quot;, description = &quot;根据monitorId查询push类型的定义结构&quot;)
+    public ResponseEntity&lt;Message&lt;Job&gt;&gt; queryPushDefine(
+            @Parameter(description = &quot;en: Monitoring type name,zh: 监控类型名称&quot;, example = &quot;api&quot;) @PathVariable(&quot;monitorId&quot;) final Long monitorId) {
+<span class="nc" id="L68">        Job define = appService.getPushDefine(monitorId);</span>
+<span class="nc" id="L69">        return ResponseEntity.ok(Message.success(define));</span>
+    }
+
+    @GetMapping(path = &quot;/{monitorId}/define/dynamic&quot;)
+    @Operation(summary = &quot;The definition structure of the specified monitoring type according to the push query&quot;, description = &quot;根据monitorId查询push类型的定义结构&quot;)
+    public ResponseEntity&lt;Message&lt;Job&gt;&gt; queryAutoGenerateDynamicAppDefine(
+            @Parameter(description = &quot;Monitoring id | 监控任务ID&quot;, example = &quot;5435345&quot;) @PathVariable(&quot;monitorId&quot;) final Long monitorId) {
+<span class="nc" id="L76">        Job define = appService.getAutoGenerateDynamicDefine(monitorId);</span>
+<span class="nc" id="L77">        return ResponseEntity.ok(Message.success(define));</span>
+    }
+
+    @GetMapping(path = &quot;/{app}/define&quot;)
+    @Operation(summary = &quot;The definition structure of the specified monitoring type according to the app query&quot;, description = &quot;根据app查询指定监控类型的定义结构&quot;)
+    public ResponseEntity&lt;Message&lt;Job&gt;&gt; queryAppDefine(
+            @Parameter(description = &quot;en: Monitoring type name,zh: 监控类型名称&quot;, example = &quot;api&quot;) @PathVariable(&quot;app&quot;) final String app) {
+<span class="fc" id="L84">        Job define = appService.getAppDefine(app.toLowerCase());</span>
+<span class="fc" id="L85">        return ResponseEntity.ok(Message.success(define));</span>
+    }
+
+    @GetMapping(path = &quot;/{app}/define/yml&quot;)
+    @Operation(summary = &quot;The definition yml of the specified monitoring type according to the app query&quot;, description = &quot;根据app查询指定监控类型的定义YML&quot;)
+    public ResponseEntity&lt;Message&lt;String&gt;&gt; queryAppDefineYml(
+            @Parameter(description = &quot;en: Monitoring type name,zh: 监控类型名称&quot;, example = &quot;api&quot;) @PathVariable(&quot;app&quot;) final String app) {
+<span class="nc" id="L92">        String defineContent = appService.getMonitorDefineFileContent(app);</span>
+<span class="nc" id="L93">        return ResponseEntity.ok(Message.successWithData(defineContent));</span>
+    }
+
+    @DeleteMapping(path = &quot;/{app}/define/yml&quot;)
+    @Operation(summary = &quot;Delete monitor define yml&quot;, description = &quot;根据app删除指定监控类型的定义YML&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; deleteAppDefineYml(
+            @Parameter(description = &quot;en: Monitoring type name,zh: 监控类型名称&quot;, example = &quot;api&quot;) @PathVariable(&quot;app&quot;) final String app) {
+        try {
+<span class="nc" id="L101">            appService.deleteMonitorDefine(app);</span>
+<span class="nc" id="L102">        } catch (Exception e) {</span>
+<span class="nc" id="L103">            return ResponseEntity.ok(Message.fail(FAIL_CODE, e.getMessage()));</span>
+<span class="nc" id="L104">        }</span>
+<span class="nc" id="L105">        return ResponseEntity.ok(Message.success());</span>
+    }
+
+    @PostMapping(path = &quot;/define/yml&quot;)
+    @Operation(summary = &quot;Add new monitoring type define yml&quot;, description = &quot;新增监控类型的定义YML&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; newAppDefineYml(@Valid @RequestBody MonitorDefineDto defineDto) {
+        try {
+<span class="nc bnc" id="L112" title="All 2 branches missed.">            for (String riskyToken : RISKY_STR_ARR) {</span>
+<span class="nc bnc" id="L113" title="All 2 branches missed.">                if (defineDto.getDefine().contains(riskyToken)) {</span>
+<span class="nc" id="L114">                    return ResponseEntity.ok(Message.fail(FAIL_CODE, &quot;can not has malicious remote script&quot;));</span>
+                }
+            }
+<span class="nc" id="L117">            appService.applyMonitorDefineYml(defineDto.getDefine(), false);</span>
+<span class="nc" id="L118">        } catch (Exception e) {</span>
+<span class="nc" id="L119">            return ResponseEntity.ok(Message.fail(FAIL_CODE, e.getMessage()));</span>
+<span class="nc" id="L120">        }</span>
+<span class="nc" id="L121">        return ResponseEntity.ok(Message.success());</span>
+    }
+
+    @PutMapping(path = &quot;/define/yml&quot;)
+    @Operation(summary = &quot;Update monitoring type define yml&quot;, description = &quot;更新监控类型的定义YML&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; updateAppDefineYml(@Valid @RequestBody MonitorDefineDto defineDto) {
+        try {
+<span class="nc bnc" id="L128" title="All 2 branches missed.">            for (String riskyToken : RISKY_STR_ARR) {</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">                if (defineDto.getDefine().contains(riskyToken)) {</span>
+<span class="nc" id="L130">                    return ResponseEntity.ok(Message.fail(FAIL_CODE, &quot;can not has malicious remote script&quot;));</span>
+                }
+            }
+<span class="nc" id="L133">            appService.applyMonitorDefineYml(defineDto.getDefine(), true);</span>
+<span class="nc" id="L134">        } catch (Exception e) {</span>
+<span class="nc" id="L135">            return ResponseEntity.ok(Message.fail(FAIL_CODE, e.getMessage()));</span>
+<span class="nc" id="L136">        }</span>
+<span class="nc" id="L137">        return ResponseEntity.ok(Message.success());</span>
+    }
+
+    @GetMapping(path = &quot;/hierarchy&quot;)
+    @Operation(summary = &quot;Query all monitor metrics level, output in a hierarchical structure&quot;, description = &quot;查询所有监控的类型指标层级,以层级结构输出&quot;)
+    public ResponseEntity&lt;Message&lt;List&lt;Hierarchy&gt;&gt;&gt; queryAppsHierarchy(
+            @Parameter(description = &quot;en: language type,zh: 语言类型&quot;,
+                    example = &quot;zh-CN&quot;)
+            @RequestParam(name = &quot;lang&quot;, required = false) String lang) {
+<span class="pc bpc" id="L146" title="3 of 4 branches missed.">        if (lang == null || lang.isEmpty()) {</span>
+<span class="fc" id="L147">            lang = &quot;zh-CN&quot;;</span>
+        }
+<span class="pc bpc" id="L149" title="1 of 2 branches missed.">        if (lang.contains(Locale.ENGLISH.getLanguage())) {</span>
+<span class="nc" id="L150">            lang = &quot;en-US&quot;;</span>
+<span class="pc bpc" id="L151" title="1 of 2 branches missed.">        } else if (lang.contains(Locale.CHINESE.getLanguage())) {</span>
+<span class="fc" id="L152">            lang = &quot;zh-CN&quot;;</span>
+        } else {
+<span class="nc" id="L154">            lang = &quot;en-US&quot;;</span>
+        }
+<span class="fc" id="L156">        List&lt;Hierarchy&gt; appHierarchies = appService.getAllAppHierarchy(lang);</span>
+<span class="fc" id="L157">        return ResponseEntity.ok(Message.success(appHierarchies));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

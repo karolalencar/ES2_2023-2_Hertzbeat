@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CollectCyclicDataResponseProcessor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.scheduler.netty.process</a> &gt; <span class="el_source">CollectCyclicDataResponseProcessor.java</span></div><h1>CollectCyclicDataResponseProcessor.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.manager.scheduler.netty.process;
+
+import io.netty.channel.ChannelHandlerContext;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.common.entity.message.ClusterMsg;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.queue.CommonDataQueue;
+import org.dromara.hertzbeat.common.support.SpringContextHolder;
+import org.dromara.hertzbeat.common.util.ProtoJsonUtil;
+import org.dromara.hertzbeat.remoting.netty.NettyRemotingProcessor;
+
+/**
+ * handle cyclic data response message
+ */
+<span class="fc" id="L15">@Slf4j</span>
+<span class="fc" id="L16">public class CollectCyclicDataResponseProcessor implements NettyRemotingProcessor {</span>
+    @Override
+    public ClusterMsg.Message handle(ChannelHandlerContext ctx, ClusterMsg.Message message) {
+<span class="nc" id="L19">        CommonDataQueue dataQueue = SpringContextHolder.getBean(CommonDataQueue.class);</span>
+<span class="nc" id="L20">        CollectRep.MetricsData metricsData = (CollectRep.MetricsData) ProtoJsonUtil.toProtobuf(message.getMsg(),</span>
+<span class="nc" id="L21">                CollectRep.MetricsData.newBuilder());</span>
+<span class="nc bnc" id="L22" title="All 2 branches missed.">        if (metricsData != null) {</span>
+<span class="nc" id="L23">            dataQueue.sendMetricsData(metricsData);</span>
+        }
+<span class="nc" id="L25">        return null;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

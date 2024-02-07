@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PushCollectImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.push</a> &gt; <span class="el_source">PushCollectImpl.java</span></div><h1>PushCollectImpl.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.collect.push;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.http.HttpHeaders;
+import org.apache.http.HttpHost;
+import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpUriRequest;
+import org.apache.http.client.methods.RequestBuilder;
+import org.apache.http.client.protocol.HttpClientContext;
+import org.apache.http.protocol.HttpContext;
+import org.apache.http.util.EntityUtils;
+import org.dromara.hertzbeat.collector.collect.AbstractCollect;
+import org.dromara.hertzbeat.collector.collect.common.http.CommonHttpClient;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.collector.util.CollectUtil;
+import org.dromara.hertzbeat.common.constants.CollectorConstants;
+import org.dromara.hertzbeat.common.entity.dto.Message;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.job.protocol.PushProtocol;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.entity.push.PushMetricsDto;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+import org.dromara.hertzbeat.common.util.IpDomainUtil;
+import org.dromara.hertzbeat.common.util.JsonUtil;
+
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * push style collect
+ *
+ * @author vinci
+ */
+<span class="nc" id="L39">@Slf4j</span>
+public class PushCollectImpl extends AbstractCollect {
+
+<span class="nc" id="L42">    private static Map&lt;Long, Long&gt; timeMap = new ConcurrentHashMap&lt;&gt;();</span>
+
+    // ms
+<span class="nc" id="L45">    private static final Integer timeout = 3000;</span>
+
+<span class="nc" id="L47">    private static final Integer SUCCESS_CODE = 200;</span>
+
+    // 第一次采集多久之前的数据，其实没有办法确定，因为无法确定上次何时采集，难以避免重启后重复采集的现象，默认30s
+<span class="nc" id="L50">    private static final Integer firstCollectInterval = 30000;</span>
+
+<span class="nc" id="L52">    public PushCollectImpl() {</span>
+<span class="nc" id="L53">    }</span>
+
+    @Override
+    public void collect(CollectRep.MetricsData.Builder builder,
+                        long monitorId, String app, Metrics metrics) {
+<span class="nc" id="L58">        long curTime = System.currentTimeMillis();</span>
+
+<span class="nc" id="L60">        PushProtocol pushProtocol = metrics.getPush();</span>
+
+<span class="nc" id="L62">        Long time = timeMap.getOrDefault(monitorId, curTime - firstCollectInterval);</span>
+<span class="nc" id="L63">        timeMap.put(monitorId, curTime);</span>
+
+<span class="nc" id="L65">        HttpContext httpContext = createHttpContext(pushProtocol);</span>
+<span class="nc" id="L66">        HttpUriRequest request = createHttpRequest(pushProtocol, monitorId, time);</span>
+
+        try {
+<span class="nc" id="L69">            CloseableHttpResponse response = CommonHttpClient.getHttpClient().execute(request, httpContext);</span>
+<span class="nc" id="L70">            int statusCode = response.getStatusLine().getStatusCode();</span>
+<span class="nc bnc" id="L71" title="All 2 branches missed.">            if (statusCode != SUCCESS_CODE) {</span>
+<span class="nc" id="L72">                builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L73">                builder.setMsg(&quot;StatusCode &quot; + statusCode);</span>
+<span class="nc" id="L74">                return;</span>
+            }
+<span class="nc" id="L76">            String resp = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);</span>
+
+<span class="nc" id="L78">            parseResponse(builder, resp, metrics);</span>
+
+<span class="nc" id="L80">        } catch (Exception e) {</span>
+<span class="nc" id="L81">            String errorMsg = CommonUtil.getMessageFromThrowable(e);</span>
+<span class="nc" id="L82">            log.error(errorMsg, e);</span>
+<span class="nc" id="L83">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L84">            builder.setMsg(errorMsg);</span>
+<span class="nc" id="L85">        }</span>
+
+<span class="nc" id="L87">    }</span>
+
+    @Override
+    public String supportProtocol() {
+<span class="nc" id="L91">        return DispatchConstants.PROTOCOL_PUSH;</span>
+    }
+
+    private HttpContext createHttpContext(PushProtocol pushProtocol) {
+<span class="nc" id="L95">        HttpHost host = new HttpHost(pushProtocol.getHost(), Integer.parseInt(pushProtocol.getPort()));</span>
+<span class="nc" id="L96">        HttpClientContext httpClientContext = new HttpClientContext();</span>
+<span class="nc" id="L97">        httpClientContext.setTargetHost(host);</span>
+<span class="nc" id="L98">        return httpClientContext;</span>
+    }
+
+    private HttpUriRequest createHttpRequest(PushProtocol pushProtocol, Long monitorId, Long startTime) {
+<span class="nc" id="L102">        RequestBuilder requestBuilder = RequestBuilder.get();</span>
+
+
+        // uri
+<span class="nc" id="L106">        String uri = CollectUtil.replaceUriSpecialChar(pushProtocol.getUri());</span>
+<span class="nc bnc" id="L107" title="All 2 branches missed.">        if (IpDomainUtil.isHasSchema(pushProtocol.getHost())) {</span>
+<span class="nc" id="L108">            requestBuilder.setUri(pushProtocol.getHost() + &quot;:&quot; + pushProtocol.getPort() + uri);</span>
+        } else {
+<span class="nc" id="L110">            String ipAddressType = IpDomainUtil.checkIpAddressType(pushProtocol.getHost());</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">            String baseUri = CollectorConstants.IPV6.equals(ipAddressType)</span>
+<span class="nc" id="L112">                    ? String.format(&quot;[%s]:%s&quot;, pushProtocol.getHost(), pushProtocol.getPort() + uri)</span>
+<span class="nc" id="L113">                    : String.format(&quot;%s:%s&quot;, pushProtocol.getHost(), pushProtocol.getPort() + uri);</span>
+
+<span class="nc" id="L115">            requestBuilder.setUri(CollectorConstants.HTTP_HEADER + baseUri);</span>
+        }
+
+<span class="nc" id="L118">        requestBuilder.addHeader(HttpHeaders.CONNECTION, &quot;keep-alive&quot;);</span>
+<span class="nc" id="L119">        requestBuilder.addHeader(HttpHeaders.USER_AGENT, &quot;Mozilla/5.0 (Windows NT 6.1; WOW64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.76 Safari/537.36&quot;);</span>
+
+<span class="nc" id="L121">        requestBuilder.addParameter(&quot;id&quot;, String.valueOf(monitorId));</span>
+<span class="nc" id="L122">        requestBuilder.addParameter(&quot;time&quot;, String.valueOf(startTime));</span>
+<span class="nc" id="L123">        requestBuilder.addHeader(HttpHeaders.ACCEPT, &quot;application/json&quot;);</span>
+
+
+        //requestBuilder.setUri(pushProtocol.getUri());
+
+<span class="nc bnc" id="L128" title="All 2 branches missed.">        if (timeout &gt; 0) {</span>
+<span class="nc" id="L129">            RequestConfig requestConfig = RequestConfig.custom()</span>
+<span class="nc" id="L130">                    .setConnectTimeout(timeout)</span>
+<span class="nc" id="L131">                    .setSocketTimeout(timeout)</span>
+<span class="nc" id="L132">                    .setRedirectsEnabled(true)</span>
+<span class="nc" id="L133">                    .build();</span>
+<span class="nc" id="L134">            requestBuilder.setConfig(requestConfig);</span>
+        }
+
+<span class="nc" id="L137">        return requestBuilder.build();</span>
+    }
+
+    private void parseResponse(CollectRep.MetricsData.Builder builder, String resp, Metrics metric) {
+<span class="nc" id="L141">        Message&lt;PushMetricsDto&gt; msg = JsonUtil.fromJson(resp, new TypeReference&lt;Message&lt;PushMetricsDto&gt;&gt;() {</span>
+        });
+<span class="nc bnc" id="L143" title="All 2 branches missed.">        if (msg == null) {</span>
+<span class="nc" id="L144">            throw new NullPointerException(&quot;parse result is null&quot;);</span>
+        }
+<span class="nc" id="L146">        PushMetricsDto pushMetricsDto = msg.getData();</span>
+<span class="nc bnc" id="L147" title="All 4 branches missed.">        if (pushMetricsDto == null || pushMetricsDto.getMetricsList() == null) {</span>
+<span class="nc" id="L148">            throw new NullPointerException(&quot;parse result is null&quot;);</span>
+        }
+<span class="nc bnc" id="L150" title="All 2 branches missed.">        for (PushMetricsDto.Metrics pushMetrics : pushMetricsDto.getMetricsList()) {</span>
+<span class="nc" id="L151">            List&lt;CollectRep.ValueRow&gt; rows = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L152" title="All 2 branches missed.">            for (Map&lt;String, String&gt; metrics : pushMetrics.getMetrics()) {</span>
+<span class="nc" id="L153">                List&lt;String&gt; metricColumn = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L154" title="All 2 branches missed.">                for (Metrics.Field field : metric.getFields()) {</span>
+<span class="nc" id="L155">                    metricColumn.add(metrics.get(field.getField()));</span>
+<span class="nc" id="L156">                }</span>
+<span class="nc" id="L157">                CollectRep.ValueRow valueRow = CollectRep.ValueRow.newBuilder()</span>
+<span class="nc" id="L158">                        .addAllColumns(metricColumn).build();</span>
+<span class="nc" id="L159">                rows.add(valueRow);</span>
+<span class="nc" id="L160">            }</span>
+
+
+<span class="nc" id="L163">            builder.addAllValues(rows);</span>
+<span class="nc" id="L164">        }</span>
+<span class="nc" id="L165">        builder.setTime(System.currentTimeMillis());</span>
+<span class="nc" id="L166">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

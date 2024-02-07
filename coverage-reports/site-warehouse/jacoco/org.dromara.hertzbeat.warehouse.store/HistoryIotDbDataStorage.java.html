@@ -1,0 +1,452 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>HistoryIotDbDataStorage.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-warehouse</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.warehouse.store</a> &gt; <span class="el_source">HistoryIotDbDataStorage.java</span></div><h1>HistoryIotDbDataStorage.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.warehouse.store;
+
+import org.dromara.hertzbeat.common.entity.dto.Value;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.util.JsonUtil;
+import org.dromara.hertzbeat.warehouse.config.IotDbVersion;
+import org.dromara.hertzbeat.warehouse.config.WarehouseProperties;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.iotdb.rpc.IoTDBConnectionException;
+import org.apache.iotdb.rpc.StatementExecutionException;
+import org.apache.iotdb.session.pool.SessionDataSetWrapper;
+import org.apache.iotdb.session.pool.SessionPool;
+import org.apache.iotdb.tsfile.file.metadata.enums.TSDataType;
+import org.apache.iotdb.tsfile.read.common.RowRecord;
+import org.apache.iotdb.tsfile.write.record.Tablet;
+import org.apache.iotdb.tsfile.write.schema.MeasurementSchema;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.*;
+
+/**
+ * IoTDB data storage
+ *
+ * @author ceilzcx
+ *
+ */
+@Component
+@ConditionalOnProperty(prefix = &quot;warehouse.store.iot-db&quot;,
+        name = &quot;enabled&quot;, havingValue = &quot;true&quot;)
+<span class="nc" id="L51">@Slf4j</span>
+public class HistoryIotDbDataStorage extends AbstractHistoryDataStorage {
+    private static final String BACK_QUOTE = &quot;`&quot;;
+    /**
+     * set ttl never expire
+     */
+    private static final String NEVER_EXPIRE = &quot;-1&quot;;
+
+    /**
+     * storage group (存储组)
+     */
+    private static final String STORAGE_GROUP = &quot;root.hertzbeat&quot;;
+
+    private static final String SHOW_DATABASE = &quot;show databases %s&quot;;
+
+    /**
+     * create database (version 1.0.*)
+     */
+    private static final String CREATE_DATABASE = &quot;create database %s&quot;;
+
+    private static final String SET_TTL = &quot;set ttl to %s %s&quot;;
+
+    private static final String CANCEL_TTL = &quot;unset ttl to %s&quot;;
+
+    private static final String SHOW_DEVICES = &quot;SHOW DEVICES %s&quot;;
+
+    private static final String SHOW_STORAGE_GROUP = &quot;show storage group&quot;;
+
+    private static final String QUERY_HISTORY_SQL
+            = &quot;SELECT %s FROM %s WHERE Time &gt;= now() - %s order by Time desc&quot;;
+    private static final String QUERY_HISTORY_INTERVAL_WITH_INSTANCE_SQL
+            = &quot;SELECT FIRST_VALUE(%s), AVG(%s), MIN_VALUE(%s), MAX_VALUE(%s) FROM %s GROUP BY ([now() - %s, now()), 4h)&quot;;
+
+    private SessionPool sessionPool;
+
+    private IotDbVersion version;
+
+    private long queryTimeoutInMs;
+
+<span class="nc" id="L90">    public HistoryIotDbDataStorage(WarehouseProperties properties) {</span>
+<span class="nc" id="L91">        this.serverAvailable = this.initIotDbSession(properties.getStore().getIotDb());</span>
+<span class="nc" id="L92">    }</span>
+
+    private boolean initIotDbSession(WarehouseProperties.StoreProperties.IotDbProperties properties) {
+<span class="nc" id="L95">        SessionPool.Builder builder = new SessionPool.Builder();</span>
+<span class="nc" id="L96">        builder.host(properties.getHost());</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">        if (properties.getRpcPort() != null) {</span>
+<span class="nc" id="L98">            builder.port(properties.getRpcPort());</span>
+        }
+<span class="nc bnc" id="L100" title="All 2 branches missed.">        if (properties.getUsername() != null) {</span>
+<span class="nc" id="L101">            builder.user(properties.getUsername());</span>
+        }
+<span class="nc bnc" id="L103" title="All 2 branches missed.">        if (properties.getPassword() != null) {</span>
+<span class="nc" id="L104">            builder.password(properties.getPassword());</span>
+        }
+<span class="nc bnc" id="L106" title="All 4 branches missed.">        if (properties.getNodeUrls() != null &amp;&amp; !properties.getNodeUrls().isEmpty()) {</span>
+<span class="nc" id="L107">            builder.nodeUrls(properties.getNodeUrls());</span>
+        }
+<span class="nc bnc" id="L109" title="All 2 branches missed.">        if (properties.getZoneId() != null) {</span>
+<span class="nc" id="L110">            builder.zoneId(properties.getZoneId());</span>
+        }
+<span class="nc bnc" id="L112" title="All 2 branches missed.">        if (properties.getVersion() != null) {</span>
+<span class="nc" id="L113">            this.version = properties.getVersion();</span>
+        }
+<span class="nc" id="L115">        this.queryTimeoutInMs = properties.getQueryTimeoutInMs();</span>
+<span class="nc" id="L116">        this.sessionPool = builder.build();</span>
+<span class="nc" id="L117">        boolean available = checkConnection();</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">        if (available) {</span>
+<span class="nc" id="L119">            available = this.createDatabase();</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">            if (available) {</span>
+<span class="nc" id="L121">                this.initTtl(properties.getExpireTime());</span>
+<span class="nc" id="L122">                log.info(&quot;IotDB session pool init success&quot;);</span>
+            }
+        }
+<span class="nc" id="L125">        return available;</span>
+    }
+
+    private boolean checkConnection() {
+        try {
+<span class="nc" id="L130">            this.sessionPool.executeQueryStatement(SHOW_STORAGE_GROUP);</span>
+<span class="nc" id="L131">            return true;</span>
+<span class="nc" id="L132">        } catch (Exception e) {</span>
+<span class="nc" id="L133">            log.error(e.getMessage(), e);</span>
+<span class="nc" id="L134">            return false;</span>
+        }
+    }
+
+    private boolean createDatabase() {
+<span class="nc" id="L139">        SessionDataSetWrapper dataSet = null;</span>
+        try {
+            // v1.0.* create database
+<span class="nc bnc" id="L142" title="All 2 branches missed.">            if (IotDbVersion.V_1_0.equals(this.version)) {</span>
+<span class="nc" id="L143">                String showDatabaseSql = String.format(SHOW_DATABASE, STORAGE_GROUP);</span>
+<span class="nc" id="L144">                dataSet = this.sessionPool.executeQueryStatement(showDatabaseSql);</span>
+                // root.hertzbeat database not exist
+<span class="nc bnc" id="L146" title="All 2 branches missed.">                if (!dataSet.hasNext()) {</span>
+<span class="nc" id="L147">                    String createDatabaseSql = String.format(CREATE_DATABASE, STORAGE_GROUP);</span>
+<span class="nc" id="L148">                    this.sessionPool.executeNonQueryStatement(createDatabaseSql);</span>
+                }
+            }
+<span class="nc" id="L151">        } catch (IoTDBConnectionException | StatementExecutionException e) {</span>
+<span class="nc" id="L152">            log.error(&quot;create database error, error: {}&quot;, e.getMessage());</span>
+<span class="nc" id="L153">            return false;</span>
+        } finally {
+<span class="nc bnc" id="L155" title="All 2 branches missed.">            if (dataSet != null) {</span>
+<span class="nc" id="L156">                this.sessionPool.closeResultSet(dataSet);</span>
+            }
+        }
+<span class="nc" id="L159">        return true;</span>
+    }
+
+    private void initTtl(String expireTime) {
+<span class="nc bnc" id="L163" title="All 4 branches missed.">        if (expireTime == null || expireTime.isEmpty()) {</span>
+<span class="nc" id="L164">            return;</span>
+        }
+        try {
+<span class="nc bnc" id="L167" title="All 2 branches missed.">            if (NEVER_EXPIRE.equals(expireTime)) {</span>
+                // 删除原本可能已经存在的ttl
+<span class="nc" id="L169">                String cancelTtlSql = String.format(CANCEL_TTL, STORAGE_GROUP);</span>
+<span class="nc" id="L170">                this.sessionPool.executeNonQueryStatement(cancelTtlSql);</span>
+<span class="nc" id="L171">            } else {</span>
+<span class="nc" id="L172">                String sstTtlSql = String.format(SET_TTL, STORAGE_GROUP, expireTime);</span>
+<span class="nc" id="L173">                this.sessionPool.executeNonQueryStatement(sstTtlSql);</span>
+            }
+<span class="nc" id="L175">        } catch (IoTDBConnectionException | StatementExecutionException e) {</span>
+            // 失败不影响主业务
+<span class="nc" id="L177">            log.error(&quot;IoTDB init ttl error, expireTime: {}, error: {}&quot;, expireTime, e.getMessage());</span>
+<span class="nc" id="L178">        }</span>
+<span class="nc" id="L179">    }</span>
+
+    @Override
+    void saveData(CollectRep.MetricsData metricsData) {
+<span class="nc bnc" id="L183" title="All 4 branches missed.">        if (!isServerAvailable() || metricsData.getCode() != CollectRep.Code.SUCCESS) {</span>
+<span class="nc" id="L184">            return;</span>
+        }
+<span class="nc bnc" id="L186" title="All 2 branches missed.">        if (metricsData.getValuesList().isEmpty()) {</span>
+<span class="nc" id="L187">            log.info(&quot;[warehouse iotdb] flush metrics data {} is null, ignore.&quot;, metricsData.getId());</span>
+<span class="nc" id="L188">            return;</span>
+        }
+<span class="nc" id="L190">        List&lt;MeasurementSchema&gt; schemaList = new ArrayList&lt;&gt;();</span>
+
+        // todo MeasurementSchema是在客户端生成的数据结构，编码和压缩没有作用
+        // todo 需要使用指定的数据结构，还是需要手动创建timeSeries或template
+<span class="nc" id="L194">        List&lt;CollectRep.Field&gt; fieldsList = metricsData.getFieldsList();</span>
+<span class="nc bnc" id="L195" title="All 2 branches missed.">        for (CollectRep.Field field : fieldsList) {</span>
+<span class="nc" id="L196">            MeasurementSchema schema = new MeasurementSchema();</span>
+<span class="nc" id="L197">            schema.setMeasurementId(field.getName());</span>
+            // handle field type
+<span class="nc bnc" id="L199" title="All 2 branches missed.">            if (field.getType() == CommonConstants.TYPE_NUMBER) {</span>
+<span class="nc" id="L200">                schema.setType(TSDataType.DOUBLE);</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">            } else if (field.getType() == CommonConstants.TYPE_STRING) {</span>
+<span class="nc" id="L202">                schema.setType(TSDataType.TEXT);</span>
+            }
+<span class="nc" id="L204">            schemaList.add(schema);</span>
+<span class="nc" id="L205">        }</span>
+<span class="nc" id="L206">        Map&lt;String, Tablet&gt; tabletMap = new HashMap&lt;&gt;(8);</span>
+        try {
+<span class="nc" id="L208">            long now = System.currentTimeMillis();</span>
+<span class="nc bnc" id="L209" title="All 2 branches missed.">            for (CollectRep.ValueRow valueRow : metricsData.getValuesList()) {</span>
+<span class="nc" id="L210">                Map&lt;String, String&gt; labels = new HashMap&lt;&gt;(8);</span>
+<span class="nc bnc" id="L211" title="All 2 branches missed.">                for (int i = 0; i &lt; fieldsList.size(); i++) {</span>
+<span class="nc" id="L212">                    CollectRep.Field field = fieldsList.get(i);</span>
+<span class="nc bnc" id="L213" title="All 4 branches missed.">                    if (field.getLabel() &amp;&amp; !CommonConstants.NULL_VALUE.equals(valueRow.getColumns(i))) {</span>
+<span class="nc" id="L214">                        labels.put(field.getName(), valueRow.getColumns(i));</span>
+                    }
+                }
+<span class="nc" id="L217">                String label = JsonUtil.toJson(labels);</span>
+<span class="nc" id="L218">                String deviceId = getDeviceId(metricsData.getApp(), metricsData.getMetrics(), metricsData.getId(), label, false);</span>
+<span class="nc bnc" id="L219" title="All 2 branches missed.">                if (tabletMap.containsKey(label)) {</span>
+                    // 避免Time重复
+<span class="nc" id="L221">                    now++;</span>
+                } else {
+<span class="nc" id="L223">                    tabletMap.put(label, new Tablet(deviceId, schemaList));</span>
+                }
+<span class="nc" id="L225">                Tablet tablet = tabletMap.get(label);</span>
+<span class="nc" id="L226">                int rowIndex = tablet.rowSize++;</span>
+<span class="nc" id="L227">                tablet.addTimestamp(rowIndex, now);</span>
+<span class="nc bnc" id="L228" title="All 2 branches missed.">                for (int i = 0; i &lt; fieldsList.size(); i++) {</span>
+<span class="nc" id="L229">                    CollectRep.Field field = fieldsList.get(i);</span>
+<span class="nc bnc" id="L230" title="All 2 branches missed.">                    if (!CommonConstants.NULL_VALUE.equals(valueRow.getColumns(i))) {</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">                        if (field.getType() == CommonConstants.TYPE_NUMBER) {</span>
+<span class="nc" id="L232">                            tablet.addValue(field.getName(), rowIndex, Double.parseDouble(valueRow.getColumns(i)));</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">                        } else if (field.getType() == CommonConstants.TYPE_STRING) {</span>
+<span class="nc" id="L234">                            tablet.addValue(field.getName(), rowIndex, valueRow.getColumns(i));</span>
+                        }
+                    } else {
+<span class="nc" id="L237">                        tablet.addValue(field.getName(), rowIndex, null);</span>
+                    }
+                }
+<span class="nc" id="L240">            }</span>
+<span class="nc bnc" id="L241" title="All 2 branches missed.">            for (Tablet tablet : tabletMap.values()) {</span>
+<span class="nc" id="L242">                this.sessionPool.insertTablet(tablet, true);</span>
+<span class="nc" id="L243">            }</span>
+<span class="nc" id="L244">        } catch (StatementExecutionException | IoTDBConnectionException e) {</span>
+<span class="nc" id="L245">            log.error(e.getMessage(), e);</span>
+        } finally {
+<span class="nc bnc" id="L247" title="All 2 branches missed.">            for (Tablet tablet : tabletMap.values()) {</span>
+<span class="nc" id="L248">                tablet.reset();</span>
+<span class="nc" id="L249">            }</span>
+<span class="nc" id="L250">            tabletMap.clear();</span>
+        }
+<span class="nc" id="L252">    }</span>
+
+    @Override
+    public Map&lt;String, List&lt;Value&gt;&gt; getHistoryMetricData(Long monitorId, String app, String metrics, String metric,
+                                                         String label, String history) {
+<span class="nc" id="L257">        Map&lt;String, List&lt;Value&gt;&gt; instanceValuesMap = new HashMap&lt;&gt;(8);</span>
+<span class="nc bnc" id="L258" title="All 2 branches missed.">        if (!isServerAvailable()) {</span>
+<span class="nc" id="L259">            log.error(&quot;\n\t---------------IotDb Init Failed---------------\n&quot; +</span>
+                    &quot;\t--------------Please Config IotDb--------------\n&quot; +
+                    &quot;\t----------Can Not Use Metric History Now----------\n&quot;);
+<span class="nc" id="L262">            return instanceValuesMap;</span>
+        }
+<span class="nc" id="L264">        String deviceId = getDeviceId(app, metrics, monitorId, label, true);</span>
+<span class="nc" id="L265">        String selectSql = &quot;&quot;;</span>
+        try {
+<span class="nc bnc" id="L267" title="All 2 branches missed.">            if (label != null) {</span>
+<span class="nc" id="L268">                selectSql = String.format(QUERY_HISTORY_SQL, addQuote(metric), deviceId, history);</span>
+<span class="nc" id="L269">                handleHistorySelect(selectSql, &quot;&quot;, instanceValuesMap);</span>
+            } else {
+                // 优先查询底下所有存在device, 如果存在底下所有device的数据, 否则查询deviceId的数据
+<span class="nc" id="L272">                List&lt;String&gt; devices = queryAllDevices(deviceId);</span>
+<span class="nc bnc" id="L273" title="All 2 branches missed.">                if (devices.isEmpty()) {</span>
+<span class="nc" id="L274">                    selectSql = String.format(QUERY_HISTORY_SQL, addQuote(metric), deviceId, history);</span>
+<span class="nc" id="L275">                    handleHistorySelect(selectSql, &quot;&quot;, instanceValuesMap);</span>
+                } else {
+                    // todo 改造成一个select查询: select device1.metric, device2.metric from xxx
+<span class="nc bnc" id="L278" title="All 2 branches missed.">                    for (String device : devices) {</span>
+<span class="nc" id="L279">                        String prefixDeviceId = getDeviceId(app, metrics, monitorId, null, false);</span>
+<span class="nc" id="L280">                        String instanceId = device.substring(prefixDeviceId.length() + 1);</span>
+<span class="nc" id="L281">                        selectSql = String.format(QUERY_HISTORY_SQL, addQuote(metric), deviceId + &quot;.&quot; + addQuote(instanceId), history);</span>
+<span class="nc" id="L282">                        handleHistorySelect(selectSql, instanceId, instanceValuesMap);</span>
+<span class="nc" id="L283">                    }</span>
+                }
+            }
+<span class="nc" id="L286">        } catch (StatementExecutionException | IoTDBConnectionException e) {</span>
+<span class="nc" id="L287">            log.error(&quot;select error history sql: {}&quot;, selectSql);</span>
+<span class="nc" id="L288">            log.error(e.getMessage(), e);</span>
+<span class="nc" id="L289">        }</span>
+<span class="nc" id="L290">        return instanceValuesMap;</span>
+    }
+
+    private void handleHistorySelect(String selectSql, String labels, Map&lt;String, List&lt;Value&gt;&gt; instanceValuesMap)
+            throws IoTDBConnectionException, StatementExecutionException {
+<span class="nc" id="L295">        SessionDataSetWrapper dataSet = null;</span>
+        try {
+<span class="nc" id="L297">            dataSet = this.sessionPool.executeQueryStatement(selectSql, this.queryTimeoutInMs);</span>
+<span class="nc" id="L298">            log.debug(&quot;iot select sql: {}&quot;, selectSql);</span>
+<span class="nc bnc" id="L299" title="All 2 branches missed.">            while (dataSet.hasNext()) {</span>
+<span class="nc" id="L300">                RowRecord rowRecord = dataSet.next();</span>
+<span class="nc" id="L301">                long timestamp = rowRecord.getTimestamp();</span>
+<span class="nc" id="L302">                double value = rowRecord.getFields().get(0).getDoubleV();</span>
+<span class="nc" id="L303">                String strValue = BigDecimal.valueOf(value).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+<span class="nc" id="L304">                List&lt;Value&gt; valueList = instanceValuesMap.computeIfAbsent(labels, k -&gt; new LinkedList&lt;&gt;());</span>
+<span class="nc" id="L305">                valueList.add(new Value(strValue, timestamp));</span>
+<span class="nc" id="L306">            }</span>
+        } finally {
+<span class="nc bnc" id="L308" title="All 2 branches missed.">            if (dataSet != null) {</span>
+                // 需要关闭结果集！！！否则会造成服务端堆积
+<span class="nc" id="L310">                this.sessionPool.closeResultSet(dataSet);</span>
+            }
+        }
+<span class="nc" id="L313">    }</span>
+
+    @Override
+    public Map&lt;String, List&lt;Value&gt;&gt; getHistoryIntervalMetricData(Long monitorId, String app, String metrics,
+                                                                 String metric, String label, String history) {
+<span class="nc" id="L318">        Map&lt;String, List&lt;Value&gt;&gt; instanceValuesMap = new HashMap&lt;&gt;(8);</span>
+<span class="nc bnc" id="L319" title="All 2 branches missed.">        if (!isServerAvailable()) {</span>
+<span class="nc" id="L320">            log.error(&quot;\n\t---------------IotDb Init Failed---------------\n&quot; +</span>
+                    &quot;\t--------------Please Config IotDb--------------\n&quot; +
+                    &quot;\t----------Can Not Use Metric History Now----------\n&quot;);
+<span class="nc" id="L323">            return instanceValuesMap;</span>
+        }
+<span class="nc" id="L325">        String deviceId = getDeviceId(app, metrics, monitorId, label, true);</span>
+        String selectSql;
+<span class="nc bnc" id="L327" title="All 2 branches missed.">        if (label != null) {</span>
+<span class="nc" id="L328">            selectSql = String.format(QUERY_HISTORY_INTERVAL_WITH_INSTANCE_SQL,</span>
+<span class="nc" id="L329">                    addQuote(metric), addQuote(metric), addQuote(metric), addQuote(metric), deviceId, history);</span>
+<span class="nc" id="L330">            handleHistoryIntervalSelect(selectSql, &quot;&quot;, instanceValuesMap);</span>
+        } else {
+<span class="nc" id="L332">            List&lt;String&gt; devices = queryAllDevices(deviceId);</span>
+<span class="nc bnc" id="L333" title="All 2 branches missed.">            if (devices.isEmpty()) {</span>
+<span class="nc" id="L334">                selectSql = String.format(QUERY_HISTORY_INTERVAL_WITH_INSTANCE_SQL,</span>
+<span class="nc" id="L335">                        addQuote(metric), addQuote(metric), addQuote(metric), addQuote(metric), deviceId, history);</span>
+<span class="nc" id="L336">                handleHistoryIntervalSelect(selectSql, &quot;&quot;, instanceValuesMap);</span>
+            } else {
+<span class="nc bnc" id="L338" title="All 2 branches missed.">                for (String device : devices) {</span>
+<span class="nc" id="L339">                    String prefixDeviceId = getDeviceId(app, metrics, monitorId, null, false);</span>
+<span class="nc" id="L340">                    String instance = device.substring(prefixDeviceId.length() + 1);</span>
+<span class="nc" id="L341">                    selectSql = String.format(QUERY_HISTORY_INTERVAL_WITH_INSTANCE_SQL,</span>
+<span class="nc" id="L342">                            addQuote(metric), addQuote(metric), addQuote(metric), addQuote(metric), deviceId + &quot;.&quot; + addQuote(instance), history);</span>
+<span class="nc" id="L343">                    handleHistoryIntervalSelect(selectSql, instance, instanceValuesMap);</span>
+<span class="nc" id="L344">                }</span>
+            }
+        }
+<span class="nc" id="L347">        return instanceValuesMap;</span>
+    }
+
+    private void handleHistoryIntervalSelect(String selectSql, String instance,
+                                             Map&lt;String, List&lt;Value&gt;&gt; instanceValuesMap) {
+<span class="nc" id="L352">        SessionDataSetWrapper dataSet = null;</span>
+        try {
+<span class="nc" id="L354">            dataSet = this.sessionPool.executeQueryStatement(selectSql, this.queryTimeoutInMs);</span>
+<span class="nc" id="L355">            log.debug(&quot;iot select sql: {}&quot;, selectSql);</span>
+<span class="nc bnc" id="L356" title="All 2 branches missed.">            while (dataSet.hasNext()) {</span>
+<span class="nc" id="L357">                RowRecord rowRecord = dataSet.next();</span>
+<span class="nc bnc" id="L358" title="All 2 branches missed.">                if (rowRecord.hasNullField()) {</span>
+<span class="nc" id="L359">                    continue;</span>
+                }
+<span class="nc" id="L361">                long timestamp = rowRecord.getTimestamp();</span>
+<span class="nc" id="L362">                double origin = rowRecord.getFields().get(0).getDoubleV();</span>
+<span class="nc" id="L363">                String originStr = BigDecimal.valueOf(origin).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+<span class="nc" id="L364">                double avg = rowRecord.getFields().get(1).getDoubleV();</span>
+<span class="nc" id="L365">                String avgStr = BigDecimal.valueOf(avg).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+<span class="nc" id="L366">                double min = rowRecord.getFields().get(2).getDoubleV();</span>
+<span class="nc" id="L367">                String minStr = BigDecimal.valueOf(min).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+<span class="nc" id="L368">                double max = rowRecord.getFields().get(3).getDoubleV();</span>
+<span class="nc" id="L369">                String maxStr = BigDecimal.valueOf(max).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+<span class="nc" id="L370">                Value value = Value.builder()</span>
+<span class="nc" id="L371">                        .origin(originStr).mean(avgStr)</span>
+<span class="nc" id="L372">                        .min(minStr).max(maxStr)</span>
+<span class="nc" id="L373">                        .time(timestamp)</span>
+<span class="nc" id="L374">                        .build();</span>
+<span class="nc" id="L375">                List&lt;Value&gt; valueList = instanceValuesMap.computeIfAbsent(instance, k -&gt; new LinkedList&lt;&gt;());</span>
+<span class="nc" id="L376">                valueList.add(value);</span>
+<span class="nc" id="L377">            }</span>
+<span class="nc" id="L378">        } catch (StatementExecutionException | IoTDBConnectionException e) {</span>
+<span class="nc" id="L379">            log.error(&quot;select error history interval sql: {}&quot;, selectSql);</span>
+<span class="nc" id="L380">            log.error(e.getMessage(), e);</span>
+        } finally {
+<span class="nc bnc" id="L382" title="All 2 branches missed.">            if (dataSet != null) {</span>
+                // 需要关闭结果集！！！否则会造成服务端堆积
+<span class="nc" id="L384">                this.sessionPool.closeResultSet(dataSet);</span>
+            }
+        }
+<span class="nc" id="L387">    }</span>
+
+    /**
+     * 获取deviceId下的所有设备
+     *
+     * @param deviceId 设备/实体
+     */
+    private List&lt;String&gt; queryAllDevices(String deviceId) {
+<span class="nc" id="L395">        String showDevicesSql = String.format(SHOW_DEVICES, deviceId + &quot;.*&quot;);</span>
+<span class="nc" id="L396">        SessionDataSetWrapper dataSet = null;</span>
+<span class="nc" id="L397">        List&lt;String&gt; devices = new ArrayList&lt;&gt;();</span>
+        try {
+<span class="nc" id="L399">            dataSet = this.sessionPool.executeQueryStatement(showDevicesSql, this.queryTimeoutInMs);</span>
+<span class="nc bnc" id="L400" title="All 2 branches missed.">            while (dataSet.hasNext()) {</span>
+<span class="nc" id="L401">                RowRecord rowRecord = dataSet.next();</span>
+<span class="nc" id="L402">                devices.add(rowRecord.getFields().get(0).getStringValue());</span>
+<span class="nc" id="L403">            }</span>
+<span class="nc" id="L404">        } catch (StatementExecutionException | IoTDBConnectionException e) {</span>
+<span class="nc" id="L405">            log.error(&quot;query show all devices sql error. sql: {}&quot;, showDevicesSql);</span>
+<span class="nc" id="L406">            log.error(e.getMessage(), e);</span>
+        } finally {
+<span class="nc bnc" id="L408" title="All 2 branches missed.">            if (dataSet != null) {</span>
+                // 需要关闭结果集！！！否则会造成服务端堆积
+<span class="nc" id="L410">                this.sessionPool.closeResultSet(dataSet);</span>
+            }
+        }
+<span class="nc" id="L413">        return devices;</span>
+    }
+
+    /**
+     * 获取设备id
+     * 有instanceId的使用 ${group}.${app}.${metrics}.${monitor}.${labels} 的方式
+     * 否则使用 ${group}.${app}.${metrics}.${monitor} 的方式
+     * 查询时可以通过 ${group}.${app}.${metrics}.${monitor}.* 的方式获取所有instance数据
+     */
+    private String getDeviceId(String app, String metrics, Long monitorId, String labels, boolean useQuote) {
+        String deviceId = STORAGE_GROUP + &quot;.&quot; +
+<span class="nc bnc" id="L424" title="All 2 branches missed.">                (useQuote ? addQuote(app) : app) + &quot;.&quot; +</span>
+<span class="nc bnc" id="L425" title="All 2 branches missed.">                (useQuote ? addQuote(metrics) : metrics) + &quot;.&quot; +</span>
+<span class="nc bnc" id="L426" title="All 4 branches missed.">                ((IotDbVersion.V_1_0.equals(version) || useQuote) ? addQuote(monitorId.toString()) : monitorId.toString());</span>
+<span class="nc bnc" id="L427" title="All 6 branches missed.">        if (labels != null &amp;&amp; !labels.isEmpty() &amp;&amp; !labels.equals(CommonConstants.NULL_VALUE)) {</span>
+<span class="nc" id="L428">            deviceId += &quot;.&quot; + addQuote(labels);</span>
+        }
+<span class="nc" id="L430">        return deviceId;</span>
+    }
+
+    /**
+     * add quote，防止查询时关键字报错(eg: nodes)
+     */
+    private String addQuote(String text) {
+<span class="nc bnc" id="L437" title="All 8 branches missed.">        if (text == null || text.isEmpty() || (text.startsWith(BACK_QUOTE) &amp;&amp; text.endsWith(BACK_QUOTE))) {</span>
+<span class="nc" id="L438">            return text;</span>
+        }
+<span class="nc" id="L440">        text = text.replace(&quot;*&quot;, &quot;-&quot;);</span>
+<span class="nc" id="L441">        text = String.format(&quot;`%s`&quot;, text);</span>
+<span class="nc" id="L442">        return text;</span>
+    }
+
+    @Override
+    public void destroy() {
+<span class="nc bnc" id="L447" title="All 2 branches missed.">        if (this.sessionPool != null) {</span>
+<span class="nc" id="L448">            this.sessionPool.close();</span>
+        }
+<span class="nc" id="L450">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

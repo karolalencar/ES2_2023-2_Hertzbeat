@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AlertDefinesController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-alerter</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.alert.controller</a> &gt; <span class="el_source">AlertDefinesController.java</span></div><h1>AlertDefinesController.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.alert.controller;
+
+import org.dromara.hertzbeat.common.entity.alerter.AlertDefine;
+import org.dromara.hertzbeat.alert.service.AlertDefineService;
+import org.dromara.hertzbeat.common.entity.dto.Message;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import javax.persistence.criteria.CriteriaBuilder;
+import javax.persistence.criteria.Predicate;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
+
+/**
+ * Define the batch API for alarms
+ * @author tom
+ */
+@Tag(name = &quot;Alert Define Batch API | 告警定义管理API&quot;)
+@RestController
+@RequestMapping(path = &quot;/api/alert/defines&quot;, produces = {APPLICATION_JSON_VALUE})
+<span class="fc" id="L54">public class AlertDefinesController {</span>
+
+    @Autowired
+    private AlertDefineService alertDefineService;
+
+    @GetMapping
+    @Operation(summary = &quot;Example Query the alarm definition list ｜ 查询告警定义列表&quot;,
+            description = &quot;You can obtain the list of alarm definitions by querying filter items ｜ 根据查询过滤项获取告警定义信息列表&quot;)
+    public ResponseEntity&lt;Message&lt;Page&lt;AlertDefine&gt;&gt;&gt; getAlertDefines(
+            @Parameter(description = &quot;Alarm Definition ID ｜ 告警定义ID&quot;, example = &quot;6565463543&quot;) @RequestParam(required = false) List&lt;Long&gt; ids,
+            @Parameter(description = &quot;Search-Target Expr Template ｜ 模糊查询-指标对象 表达式 通知模版&quot;, example = &quot;x&quot;) @RequestParam(required = false) String search,
+            @Parameter(description = &quot;Alarm Definition Severity ｜ 告警定义级别&quot;, example = &quot;6565463543&quot;) @RequestParam(required = false) Byte priority,
+            @Parameter(description = &quot;Sort field, default id ｜ 排序字段，默认id&quot;, example = &quot;id&quot;) @RequestParam(defaultValue = &quot;id&quot;) String sort,
+            @Parameter(description = &quot;Sort mode: asc: ascending, desc: descending ｜ 排序方式，asc:升序，desc:降序&quot;, example = &quot;desc&quot;) @RequestParam(defaultValue = &quot;desc&quot;) String order,
+            @Parameter(description = &quot;List current page ｜ 列表当前分页&quot;, example = &quot;0&quot;) @RequestParam(defaultValue = &quot;0&quot;) int pageIndex,
+            @Parameter(description = &quot;Number of list pages ｜ 列表分页数量&quot;, example = &quot;8&quot;) @RequestParam(defaultValue = &quot;8&quot;) int pageSize) {
+
+<span class="fc" id="L71">        Specification&lt;AlertDefine&gt; specification = (root, query, criteriaBuilder) -&gt; {</span>
+<span class="nc" id="L72">            List&lt;Predicate&gt; andList = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L73" title="All 4 branches missed.">            if (ids != null &amp;&amp; !ids.isEmpty()) {</span>
+<span class="nc" id="L74">                CriteriaBuilder.In&lt;Long&gt; inPredicate = criteriaBuilder.in(root.get(&quot;id&quot;));</span>
+<span class="nc bnc" id="L75" title="All 2 branches missed.">                for (long id : ids) {</span>
+<span class="nc" id="L76">                    inPredicate.value(id);</span>
+<span class="nc" id="L77">                }</span>
+<span class="nc" id="L78">                andList.add(inPredicate);</span>
+            }
+<span class="nc bnc" id="L80" title="All 2 branches missed.">            if (StringUtils.hasText(search)) {</span>
+<span class="nc" id="L81">                Predicate predicate = criteriaBuilder.or(</span>
+<span class="nc" id="L82">                        criteriaBuilder.like(</span>
+<span class="nc" id="L83">                                criteriaBuilder.lower(root.get(&quot;app&quot;)),</span>
+<span class="nc" id="L84">                                &quot;%&quot; + search.toLowerCase() + &quot;%&quot;</span>
+                        ),
+<span class="nc" id="L86">                        criteriaBuilder.like(</span>
+<span class="nc" id="L87">                                criteriaBuilder.lower(root.get(&quot;metric&quot;)),</span>
+<span class="nc" id="L88">                                &quot;%&quot; + search.toLowerCase() + &quot;%&quot;</span>
+                        ),
+<span class="nc" id="L90">                        criteriaBuilder.like(</span>
+<span class="nc" id="L91">                                criteriaBuilder.lower(root.get(&quot;field&quot;)),</span>
+<span class="nc" id="L92">                                &quot;%&quot; + search.toLowerCase() + &quot;%&quot;</span>
+                        ),
+<span class="nc" id="L94">                        criteriaBuilder.like(</span>
+<span class="nc" id="L95">                                criteriaBuilder.lower(root.get(&quot;expr&quot;)),</span>
+<span class="nc" id="L96">                                &quot;%&quot; + search.toLowerCase() + &quot;%&quot;</span>
+                        ),
+<span class="nc" id="L98">                        criteriaBuilder.like(</span>
+<span class="nc" id="L99">                                criteriaBuilder.lower(root.get(&quot;template&quot;)),</span>
+<span class="nc" id="L100">                                &quot;%&quot; + search.toLowerCase() + &quot;%&quot;</span>
+                        )
+                );
+<span class="nc" id="L103">                andList.add(predicate);</span>
+            }
+<span class="nc bnc" id="L105" title="All 2 branches missed.">            if (priority != null) {</span>
+<span class="nc" id="L106">                Predicate predicate = criteriaBuilder.equal(root.get(&quot;priority&quot;), priority);</span>
+<span class="nc" id="L107">                andList.add(predicate);</span>
+            }
+<span class="nc" id="L109">            Predicate[] predicates = new Predicate[andList.size()];</span>
+<span class="nc" id="L110">            return criteriaBuilder.and(andList.toArray(predicates));</span>
+        };
+<span class="fc" id="L112">        Sort sortExp = Sort.by(new Sort.Order(Sort.Direction.fromString(order), sort));</span>
+<span class="fc" id="L113">        PageRequest pageRequest = PageRequest.of(pageIndex, pageSize, sortExp);</span>
+<span class="fc" id="L114">        Page&lt;AlertDefine&gt; alertDefinePage = alertDefineService.getAlertDefines(specification, pageRequest);</span>
+<span class="fc" id="L115">        return ResponseEntity.ok(Message.success(alertDefinePage));</span>
+    }
+
+    @DeleteMapping
+    @Operation(summary = &quot;Delete alarm definitions in batches ｜ 批量删除告警定义&quot;,
+            description = &quot;Delete alarm definitions in batches based on the alarm definition ID list ｜ 根据告警定义ID列表批量删除告警定义&quot;)
+    public ResponseEntity&lt;Message&lt;Void&gt;&gt; deleteAlertDefines(
+            @Parameter(description = &quot;Alarm Definition IDs ｜ 告警定义IDs&quot;, example = &quot;6565463543&quot;) @RequestParam(required = false) List&lt;Long&gt; ids
+    ) {
+<span class="pc bpc" id="L124" title="3 of 4 branches missed.">        if (ids != null &amp;&amp; !ids.isEmpty()) {</span>
+<span class="nc" id="L125">            alertDefineService.deleteAlertDefines(new HashSet&lt;&gt;(ids));</span>
+        }
+<span class="fc" id="L127">        return ResponseEntity.ok(Message.success());</span>
+    }
+    
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

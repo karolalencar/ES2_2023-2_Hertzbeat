@@ -1,0 +1,322 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>HistoryInfluxdbDataStorage.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-warehouse</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.warehouse.store</a> &gt; <span class="el_source">HistoryInfluxdbDataStorage.java</span></div><h1>HistoryInfluxdbDataStorage.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.warehouse.store;
+
+import lombok.extern.slf4j.Slf4j;
+import okhttp3.OkHttpClient;
+import org.apache.http.ssl.SSLContexts;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.dto.Value;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.util.JsonUtil;
+import org.dromara.hertzbeat.warehouse.config.WarehouseProperties;
+import org.influxdb.InfluxDB;
+import org.influxdb.InfluxDBFactory;
+import org.influxdb.dto.BatchPoints;
+import org.influxdb.dto.Point;
+import org.influxdb.dto.Query;
+import org.influxdb.dto.QueryResult;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+
+import javax.net.ssl.*;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * @author ceilzcx
+ *
+ */
+@Component
+@ConditionalOnProperty(prefix = &quot;warehouse.store.influxdb&quot;,
+        name = &quot;enabled&quot;, havingValue = &quot;true&quot;)
+<span class="nc" id="L35">@Slf4j</span>
+public class HistoryInfluxdbDataStorage extends AbstractHistoryDataStorage {
+
+    private static final String DATABASE = &quot;hertzbeat&quot;;
+
+    private static final String SHOW_DATABASE = &quot;SHOW DATABASES&quot;;
+
+    private static final String CREATE_DATABASE = &quot;CREATE DATABASE %s&quot;;
+
+    private static final String QUERY_HISTORY_SQL = &quot;SELECT instance, %s FROM %s WHERE time &gt;= now() - %s order by time desc&quot;;
+
+    private static final String QUERY_HISTORY_SQL_WITH_INSTANCE = &quot;SELECT instance, %s FROM %s WHERE instance = '%s' and time &gt;= now() - %s order by time desc&quot;;
+
+    private static final String QUERY_HISTORY_INTERVAL_WITH_INSTANCE_SQL =
+            &quot;SELECT FIRST(%s), MEAN(%s), MAX(%s), MIN(%s) FROM %s WHERE instance = '%s' and time &gt;= now() - %s GROUP BY time(4h)&quot;;
+
+    private static final String CREATE_RETENTION_POLICY = &quot;CREATE RETENTION POLICY \&quot;%s_retention\&quot; ON \&quot;%s\&quot; DURATION %s REPLICATION %d DEFAULT&quot;;
+    
+    private static final String QUERY_INSTANCE_SQL = &quot;show tag values from %s with key = \&quot;instance\&quot;&quot;;
+    
+    private InfluxDB influxDb;
+
+<span class="nc" id="L57">    public HistoryInfluxdbDataStorage(WarehouseProperties properties) {</span>
+<span class="nc" id="L58">        this.initInfluxDb(properties);</span>
+<span class="nc" id="L59">    }</span>
+
+    public void initInfluxDb(WarehouseProperties properties) {
+<span class="nc" id="L62">        OkHttpClient.Builder client = new OkHttpClient.Builder()</span>
+<span class="nc" id="L63">                .connectTimeout(10, TimeUnit.SECONDS)</span>
+<span class="nc" id="L64">                .writeTimeout(10, TimeUnit.SECONDS)</span>
+<span class="nc" id="L65">                .readTimeout(10, TimeUnit.SECONDS)</span>
+<span class="nc" id="L66">                .retryOnConnectionFailure(true);</span>
+
+<span class="nc" id="L68">        client.sslSocketFactory(defaultSslSocketFactory(), defaultTrustManager());</span>
+<span class="nc" id="L69">        client.hostnameVerifier(noopHostnameVerifier());</span>
+
+<span class="nc" id="L71">        WarehouseProperties.StoreProperties.InfluxdbProperties influxdbProperties = properties.getStore().getInfluxdb();</span>
+<span class="nc" id="L72">        this.influxDb = InfluxDBFactory.connect(influxdbProperties.getServerUrl(), influxdbProperties.getUsername(), influxdbProperties.getPassword(), client);</span>
+        // Close it if your application is terminating, or you are not using it anymore.
+<span class="nc" id="L74">        Runtime.getRuntime().addShutdownHook(new Thread(influxDb::close));</span>
+
+<span class="nc" id="L76">        this.serverAvailable = this.createDatabase(influxdbProperties);</span>
+<span class="nc" id="L77">    }</span>
+
+    private boolean createDatabase(WarehouseProperties.StoreProperties.InfluxdbProperties influxdbProperties) {
+<span class="nc" id="L80">        QueryResult queryResult = this.influxDb.query(new Query(SHOW_DATABASE));</span>
+
+<span class="nc bnc" id="L82" title="All 2 branches missed.">        if (queryResult.hasError()) {</span>
+<span class="nc" id="L83">            log.error(&quot;show databases in influxdb error, msg: {}&quot;, queryResult.getError());</span>
+<span class="nc" id="L84">            return false;</span>
+        }
+
+<span class="nc bnc" id="L87" title="All 2 branches missed.">        for (QueryResult.Result result : queryResult.getResults()) {</span>
+<span class="nc bnc" id="L88" title="All 2 branches missed.">            for (QueryResult.Series series : result.getSeries()) {</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">                for (List&lt;Object&gt; values : series.getValues()) {</span>
+<span class="nc bnc" id="L90" title="All 2 branches missed.">                    if (values.contains(DATABASE)) {</span>
+                        // database exists
+<span class="nc" id="L92">                        return true;</span>
+                    }
+<span class="nc" id="L94">                }</span>
+<span class="nc" id="L95">            }</span>
+<span class="nc" id="L96">        }</span>
+
+        // 创建数据库
+<span class="nc" id="L99">        String createDatabaseSql = String.format(CREATE_DATABASE, DATABASE);</span>
+<span class="nc" id="L100">        QueryResult createDatabaseResult = this.influxDb.query(new Query(createDatabaseSql));</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">        if (createDatabaseResult.hasError()) {</span>
+<span class="nc" id="L102">            log.error(&quot;create database {} in influxdb error, msg: {}&quot;, DATABASE, createDatabaseResult.getError());</span>
+<span class="nc" id="L103">            return false;</span>
+        }
+        // 设置过期时间
+<span class="nc" id="L106">        String createRetentionPolicySql = String.format(CREATE_RETENTION_POLICY, DATABASE, DATABASE,</span>
+<span class="nc" id="L107">                influxdbProperties.getExpireTime(), influxdbProperties.getReplication());</span>
+<span class="nc" id="L108">        QueryResult createRetentionPolicySqlResult = this.influxDb.query(new Query(createRetentionPolicySql));</span>
+<span class="nc bnc" id="L109" title="All 2 branches missed.">        if (createRetentionPolicySqlResult.hasError()) {</span>
+<span class="nc" id="L110">            log.error(&quot;create retention policy in influxdb error, msg: {}&quot;, createDatabaseResult.getError());</span>
+<span class="nc" id="L111">            return false;</span>
+        }
+
+<span class="nc" id="L114">        return true;</span>
+    }
+
+    @Override
+    void saveData(CollectRep.MetricsData metricsData) {
+<span class="nc bnc" id="L119" title="All 4 branches missed.">        if (!isServerAvailable() || metricsData.getCode() != CollectRep.Code.SUCCESS) {</span>
+<span class="nc" id="L120">            return;</span>
+        }
+<span class="nc bnc" id="L122" title="All 2 branches missed.">        if (metricsData.getValuesList().isEmpty()) {</span>
+<span class="nc" id="L123">            log.info(&quot;[warehouse influxdb] flush metrics data {} is null, ignore.&quot;, metricsData.getId());</span>
+<span class="nc" id="L124">            return;</span>
+        }
+<span class="nc" id="L126">        List&lt;CollectRep.Field&gt; fieldsList = metricsData.getFieldsList();</span>
+
+<span class="nc" id="L128">        String table = this.generateTable(metricsData.getApp(), metricsData.getMetrics(), metricsData.getId());</span>
+
+<span class="nc" id="L130">        List&lt;Point&gt; points = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L131" title="All 2 branches missed.">        for (CollectRep.ValueRow valueRow : metricsData.getValuesList()) {</span>
+<span class="nc" id="L132">            Point.Builder builder = Point.measurement(table);</span>
+<span class="nc" id="L133">            builder.time(metricsData.getTime(), TimeUnit.MILLISECONDS);</span>
+<span class="nc" id="L134">            Map&lt;String, String&gt; labels = new HashMap&lt;&gt;(8);</span>
+<span class="nc bnc" id="L135" title="All 2 branches missed.">            for (int i = 0; i &lt; fieldsList.size(); i++) {</span>
+<span class="nc" id="L136">                CollectRep.Field field = fieldsList.get(i);</span>
+<span class="nc bnc" id="L137" title="All 2 branches missed.">                if (!CommonConstants.NULL_VALUE.equals(valueRow.getColumns(i))) {</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">                    if (field.getType() == CommonConstants.TYPE_NUMBER) {</span>
+<span class="nc" id="L139">                        builder.addField(field.getName(), Double.parseDouble(valueRow.getColumns(i)));</span>
+<span class="nc bnc" id="L140" title="All 2 branches missed.">                    } else if (field.getType() == CommonConstants.TYPE_STRING) {</span>
+<span class="nc" id="L141">                        builder.addField(field.getName(), valueRow.getColumns(i));</span>
+                    }
+<span class="nc bnc" id="L143" title="All 2 branches missed.">                    if (field.getLabel()) {</span>
+<span class="nc" id="L144">                        labels.put(field.getName(), valueRow.getColumns(i));</span>
+                    }
+                } else {
+<span class="nc" id="L147">                    builder.addField(field.getName(), &quot;&quot;);</span>
+                }
+            }
+<span class="nc" id="L150">            builder.tag(&quot;instance&quot;, JsonUtil.toJson(labels));</span>
+<span class="nc" id="L151">            points.add(builder.build());</span>
+<span class="nc" id="L152">        }</span>
+<span class="nc" id="L153">        BatchPoints.Builder builder = BatchPoints.database(DATABASE);</span>
+<span class="nc" id="L154">        builder.points(points);</span>
+<span class="nc" id="L155">        this.influxDb.write(builder.build());</span>
+<span class="nc" id="L156">    }</span>
+
+    @Override
+    public Map&lt;String, List&lt;Value&gt;&gt; getHistoryMetricData(Long monitorId, String app, String metrics, String metric, String label, String history) {
+<span class="nc" id="L160">        String table = this.generateTable(app, metrics, monitorId);</span>
+<span class="nc bnc" id="L161" title="All 2 branches missed.">        String selectSql = label == null ? String.format(QUERY_HISTORY_SQL, metric, table, history)</span>
+<span class="nc" id="L162">                : String.format(QUERY_HISTORY_SQL_WITH_INSTANCE, metric, table, label, history);</span>
+<span class="nc" id="L163">        Map&lt;String, List&lt;Value&gt;&gt; instanceValueMap = new HashMap&lt;&gt;(8);</span>
+        try {
+<span class="nc" id="L165">            QueryResult selectResult = this.influxDb.query(new Query(selectSql, DATABASE), TimeUnit.MILLISECONDS);</span>
+<span class="nc bnc" id="L166" title="All 2 branches missed.">            for (QueryResult.Result result : selectResult.getResults()) {</span>
+<span class="nc bnc" id="L167" title="All 2 branches missed.">                if (result.getSeries() == null) {</span>
+<span class="nc" id="L168">                    continue;</span>
+                }
+<span class="nc bnc" id="L170" title="All 2 branches missed.">                for (QueryResult.Series series : result.getSeries()) {</span>
+<span class="nc bnc" id="L171" title="All 2 branches missed.">                    for (List&lt;Object&gt; value : series.getValues()) {</span>
+<span class="nc" id="L172">                        long time = this.parseTimeToMillis(value.get(0));</span>
+<span class="nc bnc" id="L173" title="All 2 branches missed.">                        String instanceValue = value.get(1) == null ? &quot;&quot; : String.valueOf(value.get(1));</span>
+<span class="nc bnc" id="L174" title="All 2 branches missed.">                        String strValue = value.get(2) == null ? null : this.parseDoubleValue(value.get(2).toString());</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">                        if (strValue == null) {</span>
+<span class="nc" id="L176">                            continue;</span>
+                        }
+<span class="nc" id="L178">                        List&lt;Value&gt; valueList = instanceValueMap.computeIfAbsent(instanceValue, k -&gt; new LinkedList&lt;&gt;());</span>
+<span class="nc" id="L179">                        valueList.add(new Value(strValue, time));</span>
+<span class="nc" id="L180">                    }</span>
+<span class="nc" id="L181">                }</span>
+<span class="nc" id="L182">            }</span>
+<span class="nc" id="L183">        } catch (Exception e) {</span>
+<span class="nc" id="L184">            log.error(&quot;select history metric data in influxdb error, sql:{}, msg: {}&quot;, selectSql, e.getMessage());</span>
+<span class="nc" id="L185">        }</span>
+<span class="nc" id="L186">        return instanceValueMap;</span>
+    }
+
+    @Override
+    public Map&lt;String, List&lt;Value&gt;&gt; getHistoryIntervalMetricData(Long monitorId, String app, String metrics, String metric, String label, String history) {
+<span class="nc" id="L191">        String table = this.generateTable(app, metrics, monitorId);</span>
+<span class="nc" id="L192">        Map&lt;String, List&lt;Value&gt;&gt; instanceValueMap = new HashMap&lt;&gt;(8);</span>
+<span class="nc" id="L193">        Set&lt;String&gt; instances = new HashSet&lt;&gt;(8);</span>
+<span class="nc bnc" id="L194" title="All 2 branches missed.">        if (label != null) {</span>
+<span class="nc" id="L195">            instances.add(label);</span>
+        }
+<span class="nc bnc" id="L197" title="All 2 branches missed.">        if (instances.isEmpty()) {</span>
+            // query the instance near 1week
+<span class="nc" id="L199">            String queryInstanceSql = String.format(QUERY_INSTANCE_SQL, table);</span>
+<span class="nc" id="L200">            QueryResult instanceQueryResult = this.influxDb.query(new Query(queryInstanceSql, DATABASE), TimeUnit.MILLISECONDS);</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">            for (QueryResult.Result result : instanceQueryResult.getResults()) {</span>
+<span class="nc bnc" id="L202" title="All 2 branches missed.">                if (result.getSeries() == null) {</span>
+<span class="nc" id="L203">                    continue;</span>
+                }
+<span class="nc bnc" id="L205" title="All 2 branches missed.">                for (QueryResult.Series series : result.getSeries()) {</span>
+<span class="nc bnc" id="L206" title="All 2 branches missed.">                    for (List&lt;Object&gt; value : series.getValues()) {</span>
+<span class="nc bnc" id="L207" title="All 4 branches missed.">                        if (value != null &amp;&amp; value.get(1) != null) {</span>
+<span class="nc" id="L208">                            instances.add(value.get(1).toString());</span>
+                        }
+<span class="nc" id="L210">                    }</span>
+<span class="nc" id="L211">                }</span>
+<span class="nc" id="L212">            }</span>
+        }
+
+        try {
+<span class="nc" id="L216">            history = history.toLowerCase();</span>
+<span class="nc bnc" id="L217" title="All 2 branches missed.">            if (instances.isEmpty()) {</span>
+<span class="nc" id="L218">                instances.add(&quot;&quot;);</span>
+            }
+<span class="nc bnc" id="L220" title="All 2 branches missed.">            for (String instanceValue : instances) {</span>
+<span class="nc" id="L221">                String selectSql = String.format(QUERY_HISTORY_INTERVAL_WITH_INSTANCE_SQL, metric, metric, metric, metric, table, instanceValue, history);</span>
+<span class="nc" id="L222">                QueryResult selectResult = this.influxDb.query(new Query(selectSql, DATABASE), TimeUnit.MILLISECONDS);</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">                for (QueryResult.Result result : selectResult.getResults()) {</span>
+<span class="nc bnc" id="L224" title="All 2 branches missed.">                    if (result.getSeries() == null) {</span>
+<span class="nc" id="L225">                        continue;</span>
+                    }
+<span class="nc bnc" id="L227" title="All 2 branches missed.">                    for (QueryResult.Series series : result.getSeries()) {</span>
+<span class="nc bnc" id="L228" title="All 2 branches missed.">                        for (List&lt;Object&gt; value : series.getValues()) {</span>
+<span class="nc" id="L229">                            Value.ValueBuilder valueBuilder = Value.builder();</span>
+<span class="nc" id="L230">                            long time = this.parseTimeToMillis(value.get(0));</span>
+<span class="nc" id="L231">                            valueBuilder.time(time);</span>
+                            
+<span class="nc bnc" id="L233" title="All 2 branches missed.">                            if (value.get(1) != null) {</span>
+<span class="nc" id="L234">                                valueBuilder.origin(this.parseDoubleValue(value.get(1).toString()));</span>
+                            } else {
+                                continue;
+                            }
+<span class="nc bnc" id="L238" title="All 2 branches missed.">                            if (value.get(2) != null) {</span>
+<span class="nc" id="L239">                                valueBuilder.mean(this.parseDoubleValue(value.get(2).toString()));</span>
+                            } else {
+                                continue;
+                            }
+<span class="nc bnc" id="L243" title="All 2 branches missed.">                            if (value.get(3) != null) {</span>
+<span class="nc" id="L244">                                valueBuilder.min(this.parseDoubleValue(value.get(3).toString()));</span>
+                            } else {
+                                continue;
+                            }
+<span class="nc bnc" id="L248" title="All 2 branches missed.">                            if (value.get(4) != null) {</span>
+<span class="nc" id="L249">                                valueBuilder.max(this.parseDoubleValue(value.get(4).toString()));</span>
+                            } else {
+                                continue;
+                            }
+<span class="nc" id="L253">                            List&lt;Value&gt; valueList = instanceValueMap.computeIfAbsent(instanceValue, k -&gt; new LinkedList&lt;&gt;());</span>
+<span class="nc" id="L254">                            valueList.add(valueBuilder.build());</span>
+<span class="nc" id="L255">                        }</span>
+<span class="nc" id="L256">                    }</span>
+<span class="nc" id="L257">                }</span>
+<span class="nc" id="L258">                List&lt;Value&gt; instanceValueList = instanceValueMap.get(instanceValue);</span>
+<span class="nc bnc" id="L259" title="All 4 branches missed.">                if (instanceValueList == null || instanceValueList.isEmpty()) {</span>
+<span class="nc" id="L260">                    instanceValueMap.remove(instanceValue);</span>
+                }
+<span class="nc" id="L262">            }</span>
+<span class="nc" id="L263">        } catch (Exception e) {</span>
+<span class="nc" id="L264">            log.error(&quot;select history interval metric data in influxdb error, msg: {}&quot;, e.getMessage());</span>
+<span class="nc" id="L265">        }</span>
+<span class="nc" id="L266">        return instanceValueMap;</span>
+    }
+
+    private String generateTable(String app, String metrics, Long monitorId) {
+<span class="nc" id="L270">        return app + &quot;_&quot; + metrics + &quot;_&quot; + monitorId;</span>
+    }
+
+    private long parseTimeToMillis(Object time) {
+<span class="nc bnc" id="L274" title="All 2 branches missed.">        if (time == null) {</span>
+<span class="nc" id="L275">            return 0;</span>
+        }
+<span class="nc" id="L277">        Double doubleTime = (Double) time;</span>
+<span class="nc" id="L278">        return doubleTime.longValue();</span>
+    }
+
+    private String parseDoubleValue(String value) {
+<span class="nc" id="L282">        return (new BigDecimal(value)).setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+    }
+
+    private static X509TrustManager defaultTrustManager() {
+<span class="nc" id="L286">        return new X509TrustManager() {</span>
+            public X509Certificate[] getAcceptedIssuers() {
+<span class="nc" id="L288">                return new X509Certificate[0];</span>
+            }
+
+            public void checkClientTrusted(X509Certificate[] certs, String authType) {
+<span class="nc" id="L292">            }</span>
+
+            public void checkServerTrusted(X509Certificate[] certs, String authType) {
+<span class="nc" id="L295">            }</span>
+        };
+    }
+
+    private static SSLSocketFactory defaultSslSocketFactory() {
+        try {
+<span class="nc" id="L301">            SSLContext sslContext = SSLContexts.createDefault();</span>
+<span class="nc" id="L302">            sslContext.init(null, new TrustManager[]{</span>
+<span class="nc" id="L303">                    defaultTrustManager()</span>
+            }, new SecureRandom());
+<span class="nc" id="L305">            return sslContext.getSocketFactory();</span>
+<span class="nc" id="L306">        } catch (Exception e) {</span>
+<span class="nc" id="L307">            throw new RuntimeException(e);</span>
+        }
+    }
+
+    private static HostnameVerifier noopHostnameVerifier() {
+<span class="nc" id="L312">        return (s, sslSession) -&gt; true;</span>
+    }
+
+    @Override
+    public void destroy() throws Exception {
+<span class="nc bnc" id="L317" title="All 2 branches missed.">        if (this.influxDb != null) {</span>
+<span class="nc" id="L318">            this.influxDb.close();</span>
+        }
+<span class="nc" id="L320">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

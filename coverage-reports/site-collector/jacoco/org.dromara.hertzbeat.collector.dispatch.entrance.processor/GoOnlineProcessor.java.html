@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GoOnlineProcessor.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.dispatch.entrance.processor</a> &gt; <span class="el_source">GoOnlineProcessor.java</span></div><h1>GoOnlineProcessor.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.dispatch.entrance.processor;
+
+import io.netty.channel.ChannelHandlerContext;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.collector.dispatch.timer.TimerDispatch;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.message.ClusterMsg;
+import org.dromara.hertzbeat.common.support.SpringContextHolder;
+import org.dromara.hertzbeat.remoting.netty.NettyRemotingProcessor;
+
+/**
+ * handle collector online message
+ * 注: 这里不是重新打开与Manager的连接, 也做不到, 只是重新开启采集功能
+ */
+<span class="nc" id="L15">@Slf4j</span>
+<span class="nc" id="L16">public class GoOnlineProcessor implements NettyRemotingProcessor {</span>
+    
+    private TimerDispatch timerDispatch;
+    
+    @Override
+    public ClusterMsg.Message handle(ChannelHandlerContext ctx, ClusterMsg.Message message) {
+<span class="nc bnc" id="L22" title="All 2 branches missed.">        if (this.timerDispatch == null) {</span>
+<span class="nc" id="L23">            this.timerDispatch = SpringContextHolder.getBean(TimerDispatch.class);</span>
+        }
+<span class="nc" id="L25">        timerDispatch.goOnline();</span>
+<span class="nc" id="L26">        log.info(&quot;receive online message and handle success&quot;);</span>
+<span class="nc" id="L27">        return ClusterMsg.Message.newBuilder()</span>
+<span class="nc" id="L28">                .setIdentity(message.getIdentity())</span>
+<span class="nc" id="L29">                .setDirection(ClusterMsg.Direction.RESPONSE)</span>
+<span class="nc" id="L30">                .setMsg(String.valueOf(CommonConstants.SUCCESS_CODE))</span>
+<span class="nc" id="L31">                .build();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

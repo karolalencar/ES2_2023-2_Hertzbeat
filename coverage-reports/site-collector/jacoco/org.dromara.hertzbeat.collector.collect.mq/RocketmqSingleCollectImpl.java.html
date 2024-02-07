@@ -1,0 +1,368 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RocketmqSingleCollectImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.mq</a> &gt; <span class="el_source">RocketmqSingleCollectImpl.java</span></div><h1>RocketmqSingleCollectImpl.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.collect.mq;
+
+import com.alibaba.fastjson.JSONObject;
+import com.google.common.collect.Lists;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.rocketmq.acl.common.AclClientRPCHook;
+import org.apache.rocketmq.acl.common.SessionCredentials;
+import org.apache.rocketmq.common.MixAll;
+import org.apache.rocketmq.common.admin.ConsumeStats;
+import org.apache.rocketmq.common.protocol.body.ClusterInfo;
+import org.apache.rocketmq.common.protocol.body.ConsumerConnection;
+import org.apache.rocketmq.common.protocol.body.KVTable;
+import org.apache.rocketmq.common.protocol.body.SubscriptionGroupWrapper;
+import org.apache.rocketmq.common.protocol.body.TopicList;
+import org.apache.rocketmq.common.protocol.route.BrokerData;
+import org.apache.rocketmq.common.utils.ThreadUtils;
+import org.apache.rocketmq.remoting.RPCHook;
+import org.apache.rocketmq.tools.admin.DefaultMQAdminExt;
+import org.dromara.hertzbeat.collector.collect.AbstractCollect;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.collector.util.JsonPathParser;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.job.Metrics;
+import org.dromara.hertzbeat.common.entity.job.protocol.RocketmqProtocol;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.util.CommonUtil;
+import org.jetbrains.annotations.NotNull;
+import org.springframework.beans.factory.DisposableBean;
+import org.springframework.util.Assert;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+
+/**
+ * rocketmq collect
+ *
+ * @author ceilzcx
+ * @since 5/6/2023
+ */
+<span class="nc bnc" id="L56" title="All 2 branches missed.">@Slf4j</span>
+public class RocketmqSingleCollectImpl extends AbstractCollect implements DisposableBean {
+
+    private static final int WAIT_TIMEOUT = 10;
+
+<span class="nc" id="L61">    private static final Set&lt;String&gt; SYSTEM_GROUP_SET = new HashSet&lt;&gt;();</span>
+
+    private final ExecutorService executorService;
+
+    static {
+        // system consumer group
+<span class="nc" id="L67">        SYSTEM_GROUP_SET.add(MixAll.TOOLS_CONSUMER_GROUP);</span>
+<span class="nc" id="L68">        SYSTEM_GROUP_SET.add(MixAll.FILTERSRV_CONSUMER_GROUP);</span>
+<span class="nc" id="L69">        SYSTEM_GROUP_SET.add(MixAll.SELF_TEST_CONSUMER_GROUP);</span>
+<span class="nc" id="L70">        SYSTEM_GROUP_SET.add(MixAll.ONS_HTTP_PROXY_GROUP);</span>
+<span class="nc" id="L71">        SYSTEM_GROUP_SET.add(MixAll.CID_ONSAPI_PULL_GROUP);</span>
+<span class="nc" id="L72">        SYSTEM_GROUP_SET.add(MixAll.CID_ONSAPI_PERMISSION_GROUP);</span>
+<span class="nc" id="L73">        SYSTEM_GROUP_SET.add(MixAll.CID_ONSAPI_OWNER_GROUP);</span>
+<span class="nc" id="L74">        SYSTEM_GROUP_SET.add(MixAll.CID_SYS_RMQ_TRANS);</span>
+<span class="nc" id="L75">    }</span>
+
+<span class="nc" id="L77">    public RocketmqSingleCollectImpl() {</span>
+<span class="nc" id="L78">        Runtime runtime = Runtime.getRuntime();</span>
+<span class="nc" id="L79">        int corePoolSize = Math.max(8, runtime.availableProcessors());</span>
+<span class="nc" id="L80">        int maximumPoolSize = Math.max(16, runtime.availableProcessors());</span>
+<span class="nc" id="L81">        ThreadFactory threadFactory = new ThreadFactoryBuilder()</span>
+<span class="nc" id="L82">                .setUncaughtExceptionHandler((thread, throwable) -&gt; {</span>
+<span class="nc" id="L83">                    log.error(&quot;RocketMQCollectGroup has uncaughtException.&quot;);</span>
+<span class="nc" id="L84">                    log.error(throwable.getMessage(), throwable);</span>
+<span class="nc" id="L85">                })</span>
+<span class="nc" id="L86">                .setDaemon(true)</span>
+<span class="nc" id="L87">                .setNameFormat(&quot;rocketMQ-collector-%d&quot;)</span>
+<span class="nc" id="L88">                .build();</span>
+<span class="nc" id="L89">        this.executorService = new ThreadPoolExecutor(corePoolSize, maximumPoolSize, 60L, TimeUnit.SECONDS,</span>
+                new LinkedBlockingQueue&lt;&gt;(5000), threadFactory, new ThreadPoolExecutor.DiscardOldestPolicy());
+<span class="nc" id="L91">    }</span>
+
+    @Override
+    public void destroy() {
+<span class="nc" id="L95">        ThreadUtils.shutdownGracefully(this.executorService, 10L, TimeUnit.SECONDS);</span>
+<span class="nc" id="L96">    }</span>
+
+    @Override
+    public void collect(CollectRep.MetricsData.Builder builder, long monitorId, String app, Metrics metrics) {
+        try {
+<span class="nc" id="L101">            preCheck(metrics);</span>
+<span class="nc" id="L102">        } catch (Exception e) {</span>
+<span class="nc" id="L103">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L104">            builder.setMsg(e.getMessage());</span>
+<span class="nc" id="L105">            return;</span>
+<span class="nc" id="L106">        }</span>
+<span class="nc" id="L107">        DefaultMQAdminExt mqAdminExt = null;</span>
+        try {
+<span class="nc" id="L109">            mqAdminExt = this.createMqAdminExt(metrics);</span>
+<span class="nc" id="L110">            mqAdminExt.start();</span>
+
+<span class="nc" id="L112">            RocketmqCollectData rocketmqCollectData = new RocketmqCollectData();</span>
+<span class="nc" id="L113">            this.collectData(mqAdminExt, rocketmqCollectData);</span>
+
+<span class="nc" id="L115">            this.fillBuilder(rocketmqCollectData, builder, metrics.getAliasFields(), metrics.getRocketmq().getParseScript());</span>
+
+<span class="nc" id="L117">        } catch (Exception e) {</span>
+<span class="nc" id="L118">            builder.setCode(CollectRep.Code.FAIL);</span>
+<span class="nc" id="L119">            String message = CommonUtil.getMessageFromThrowable(e);</span>
+<span class="nc" id="L120">            builder.setMsg(message);</span>
+        } finally {
+<span class="nc bnc" id="L122" title="All 2 branches missed.">            if (mqAdminExt != null) {</span>
+<span class="nc" id="L123">                mqAdminExt.shutdown();</span>
+            }
+        }
+<span class="nc" id="L126">    }</span>
+
+    @Override
+    public String supportProtocol() {
+<span class="nc" id="L130">        return DispatchConstants.PROTOCOL_ROCKETMQ;</span>
+    }
+
+    /**
+     * preCheck params
+     * @param metrics metrics config
+     */
+    private void preCheck(Metrics metrics) {
+<span class="nc bnc" id="L138" title="All 4 branches missed.">        if (metrics == null || metrics.getRocketmq() == null) {</span>
+<span class="nc" id="L139">            throw new IllegalArgumentException(&quot;Mongodb collect must has rocketmq params&quot;);</span>
+        }
+<span class="nc" id="L141">        RocketmqProtocol rocketmq = metrics.getRocketmq();</span>
+<span class="nc" id="L142">        Assert.hasText(rocketmq.getNamesrvHost(), &quot;Rocketmq Protocol namesrvHost is required.&quot;);</span>
+<span class="nc" id="L143">        Assert.hasText(rocketmq.getNamesrvPort(), &quot;Rocketmq Protocol namesrvPort is required.&quot;);</span>
+<span class="nc" id="L144">    }</span>
+
+    /**
+     * create the DefaultMQAdminExt
+     * one problem the DefaultMQAdminExt can not reuse
+     * @param metrics metrics
+     * @return DefaultMQAdminExt
+     */
+    private DefaultMQAdminExt createMqAdminExt(Metrics metrics) {
+<span class="nc" id="L153">        RocketmqProtocol rocketmqProtocol = metrics.getRocketmq();</span>
+<span class="nc bnc" id="L154" title="All 4 branches missed.">        assert rocketmqProtocol != null;</span>
+<span class="nc" id="L155">        RPCHook rpcHook = null;</span>
+<span class="nc bnc" id="L156" title="All 4 branches missed.">        if (StringUtils.isNotBlank(rocketmqProtocol.getAccessKey()) &amp;&amp; StringUtils.isNotBlank(rocketmqProtocol.getSecretKey())) {</span>
+<span class="nc" id="L157">            rpcHook = new AclClientRPCHook(new SessionCredentials(rocketmqProtocol.getAccessKey(), rocketmqProtocol.getSecretKey()));</span>
+        }
+<span class="nc" id="L159">        DefaultMQAdminExt mqAdminExt = new DefaultMQAdminExt(rpcHook, 5000L);</span>
+<span class="nc" id="L160">        mqAdminExt.setNamesrvAddr(rocketmqProtocol.getNamesrvHost() + &quot;:&quot; + rocketmqProtocol.getNamesrvPort());</span>
+<span class="nc" id="L161">        mqAdminExt.setInstanceName(&quot;admin-&quot; + System.currentTimeMillis());</span>
+<span class="nc" id="L162">        return mqAdminExt;</span>
+    }
+
+    /**
+     * collect rocketmq data
+     * @param mqAdminExt          rocketmq rpc admin
+     * @param rocketmqCollectData rocketmq data
+     * @throws Exception when rpc error
+     */
+    private void collectData(DefaultMQAdminExt mqAdminExt, RocketmqCollectData rocketmqCollectData) throws Exception {
+<span class="nc" id="L172">        this.collectClusterData(mqAdminExt, rocketmqCollectData);</span>
+<span class="nc" id="L173">        this.collectConsumerData(mqAdminExt, rocketmqCollectData);</span>
+<span class="nc" id="L174">        this.collectTopicData(mqAdminExt, rocketmqCollectData);</span>
+<span class="nc" id="L175">    }</span>
+
+    /**
+     * collect rocketmq cluster data
+     * @param mqAdminExt          rocketmq rpc admin
+     * @param rocketmqCollectData rocketmq data
+     * @throws Exception when rpc error
+     */
+    private void collectClusterData(DefaultMQAdminExt mqAdminExt, RocketmqCollectData rocketmqCollectData) throws Exception {
+        try {
+<span class="nc" id="L185">            List&lt;RocketmqCollectData.ClusterBrokerData&gt; clusterBrokerDataList = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L186">            rocketmqCollectData.setClusterBrokerDataList(clusterBrokerDataList);</span>
+
+<span class="nc" id="L188">            ClusterInfo clusterInfo = mqAdminExt.examineBrokerClusterInfo();</span>
+<span class="nc bnc" id="L189" title="All 2 branches missed.">            for (BrokerData brokerData : clusterInfo.getBrokerAddrTable().values()) {</span>
+
+<span class="nc bnc" id="L191" title="All 2 branches missed.">                for (Map.Entry&lt;Long, String&gt; entry : brokerData.getBrokerAddrs().entrySet()) {</span>
+<span class="nc" id="L192">                    RocketmqCollectData.ClusterBrokerData clusterBrokerData = new RocketmqCollectData.ClusterBrokerData();</span>
+<span class="nc" id="L193">                    clusterBrokerDataList.add(clusterBrokerData);</span>
+
+<span class="nc" id="L195">                    clusterBrokerData.setBrokerId(entry.getKey());</span>
+<span class="nc" id="L196">                    clusterBrokerData.setAddress(entry.getValue());</span>
+
+<span class="nc" id="L198">                    KVTable kvTable = mqAdminExt.fetchBrokerRuntimeStats(entry.getValue());</span>
+<span class="nc" id="L199">                    clusterBrokerData.setVersion(kvTable.getTable().get(&quot;brokerVersionDesc&quot;));</span>
+
+<span class="nc" id="L201">                    String putTps = kvTable.getTable().get(&quot;putTps&quot;);</span>
+<span class="nc bnc" id="L202" title="All 2 branches missed.">                    if (StringUtils.isNotEmpty(putTps)) {</span>
+<span class="nc" id="L203">                        String[] putTpsArr = putTps.split(&quot; &quot;);</span>
+<span class="nc" id="L204">                        clusterBrokerData.setProducerMessageTps(Double.parseDouble(putTpsArr[0]));</span>
+                    }
+
+<span class="nc" id="L207">                    String getTransferredTps = kvTable.getTable().get(&quot;getTransferedTps&quot;);</span>
+<span class="nc bnc" id="L208" title="All 2 branches missed.">                    if (StringUtils.isNotEmpty(getTransferredTps)) {</span>
+<span class="nc" id="L209">                        String[] getTransferredTpsArr = getTransferredTps.split(&quot; &quot;);</span>
+<span class="nc" id="L210">                        clusterBrokerData.setConsumerMessageTps(Double.parseDouble(getTransferredTpsArr[0]));</span>
+                    }
+
+<span class="nc" id="L213">                    String msgPutTotalTodayMorning = kvTable.getTable().get(&quot;msgPutTotalTodayMorning&quot;);</span>
+<span class="nc" id="L214">                    String msgPutTotalYesterdayMorning = kvTable.getTable().get(&quot;msgPutTotalYesterdayMorning&quot;);</span>
+<span class="nc bnc" id="L215" title="All 4 branches missed.">                    if (StringUtils.isNotEmpty(msgPutTotalTodayMorning) &amp;&amp; StringUtils.isNotEmpty(msgPutTotalYesterdayMorning)) {</span>
+<span class="nc" id="L216">                        long yesterdayProduceCount = Long.parseLong(msgPutTotalTodayMorning) - Long.parseLong(msgPutTotalYesterdayMorning);</span>
+<span class="nc" id="L217">                        clusterBrokerData.setYesterdayProduceCount(yesterdayProduceCount);</span>
+                    }
+
+<span class="nc" id="L220">                    String msgGetTotalTodayMorning = kvTable.getTable().get(&quot;msgGetTotalTodayMorning&quot;);</span>
+<span class="nc" id="L221">                    String msgGetTotalYesterdayMorning = kvTable.getTable().get(&quot;msgGetTotalYesterdayMorning&quot;);</span>
+<span class="nc bnc" id="L222" title="All 4 branches missed.">                    if (StringUtils.isNotEmpty(msgGetTotalTodayMorning) &amp;&amp; StringUtils.isNotEmpty(msgGetTotalYesterdayMorning)) {</span>
+<span class="nc" id="L223">                        long yesterdayConsumerCount = Long.parseLong(msgGetTotalTodayMorning) - Long.parseLong(msgGetTotalYesterdayMorning);</span>
+<span class="nc" id="L224">                        clusterBrokerData.setYesterdayConsumeCount(yesterdayConsumerCount);</span>
+                    }
+
+<span class="nc" id="L227">                    String msgPutTotalTodayNow = kvTable.getTable().get(&quot;msgPutTotalTodayNow&quot;);</span>
+<span class="nc bnc" id="L228" title="All 4 branches missed.">                    if (StringUtils.isNotEmpty(msgPutTotalTodayNow) &amp;&amp; StringUtils.isNotEmpty(msgPutTotalTodayMorning)) {</span>
+<span class="nc" id="L229">                        long todayProduceCount = Long.parseLong(msgPutTotalTodayNow) - Long.parseLong(msgPutTotalTodayMorning);</span>
+<span class="nc" id="L230">                        clusterBrokerData.setTodayProduceCount(todayProduceCount);</span>
+                    }
+
+<span class="nc" id="L233">                    String msgGetTotalTodayNow = kvTable.getTable().get(&quot;msgGetTotalTodayNow&quot;);</span>
+<span class="nc bnc" id="L234" title="All 4 branches missed.">                    if (StringUtils.isNotEmpty(msgGetTotalTodayNow) &amp;&amp; StringUtils.isNotEmpty(msgGetTotalTodayMorning)) {</span>
+<span class="nc" id="L235">                        long todayConsumerCount = Long.parseLong(msgGetTotalTodayNow) - Long.parseLong(msgGetTotalTodayMorning);</span>
+<span class="nc" id="L236">                        clusterBrokerData.setTodayConsumeCount(todayConsumerCount);</span>
+                    }
+<span class="nc" id="L238">                }</span>
+<span class="nc" id="L239">            }</span>
+<span class="nc" id="L240">        } catch (Exception e) {</span>
+<span class="nc" id="L241">            log.warn(&quot;collect rocketmq cluster data error&quot;, e);</span>
+<span class="nc" id="L242">            throw e;</span>
+<span class="nc" id="L243">        }</span>
+<span class="nc" id="L244">    }</span>
+
+    /**
+     * collect rocketmq consumer data
+     * @param mqAdminExt          rocketmq rpc admin
+     * @param rocketmqCollectData rocketmq data
+     * @throws Exception when rpc error
+     */
+    private void collectConsumerData(DefaultMQAdminExt mqAdminExt, RocketmqCollectData rocketmqCollectData) throws Exception {
+<span class="nc" id="L253">        Set&lt;String&gt; consumerGroupSet = new HashSet&lt;&gt;();</span>
+        try {
+            // get consumerGroup
+<span class="nc" id="L256">            ClusterInfo clusterInfo = mqAdminExt.examineBrokerClusterInfo();</span>
+<span class="nc bnc" id="L257" title="All 2 branches missed.">            for (BrokerData brokerData : clusterInfo.getBrokerAddrTable().values()) {</span>
+<span class="nc" id="L258">                SubscriptionGroupWrapper subscriptionGroupWrapper = mqAdminExt.getAllSubscriptionGroup(brokerData.selectBrokerAddr(), 3000L);</span>
+<span class="nc" id="L259">                consumerGroupSet.addAll(subscriptionGroupWrapper.getSubscriptionGroupTable().keySet());</span>
+<span class="nc" id="L260">            }</span>
+
+<span class="nc" id="L262">            List&lt;RocketmqCollectData.ConsumerInfo&gt; consumerInfoList = Collections.synchronizedList(Lists.newArrayList());</span>
+<span class="nc" id="L263">            rocketmqCollectData.setConsumerInfoList(consumerInfoList);</span>
+<span class="nc" id="L264">            CountDownLatch countDownLatch = new CountDownLatch(consumerGroupSet.size());</span>
+<span class="nc bnc" id="L265" title="All 2 branches missed.">            for (String consumerGroup : consumerGroupSet) {</span>
+<span class="nc bnc" id="L266" title="All 2 branches missed.">                if (SYSTEM_GROUP_SET.contains(consumerGroup)) {</span>
+<span class="nc" id="L267">                    continue;</span>
+                }
+<span class="nc" id="L269">                executorService.submit(() -&gt; {</span>
+<span class="nc" id="L270">                    RocketmqCollectData.ConsumerInfo consumerInfo = new RocketmqCollectData.ConsumerInfo();</span>
+<span class="nc" id="L271">                    consumerInfoList.add(consumerInfo);</span>
+<span class="nc" id="L272">                    consumerInfo.setConsumerGroup(consumerGroup);</span>
+                    try {
+<span class="nc" id="L274">                        ConsumeStats consumeStats = null;</span>
+                        try {
+<span class="nc" id="L276">                            consumeStats = mqAdminExt.examineConsumeStats(consumerGroup);</span>
+<span class="nc" id="L277">                        } catch (Exception e) {</span>
+<span class="nc" id="L278">                            log.warn(&quot;examineConsumeStats exception to consumerGroup {}, response [{}]&quot;, consumerGroup, e.getMessage());</span>
+<span class="nc" id="L279">                        }</span>
+<span class="nc bnc" id="L280" title="All 2 branches missed.">                        if (consumeStats != null) {</span>
+<span class="nc" id="L281">                            consumerInfo.setConsumeTps(consumeStats.getConsumeTps());</span>
+<span class="nc" id="L282">                            consumerInfo.setDiffTotal(consumeStats.computeTotalDiff());</span>
+                        }
+
+<span class="nc" id="L285">                        ConsumerConnection consumerConnection = null;</span>
+                        try {
+<span class="nc" id="L287">                            consumerConnection = mqAdminExt.examineConsumerConnectionInfo(consumerGroup);</span>
+<span class="nc" id="L288">                        } catch (Exception e) {</span>
+<span class="nc" id="L289">                            log.warn(&quot;examineConsumeStats exception to consumerGroup {}, response [{}]&quot;, consumerGroup, e.getMessage());</span>
+<span class="nc" id="L290">                        }</span>
+<span class="nc bnc" id="L291" title="All 2 branches missed.">                        if (consumerConnection != null) {</span>
+<span class="nc" id="L292">                            consumerInfo.setClientQuantity(consumerConnection.getConnectionSet().size());</span>
+<span class="nc" id="L293">                            consumerInfo.setMessageModel(consumerConnection.getMessageModel().getModeCN());</span>
+<span class="nc" id="L294">                            consumerInfo.setConsumeType(consumerConnection.getConsumeType().getTypeCN());</span>
+                        }
+<span class="nc" id="L296">                    } catch (Exception e) {</span>
+<span class="nc" id="L297">                        log.warn(&quot;examineConsumeStats or examineConsumerConnectionInfo error, {}&quot;, consumerGroup, e);</span>
+                    } finally {
+<span class="nc" id="L299">                        countDownLatch.countDown();</span>
+                    }
+<span class="nc" id="L301">                });</span>
+<span class="nc" id="L302">            }</span>
+
+<span class="nc bnc" id="L304" title="All 2 branches missed.">            if (!countDownLatch.await(WAIT_TIMEOUT, TimeUnit.SECONDS)) {</span>
+<span class="nc" id="L305">                log.warn(&quot;examineConsumeStats or examineConsumerConnectionInfo timeout&quot;);</span>
+            }
+<span class="nc" id="L307">        } catch (Exception e) {</span>
+<span class="nc" id="L308">            log.warn(&quot;collect rocketmq consume data error&quot;, e);</span>
+<span class="nc" id="L309">            throw e;</span>
+<span class="nc" id="L310">        }</span>
+<span class="nc" id="L311">    }</span>
+
+    /**
+     * collect topic data
+     * @param mqAdminExt          rocketmq rpc admin
+     * @param rocketmqCollectData rocketmq data
+     * @throws Exception when rpc error
+     */
+    private void collectTopicData(DefaultMQAdminExt mqAdminExt, RocketmqCollectData rocketmqCollectData) throws Exception {
+        try {
+<span class="nc" id="L321">            TopicList topicList = mqAdminExt.fetchAllTopicList();</span>
+<span class="nc" id="L322">            Set&lt;String&gt; topics = topicList.getTopicList()</span>
+<span class="nc" id="L323">                    .stream()</span>
+<span class="nc bnc" id="L324" title="All 4 branches missed.">                    .filter(topic -&gt; !(topic.startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX) || topic.startsWith(MixAll.DLQ_GROUP_TOPIC_PREFIX)))</span>
+<span class="nc" id="L325">                    .collect(Collectors.toSet());</span>
+<span class="nc" id="L326">            List&lt;Map&lt;String /* topic */, List&lt;RocketmqCollectData.TopicQueueInfo&gt;&gt;&gt; topicInfoList = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L327" title="All 2 branches missed.">            for (String topic : topics) {</span>
+<span class="nc" id="L328">                Map&lt;String, List&lt;RocketmqCollectData.TopicQueueInfo&gt;&gt; topicQueueInfoTable = new HashMap&lt;&gt;(32);</span>
+<span class="nc" id="L329">                List&lt;RocketmqCollectData.TopicQueueInfo&gt; topicQueueInfoList = new ArrayList&lt;&gt;();</span>
+
+                // todo 查询topic的queue信息需要for循环调用 mqAdminExt.examineTopicStats(), topic数量很大的情况, 调用次数也会很多
+<span class="nc" id="L332">                topicQueueInfoTable.put(topic, topicQueueInfoList);</span>
+<span class="nc" id="L333">                topicInfoList.add(topicQueueInfoTable);</span>
+<span class="nc" id="L334">                rocketmqCollectData.setTopicInfoList(topicInfoList);</span>
+<span class="nc" id="L335">            }</span>
+<span class="nc" id="L336">        } catch (Exception e) {</span>
+<span class="nc" id="L337">            log.warn(&quot;collect rocketmq topic data error&quot;, e);</span>
+<span class="nc" id="L338">            throw e;</span>
+<span class="nc" id="L339">        }</span>
+<span class="nc" id="L340">    }</span>
+
+    /**
+     * fill data to builder
+     *
+     * @param rocketmqCollectData rocketmq data
+     * @param builder             metrics data builder
+     * @param aliasFields         alia fields
+     * @param parseScript         JSON base path
+     */
+    private void fillBuilder(RocketmqCollectData rocketmqCollectData, CollectRep.MetricsData.Builder builder, List&lt;String&gt; aliasFields, String parseScript) {
+<span class="nc" id="L351">        String dataJson = JSONObject.toJSONString(rocketmqCollectData);</span>
+<span class="nc" id="L352">        List&lt;Object&gt; results = JsonPathParser.parseContentWithJsonPath(dataJson, parseScript);</span>
+<span class="nc bnc" id="L353" title="All 2 branches missed.">        for (int i = 0; i &lt; results.size(); i++) {</span>
+<span class="nc" id="L354">            CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L355" title="All 2 branches missed.">            for (String aliasField : aliasFields) {</span>
+<span class="nc" id="L356">                List&lt;Object&gt; valueList = JsonPathParser.parseContentWithJsonPath(dataJson, parseScript + aliasField);</span>
+<span class="nc bnc" id="L357" title="All 4 branches missed.">                if (CollectionUtils.isNotEmpty(valueList) &amp;&amp; valueList.size() &gt; i) {</span>
+<span class="nc" id="L358">                    Object value = valueList.get(i);</span>
+<span class="nc bnc" id="L359" title="All 2 branches missed.">                    valueRowBuilder.addColumns(value == null ? CommonConstants.NULL_VALUE : String.valueOf(value));</span>
+<span class="nc" id="L360">                } else {</span>
+<span class="nc" id="L361">                    valueRowBuilder.addColumns(CommonConstants.NULL_VALUE);</span>
+                }
+<span class="nc" id="L363">            }</span>
+<span class="nc" id="L364">            builder.addValues(valueRowBuilder.build());</span>
+        }
+<span class="nc" id="L366">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

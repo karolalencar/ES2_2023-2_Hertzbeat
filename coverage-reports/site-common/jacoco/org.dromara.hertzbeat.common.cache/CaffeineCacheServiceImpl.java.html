@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CaffeineCacheServiceImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.cache</a> &gt; <span class="el_source">CaffeineCacheServiceImpl.java</span></div><h1>CaffeineCacheServiceImpl.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.common.cache;
+
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+
+import java.time.Duration;
+
+/**
+ * caffeine cache impl
+ * @author ceilzcx
+ */
+public class CaffeineCacheServiceImpl&lt;K, V&gt; implements ICacheService&lt;K, V&gt; {
+    private final Cache&lt;K, V&gt; cache;
+
+<span class="fc" id="L32">    public CaffeineCacheServiceImpl(final int initialCapacity, final long maximumSize, final Duration expireAfterWrite, final boolean useWeakKey) {</span>
+<span class="pc bpc" id="L33" title="1 of 2 branches missed.">        if (useWeakKey) {</span>
+<span class="nc" id="L34">            this.cache = Caffeine.newBuilder()</span>
+<span class="nc" id="L35">                    .weakKeys()</span>
+<span class="nc" id="L36">                    .initialCapacity(initialCapacity)</span>
+<span class="nc" id="L37">                    .maximumSize(maximumSize)</span>
+<span class="nc" id="L38">                    .expireAfterWrite(expireAfterWrite)</span>
+<span class="nc" id="L39">                    .build();</span>
+        } else {
+<span class="fc" id="L41">            this.cache = Caffeine.newBuilder()</span>
+<span class="fc" id="L42">                    .initialCapacity(initialCapacity)</span>
+<span class="fc" id="L43">                    .maximumSize(maximumSize)</span>
+<span class="fc" id="L44">                    .expireAfterWrite(expireAfterWrite)</span>
+<span class="fc" id="L45">                    .build();</span>
+        }
+<span class="fc" id="L47">    }</span>
+
+    @Override
+    public V get(K key) {
+<span class="fc" id="L51">        return cache.getIfPresent(key);</span>
+    }
+
+    @Override
+    public V put(K key, V value) {
+<span class="fc" id="L56">        V oldValue = cache.getIfPresent(key);</span>
+<span class="fc" id="L57">        cache.put(key, value);</span>
+<span class="fc" id="L58">        return oldValue;</span>
+    }
+
+    @Override
+    public boolean containsKey(K key) {
+<span class="fc" id="L63">        return cache.asMap().containsKey(key);</span>
+    }
+
+    @Override
+    public V remove(K key) {
+<span class="fc" id="L68">        V value = cache.getIfPresent(key);</span>
+<span class="fc" id="L69">        this.cache.invalidate(key);</span>
+<span class="fc" id="L70">        this.cache.cleanUp();</span>
+<span class="fc" id="L71">        return value;</span>
+    }
+
+    @Override
+    public boolean clear() {
+<span class="fc" id="L76">        this.cache.invalidateAll();</span>
+<span class="fc" id="L77">        this.cache.cleanUp();</span>
+<span class="fc" id="L78">        return true;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

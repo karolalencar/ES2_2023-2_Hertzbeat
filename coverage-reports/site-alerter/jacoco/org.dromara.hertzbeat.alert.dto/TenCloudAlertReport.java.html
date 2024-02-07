@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TenCloudAlertReport.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-alerter</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.alert.dto</a> &gt; <span class="el_source">TenCloudAlertReport.java</span></div><h1>TenCloudAlertReport.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.alert.dto;
+
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.*;
+import org.dromara.hertzbeat.alert.util.DateUtil;
+
+import java.io.Serializable;
+import java.util.Map;
+
+/**
+ * @author zqr10159
+ * 腾讯云告警实体类
+ */
+<span class="pc" id="L15">@Data</span>
+<span class="fc" id="L16">@AllArgsConstructor</span>
+<span class="fc" id="L17">@NoArgsConstructor</span>
+<span class="nc bnc" id="L18" title="All 66 branches missed.">@EqualsAndHashCode(callSuper = true)</span>
+<span class="pc" id="L19">@Builder</span>
+public class TenCloudAlertReport extends CloudAlertReportAbstract implements Serializable {
+    @JsonProperty(&quot;sessionID&quot;)
+<span class="fc" id="L22">    private String sessionId;</span>
+<span class="fc" id="L23">    private String alarmStatus;</span>
+<span class="fc" id="L24">    private String alarmType;</span>
+<span class="fc" id="L25">    private AlarmObjInfo alarmObjInfo;</span>
+<span class="fc" id="L26">    private AlarmPolicyInfo alarmPolicyInfo;</span>
+<span class="fc" id="L27">    private String firstOccurTime;</span>
+<span class="fc" id="L28">    private int durationTime;</span>
+<span class="fc" id="L29">    private String recoverTime;</span>
+
+<span class="pc bnc" id="L31" title="All 46 branches missed.">    @Data</span>
+<span class="nc" id="L32">    @AllArgsConstructor</span>
+<span class="fc" id="L33">    @NoArgsConstructor</span>
+    public static class AlarmObjInfo {
+<span class="fc" id="L35">        private String region;</span>
+<span class="fc" id="L36">        private String namespace;</span>
+        @JsonProperty(&quot;appID&quot;)
+<span class="fc" id="L38">        private String appId;</span>
+<span class="fc" id="L39">        private String uin;</span>
+<span class="fc" id="L40">        private Dimensions dimensions;</span>
+    }
+
+<span class="pc bnc" id="L43" title="All 22 branches missed.">    @Data</span>
+<span class="nc" id="L44">    @AllArgsConstructor</span>
+<span class="fc" id="L45">    @NoArgsConstructor</span>
+    public static class Dimensions {
+        @JsonProperty(&quot;unInstanceID&quot;)
+<span class="fc" id="L48">        private String unInstanceId;</span>
+        @JsonProperty(&quot;objID&quot;)
+<span class="fc" id="L50">        private String objId;</span>
+    }
+<span class="pc bnc" id="L52" title="All 46 branches missed.">    @Data</span>
+<span class="nc" id="L53">    @AllArgsConstructor</span>
+<span class="fc" id="L54">    @NoArgsConstructor</span>
+    public static class AlarmPolicyInfo {
+        @JsonProperty(&quot;policyID&quot;)
+<span class="fc" id="L57">        private String policyId;</span>
+<span class="fc" id="L58">        private String policyType;</span>
+<span class="fc" id="L59">        private String policyName;</span>
+        @JsonProperty(&quot;policyTypeCName&quot;)
+<span class="fc" id="L61">        private String policyTypeCname;</span>
+<span class="fc" id="L62">        private Conditions conditions;</span>
+    }
+<span class="pc bnc" id="L64" title="All 128 branches missed.">    @Data</span>
+<span class="nc" id="L65">    @AllArgsConstructor</span>
+<span class="fc" id="L66">    @NoArgsConstructor</span>
+    public static class Conditions {
+        // 指标告警的参数
+<span class="fc" id="L69">        private String metricName;</span>
+<span class="fc" id="L70">        private String metricShowName;</span>
+<span class="fc" id="L71">        private String calcType;</span>
+<span class="fc" id="L72">        private String calcValue;</span>
+<span class="fc" id="L73">        private String calcUnit;</span>
+<span class="fc" id="L74">        private String currentValue;</span>
+<span class="fc" id="L75">        private String historyValue;</span>
+<span class="fc" id="L76">        private String unit;</span>
+<span class="fc" id="L77">        private String period;</span>
+<span class="fc" id="L78">        private String periodNum;</span>
+<span class="fc" id="L79">        private String alarmNotifyType;</span>
+<span class="fc" id="L80">        private long alarmNotifyPeriod;</span>
+
+        // 事件告警的参数
+<span class="fc" id="L83">        private String productName;</span>
+<span class="fc" id="L84">        private String productShowName;</span>
+<span class="fc" id="L85">        private String eventName;</span>
+<span class="fc" id="L86">        private String eventShowName;</span>
+    }
+
+    @Override
+    public String getAlertName() {
+<span class="fc" id="L91">        return &quot;TenCloud|腾讯云&quot;;</span>
+    }
+
+    @Override
+    public Integer getAlertDuration() {
+<span class="fc" id="L96">        return this.durationTime;</span>
+    }
+
+    @Override
+    public long getAlertTime() {
+<span class="fc" id="L101">        return DateUtil.getTimeStampFromFormat(getFirstOccurTime(), &quot;yyyy-MM-dd HH:mm:ss&quot;);</span>
+    }
+
+    @Override
+    public Integer getPriority() {
+<span class="fc" id="L106">        return 1;</span>
+    }
+
+    @Override
+    public Integer getReportType() {
+<span class="fc" id="L111">        return 1;</span>
+    }
+
+    @Override
+    public Map&lt;String, String&gt; getLabels() {
+<span class="fc" id="L116">        return Map.of(&quot;app&quot;, &quot;TenCloud&quot;);</span>
+    }
+
+    @Override
+    public Map&lt;String, String&gt; getAnnotations() {
+<span class="fc" id="L121">        return Map.of(&quot;app&quot;, &quot;TenCloud&quot;);</span>
+    }
+
+    /**
+     * 事务告警
+     */
+    private static final String EVENT = &quot;event&quot;;
+
+    /**
+     * 指标告警
+     */
+    private static final String METRIC = &quot;metric&quot;;
+
+    /**
+     * 如果后续腾讯云告警类型增多的话，可以将该实体类拆分为一个父类和多个子类，然后在子类实现该方法即可
+     * 由于目前只有两种，暂不进行拆分
+     */
+    @Override
+    public String getContent() {
+<span class="fc" id="L140">        StringBuilder contentBuilder = new StringBuilder();</span>
+        // 判断类型
+<span class="pc bpc" id="L142" title="1 of 2 branches missed.">        if (EVENT.equals(getAlarmType())) {</span>
+<span class="fc" id="L143">            contentBuilder</span>
+<span class="fc" id="L144">                    .append(&quot;[&quot;)</span>
+<span class="fc" id="L145">                    .append(&quot;告警状态 | &quot;)</span>
+<span class="pc bpc" id="L146" title="1 of 2 branches missed.">                    .append(&quot;0&quot;.equals(alarmStatus) ? &quot;恢复&quot; : &quot;告警&quot;)</span>
+<span class="fc" id="L147">                    .append(&quot;]\n&quot;)</span>
+<span class="fc" id="L148">                    .append(&quot;[&quot;)</span>
+<span class="fc" id="L149">                    .append(&quot;告警对象信息 | &quot;)</span>
+<span class="pc bpc" id="L150" title="1 of 2 branches missed.">                    .append(getAlarmObjInfo().getRegion() == null ? &quot;&quot; : &quot;region:&quot; + getAlarmObjInfo().getRegion())</span>
+<span class="fc" id="L151">                    .append(&quot;;&quot;).append(&quot;appId:&quot;).append(getAlarmObjInfo().getAppId())</span>
+<span class="fc" id="L152">                    .append(&quot;;&quot;).append(&quot;uni:&quot;).append(getAlarmObjInfo().getUin())</span>
+<span class="fc" id="L153">                    .append(&quot;;&quot;).append(&quot;unInstanceId:&quot;).append(getAlarmObjInfo().getDimensions().getUnInstanceId())</span>
+<span class="fc" id="L154">                    .append(&quot;]\n&quot;)</span>
+<span class="fc" id="L155">                    .append(&quot;[&quot;)</span>
+<span class="fc" id="L156">                    .append(&quot;告警策略组信息 | &quot;)</span>
+<span class="fc" id="L157">                    .append(&quot;名称：&quot;).append(getAlarmPolicyInfo().getPolicyName())</span>
+<span class="fc" id="L158">                    .append(&quot;;&quot;)</span>
+<span class="fc" id="L159">                    .append(&quot;策略类型展示名称：&quot;).append(getAlarmPolicyInfo().getConditions().getProductName())</span>
+<span class="fc" id="L160">                    .append(&quot;,&quot;).append(getAlarmPolicyInfo().getConditions().getProductShowName())</span>
+<span class="fc" id="L161">                    .append(&quot;;&quot;)</span>
+<span class="fc" id="L162">                    .append(&quot;事件告警名称：&quot;).append(getAlarmPolicyInfo().getConditions().getEventName())</span>
+<span class="fc" id="L163">                    .append(&quot;,&quot;).append(getAlarmPolicyInfo().getConditions().getEventShowName())</span>
+<span class="fc" id="L164">                    .append(&quot;]&quot;);</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">        } else if (METRIC.equals(getAlarmType())) {</span>
+<span class="nc" id="L166">            contentBuilder</span>
+<span class="nc" id="L167">                    .append(&quot;[&quot;)</span>
+<span class="nc" id="L168">                    .append(&quot;告警对象：&quot;)</span>
+<span class="nc bnc" id="L169" title="All 2 branches missed.">                    .append(getAlarmObjInfo().getRegion() == null ? &quot;&quot; : getAlarmObjInfo().getRegion())</span>
+<span class="nc bnc" id="L170" title="All 2 branches missed.">                    .append(getAlarmObjInfo().getRegion() == null ? &quot;&quot; : &quot;|&quot;)</span>
+<span class="nc" id="L171">                    .append(getAlarmObjInfo().getNamespace())</span>
+<span class="nc" id="L172">                    .append(&quot;]&quot;)</span>
+<span class="nc" id="L173">                    .append(&quot;[&quot;)</span>
+<span class="nc" id="L174">                    .append(&quot;告警内容：&quot;)</span>
+<span class="nc" id="L175">                    .append(getAlarmPolicyInfo().getPolicyTypeCname()).append(&quot;|&quot;)</span>
+<span class="nc" id="L176">                    .append(getAlarmPolicyInfo().getConditions().getMetricShowName()).append(&quot;|&quot;)</span>
+<span class="nc" id="L177">                    .append(getAlarmPolicyInfo().getConditions().getMetricName())</span>
+<span class="nc" id="L178">                    .append(getAlarmPolicyInfo().getConditions().getCalcType())</span>
+<span class="nc" id="L179">                    .append(getAlarmPolicyInfo().getConditions().getCalcValue())</span>
+<span class="nc" id="L180">                    .append(getAlarmPolicyInfo().getConditions().getCalcUnit())</span>
+<span class="nc" id="L181">                    .append(&quot;]&quot;)</span>
+<span class="nc" id="L182">                    .append(&quot;[&quot;)</span>
+<span class="nc" id="L183">                    .append(&quot;当前数据&quot;)</span>
+<span class="nc" id="L184">                    .append(getAlarmPolicyInfo().getConditions().getCurrentValue())</span>
+<span class="nc" id="L185">                    .append(getAlarmPolicyInfo().getConditions().getCalcUnit())</span>
+<span class="nc" id="L186">                    .append(&quot;]&quot;);</span>
+        }
+<span class="fc" id="L188">        return contentBuilder.toString();</span>
+    }
+
+}
+
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

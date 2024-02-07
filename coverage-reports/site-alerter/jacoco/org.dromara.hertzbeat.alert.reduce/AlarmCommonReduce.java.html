@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AlarmCommonReduce.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-alerter</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.alert.reduce</a> &gt; <span class="el_source">AlarmCommonReduce.java</span></div><h1>AlarmCommonReduce.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.alert.reduce;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.alert.dao.AlertMonitorDao;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.alerter.Alert;
+import org.dromara.hertzbeat.common.entity.manager.Tag;
+import org.dromara.hertzbeat.common.queue.CommonDataQueue;
+import org.springframework.stereotype.Service;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * reduce alarm and send alert data
+ * @author tom
+ */
+@Service
+<span class="nc" id="L21">@RequiredArgsConstructor</span>
+<span class="nc" id="L22">@Slf4j</span>
+public class AlarmCommonReduce {
+	
+	private final AlarmSilenceReduce alarmSilenceReduce;
+	
+	private final AlarmConvergeReduce alarmConvergeReduce;
+	
+	private final CommonDataQueue dataQueue;
+	
+	private final AlertMonitorDao alertMonitorDao;
+	
+    public void reduceAndSendAlarm(Alert alert) {
+<span class="nc" id="L34">		alert.setTimes(1);</span>
+<span class="nc" id="L35">	    Map&lt;String, String&gt; tags = alert.getTags();</span>
+<span class="nc bnc" id="L36" title="All 2 branches missed.">		if (tags == null) {</span>
+<span class="nc" id="L37">			tags = new HashMap&lt;&gt;(8);</span>
+<span class="nc" id="L38">			alert.setTags(tags);</span>
+		}
+<span class="nc" id="L40">	    String monitorIdStr = tags.get(CommonConstants.TAG_MONITOR_ID);</span>
+<span class="nc bnc" id="L41" title="All 2 branches missed.">	    if (monitorIdStr == null) {</span>
+<span class="nc" id="L42">            log.debug(&quot;receiver extern alarm message: {}&quot;, alert);</span>
+	    } else {
+<span class="nc" id="L44">            long monitorId = Long.parseLong(monitorIdStr);</span>
+<span class="nc" id="L45">            List&lt;Tag&gt; tagList = alertMonitorDao.findMonitorIdBindTags(monitorId);</span>
+<span class="nc bnc" id="L46" title="All 2 branches missed.">			for (Tag tag : tagList) {</span>
+<span class="nc bnc" id="L47" title="All 2 branches missed.">				if (!tags.containsKey(tag.getName())) {</span>
+<span class="nc" id="L48">					tags.put(tag.getName(), tag.getValue());</span>
+				}
+<span class="nc" id="L50">			}</span>
+        }
+		// converge -&gt; silence
+<span class="nc bnc" id="L53" title="All 4 branches missed.">	    if (alarmConvergeReduce.filterConverge(alert) &amp;&amp; alarmSilenceReduce.filterSilence(alert)) {</span>
+<span class="nc" id="L54">			dataQueue.sendAlertsData(alert);</span>
+	    }
+<span class="nc" id="L56">    }</span>
+	
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

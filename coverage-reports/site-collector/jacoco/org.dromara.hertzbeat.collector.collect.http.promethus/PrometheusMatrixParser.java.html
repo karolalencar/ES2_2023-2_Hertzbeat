@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PrometheusMatrixParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.http.promethus</a> &gt; <span class="el_source">PrometheusMatrixParser.java</span></div><h1>PrometheusMatrixParser.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.collect.http.promethus;
+
+import com.google.gson.JsonElement;
+import org.dromara.hertzbeat.collector.dispatch.DispatchConstants;
+import org.dromara.hertzbeat.collector.util.CollectUtil;
+import org.dromara.hertzbeat.common.entity.dto.PromVectorOrMatrix;
+import org.dromara.hertzbeat.common.entity.job.protocol.HttpProtocol;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.util.JsonUtil;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+/**
+ * @author myth
+ *
+ * 处理prometheus返回类型为“matrix”的响应格式
+ */
+<span class="nc" id="L21">@NoArgsConstructor</span>
+public class PrometheusMatrixParser extends AbstractPrometheusParse {
+    @Override
+    public Boolean checkType(String responseStr) {
+        try {
+<span class="nc" id="L26">            PromVectorOrMatrix promVectorOrMatrix = JsonUtil.fromJson(responseStr, PromVectorOrMatrix.class);</span>
+<span class="nc bnc" id="L27" title="All 4 branches missed.">            if(promVectorOrMatrix != null &amp;&amp; promVectorOrMatrix.getData() != null) {</span>
+<span class="nc" id="L28">                return DispatchConstants.PARSE_PROM_QL_MATRIX.equals(promVectorOrMatrix.getData().getResultType());</span>
+            }
+<span class="nc" id="L30">            return false;</span>
+<span class="nc" id="L31">        } catch (Exception e) {</span>
+<span class="nc" id="L32">            return false;</span>
+        }
+    }
+
+    @Override
+    public void parse(String resp, List&lt;String&gt; aliasFields, HttpProtocol http, CollectRep.MetricsData.Builder builder) {
+<span class="nc" id="L38">        PromVectorOrMatrix promVectorOrMatrix = JsonUtil.fromJson(resp, PromVectorOrMatrix.class);</span>
+<span class="nc bnc" id="L39" title="All 2 branches missed.">        if (promVectorOrMatrix == null){</span>
+<span class="nc" id="L40">            return;</span>
+        }
+<span class="nc" id="L42">        List&lt;PromVectorOrMatrix.Result&gt; result = promVectorOrMatrix.getData().getResult();</span>
+<span class="nc bnc" id="L43" title="All 2 branches missed.">        for (PromVectorOrMatrix.Result r : result) {</span>
+<span class="nc bnc" id="L44" title="All 2 branches missed.">            for (List&lt;Object&gt; value : r.getValues()) {</span>
+<span class="nc" id="L45">                boolean setTimeFlag = false;</span>
+<span class="nc" id="L46">                boolean setValueFlag = false;</span>
+<span class="nc" id="L47">                CollectRep.ValueRow.Builder valueRowBuilder = CollectRep.ValueRow.newBuilder();</span>
+<span class="nc bnc" id="L48" title="All 2 branches missed.">                for (String aliasField : aliasFields) {</span>
+<span class="nc bnc" id="L49" title="All 2 branches missed.">                    if (!CollectUtil.assertPromRequireField(aliasField)) {</span>
+<span class="nc" id="L50">                        JsonElement jsonElement = r.getMetric().get(aliasField);</span>
+<span class="nc bnc" id="L51" title="All 2 branches missed.">                        if (jsonElement != null) {</span>
+<span class="nc" id="L52">                            valueRowBuilder.addColumns(jsonElement.getAsString());</span>
+                        } else {
+<span class="nc" id="L54">                            valueRowBuilder.addColumns(CommonConstants.NULL_VALUE);</span>
+                        }
+<span class="nc" id="L56">                    } else {</span>
+<span class="nc bnc" id="L57" title="All 2 branches missed.">                        if (CommonConstants.PROM_TIME.equals(aliasField)) {</span>
+<span class="nc bnc" id="L58" title="All 2 branches missed.">                            for (Object o : value) {</span>
+<span class="nc bnc" id="L59" title="All 2 branches missed.">                                if (o instanceof Double) {</span>
+<span class="nc" id="L60">                                    valueRowBuilder.addColumns(String.valueOf(BigDecimal.valueOf((Double) o * 1000)));</span>
+<span class="nc" id="L61">                                    setTimeFlag = true;</span>
+                                }
+<span class="nc" id="L63">                            }</span>
+<span class="nc bnc" id="L64" title="All 2 branches missed.">                            if (!setTimeFlag) {</span>
+<span class="nc" id="L65">                                valueRowBuilder.addColumns(CommonConstants.NULL_VALUE);</span>
+                            }
+                        } else {
+<span class="nc bnc" id="L68" title="All 2 branches missed.">                            for (Object o : value) {</span>
+<span class="nc bnc" id="L69" title="All 2 branches missed.">                                if (o instanceof String) {</span>
+<span class="nc" id="L70">                                    valueRowBuilder.addColumns((String) o);</span>
+<span class="nc" id="L71">                                    setValueFlag = true;</span>
+                                }
+<span class="nc" id="L73">                            }</span>
+<span class="nc bnc" id="L74" title="All 2 branches missed.">                            if (!setValueFlag) {</span>
+<span class="nc" id="L75">                                valueRowBuilder.addColumns(CommonConstants.NULL_VALUE);</span>
+                            }
+                        }
+                    }
+<span class="nc" id="L79">                }</span>
+<span class="nc" id="L80">                builder.addValues(valueRowBuilder);</span>
+<span class="nc" id="L81">            }</span>
+
+<span class="nc" id="L83">        }</span>
+<span class="nc" id="L84">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

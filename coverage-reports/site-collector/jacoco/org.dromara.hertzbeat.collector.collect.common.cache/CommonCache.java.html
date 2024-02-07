@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CommonCache.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.collect.common.cache</a> &gt; <span class="el_source">CommonCache.java</span></div><h1>CommonCache.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.collector.collect.common.cache;
+
+
+import com.googlecode.concurrentlinkedhashmap.ConcurrentLinkedHashMap;
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.*;
+
+/**
+ * lru common resource cache
+ *
+ * @author tomsun28
+ */
+<span class="fc" id="L33">@Slf4j</span>
+public class CommonCache {
+
+    /**
+     * default cache time 800s
+     */
+    private static final long DEFAULT_CACHE_TIMEOUT = 800 * 1000L;
+
+    /**
+     * default cache num
+     */
+    private static final int DEFAULT_MAX_CAPACITY = 10000;
+
+    /**
+     * cacheTime length
+     */
+    private static final int CACHE_TIME_LENGTH = 2;
+
+    /**
+     * cache timeout map
+     */
+    private Map&lt;Object, Long[]&gt; timeoutMap;
+
+    /**
+     * object cache
+     */
+    private ConcurrentLinkedHashMap&lt;Object, Object&gt; cacheMap;
+
+    /**
+     * the executor who clean cache when timeout
+     */
+    private ThreadPoolExecutor cleanTimeoutExecutor;
+
+<span class="fc" id="L66">    private CommonCache() {</span>
+<span class="fc" id="L67">        init();</span>
+<span class="fc" id="L68">    }</span>
+
+    private void init() {
+<span class="fc" id="L71">        cacheMap = new ConcurrentLinkedHashMap</span>
+                .Builder&lt;&gt;()
+<span class="fc" id="L73">                .maximumWeightedCapacity(DEFAULT_MAX_CAPACITY)</span>
+<span class="fc" id="L74">                .listener((key, value) -&gt; {</span>
+<span class="nc" id="L75">                    timeoutMap.remove(key);</span>
+<span class="nc bnc" id="L76" title="All 2 branches missed.">                    if (value instanceof CacheCloseable) {</span>
+<span class="nc" id="L77">                        ((CacheCloseable) value).close();</span>
+                    }
+<span class="nc" id="L79">                    log.info(&quot;lru cache discard key: {}, value: {}.&quot;, key, value);</span>
+<span class="pc" id="L80">                }).build();</span>
+<span class="fc" id="L81">        timeoutMap = new ConcurrentHashMap&lt;&gt;(DEFAULT_MAX_CAPACITY &gt;&gt; 6);</span>
+<span class="fc" id="L82">        cleanTimeoutExecutor = new ThreadPoolExecutor(1, 1,</span>
+                1, TimeUnit.SECONDS,
+                new ArrayBlockingQueue&lt;&gt;(1),
+<span class="nc" id="L85">                r -&gt; new Thread(r, &quot;lru-cache-timeout-cleaner&quot;),</span>
+                new ThreadPoolExecutor.DiscardOldestPolicy());
+        // init monitor available detector cyc task
+<span class="fc" id="L88">        ScheduledThreadPoolExecutor scheduledExecutor = new ScheduledThreadPoolExecutor(1,</span>
+<span class="fc" id="L89">                r -&gt; new Thread(r, &quot;lru-cache-available-detector&quot;));</span>
+<span class="fc" id="L90">        scheduledExecutor.scheduleWithFixedDelay(this::detectCacheAvailable,</span>
+                2, 20, TimeUnit.MINUTES);
+<span class="fc" id="L92">    }</span>
+
+    /**
+     * detect all cache available, cleanup not ava object
+     */
+    private void detectCacheAvailable() {
+        try {
+<span class="nc" id="L99">            cacheMap.forEach((key, value) -&gt; {</span>
+<span class="nc" id="L100">                Long[] cacheTime = timeoutMap.get(key);</span>
+<span class="nc" id="L101">                long currentTime = System.currentTimeMillis();</span>
+<span class="nc bnc" id="L102" title="All 4 branches missed.">                if (cacheTime == null || cacheTime.length != CACHE_TIME_LENGTH</span>
+<span class="nc bnc" id="L103" title="All 2 branches missed.">                        || cacheTime[0] + cacheTime[1] &lt; currentTime) {</span>
+<span class="nc" id="L104">                    cacheMap.remove(key);</span>
+<span class="nc" id="L105">                    timeoutMap.remove(key);</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">                    if (value instanceof CacheCloseable) {</span>
+<span class="nc" id="L107">                        ((CacheCloseable) value).close();</span>
+                    }
+
+                }
+<span class="nc" id="L111">            });</span>
+<span class="nc" id="L112">        } catch (Exception e) {</span>
+<span class="nc" id="L113">            log.error(&quot;detect cache available error: {}.&quot;, e.getMessage(), e);</span>
+<span class="nc" id="L114">        }</span>
+<span class="nc" id="L115">    }</span>
+
+    /**
+     * clean timeout cache
+     */
+    private void cleanTimeoutCache() {
+        try {
+<span class="nc" id="L122">            cacheMap.forEach((key, value) -&gt; {</span>
+                // index 0 is startTime, 1 is timeDiff
+<span class="nc" id="L124">                Long[] cacheTime = timeoutMap.get(key);</span>
+<span class="nc" id="L125">                long currentTime = System.currentTimeMillis();</span>
+<span class="nc bnc" id="L126" title="All 4 branches missed.">                if (cacheTime == null || cacheTime.length != CACHE_TIME_LENGTH) {</span>
+<span class="nc" id="L127">                    timeoutMap.put(key, new Long[]{currentTime, DEFAULT_CACHE_TIMEOUT});</span>
+<span class="nc bnc" id="L128" title="All 2 branches missed.">                } else if (cacheTime[0] + cacheTime[1] &lt; currentTime) {</span>
+                    // timeout, remove this object cache
+<span class="nc" id="L130">                    log.warn(&quot;[cache] clean the timeout cache, key {}&quot;, key);</span>
+<span class="nc" id="L131">                    timeoutMap.remove(key);</span>
+<span class="nc" id="L132">                    cacheMap.remove(key);</span>
+<span class="nc bnc" id="L133" title="All 2 branches missed.">                    if (value instanceof CacheCloseable) {</span>
+<span class="nc" id="L134">                        log.warn(&quot;[cache] close the timeout cache, key {}&quot;, key);</span>
+<span class="nc" id="L135">                        ((CacheCloseable) value).close();</span>
+                    }
+                }
+<span class="nc" id="L138">            });</span>
+<span class="nc" id="L139">        } catch (Exception e) {</span>
+<span class="nc" id="L140">            log.error(&quot;[cache] clean timeout cache error: {}.&quot;, e.getMessage(), e);</span>
+<span class="nc" id="L141">        }</span>
+<span class="nc" id="L142">    }</span>
+
+    /**
+     * add update cache
+     *
+     * @param key      cache key
+     * @param value    cache value
+     * @param timeDiff cache time millis
+     */
+    public void addCache(Object key, Object value, Long timeDiff) {
+<span class="nc" id="L152">        removeCache(key);</span>
+<span class="nc bnc" id="L153" title="All 2 branches missed.">        if (timeDiff == null) {</span>
+<span class="nc" id="L154">            timeDiff = DEFAULT_CACHE_TIMEOUT;</span>
+        }
+<span class="nc" id="L156">        cacheMap.put(key, value);</span>
+<span class="nc" id="L157">        timeoutMap.put(key, new Long[]{System.currentTimeMillis(), timeDiff});</span>
+<span class="nc" id="L158">        cleanTimeoutExecutor.execute(() -&gt; {</span>
+            try {
+<span class="nc" id="L160">                cleanTimeoutCache();</span>
+<span class="nc" id="L161">                Thread.sleep(10 * 1000);</span>
+<span class="nc" id="L162">            } catch (InterruptedException e) {</span>
+<span class="nc" id="L163">                log.error(e.getMessage(), e);</span>
+<span class="nc" id="L164">            }</span>
+<span class="nc" id="L165">        });</span>
+<span class="nc" id="L166">    }</span>
+
+    /**
+     * add update cache
+     *
+     * @param key   cache key
+     * @param value cache value
+     */
+    public void addCache(Object key, Object value) {
+<span class="nc" id="L175">        addCache(key, value, DEFAULT_CACHE_TIMEOUT);</span>
+<span class="nc" id="L176">    }</span>
+
+    /**
+     * get cache by key
+     *
+     * @param key          cache key
+     * @param refreshCache is refresh cache
+     * @return cache object
+     */
+    public Optional&lt;Object&gt; getCache(Object key, boolean refreshCache) {
+<span class="fc" id="L186">        Long[] cacheTime = timeoutMap.get(key);</span>
+<span class="pc bpc" id="L187" title="3 of 4 branches missed.">        if (cacheTime == null || cacheTime.length != CACHE_TIME_LENGTH) {</span>
+<span class="fc" id="L188">            log.info(&quot;[cache] not hit the cache, key {}.&quot;, key);</span>
+<span class="fc" id="L189">            return Optional.empty();</span>
+        }
+<span class="nc bnc" id="L191" title="All 2 branches missed.">        if (cacheTime[0] + cacheTime[1] &lt; System.currentTimeMillis()) {</span>
+<span class="nc" id="L192">            log.warn(&quot;[cache] is timeout, remove it, key {}.&quot;, key);</span>
+<span class="nc" id="L193">            timeoutMap.remove(key);</span>
+<span class="nc" id="L194">            cacheMap.remove(key);</span>
+<span class="nc" id="L195">            return Optional.empty();</span>
+        }
+<span class="nc" id="L197">        Object value = cacheMap.get(key);</span>
+<span class="nc bnc" id="L198" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L199">            log.error(&quot;[cache] value is null, remove it, key {}.&quot;, key);</span>
+<span class="nc" id="L200">            cacheMap.remove(key);</span>
+<span class="nc" id="L201">            timeoutMap.remove(key);</span>
+<span class="nc bnc" id="L202" title="All 2 branches missed.">        } else if (refreshCache) {</span>
+<span class="nc" id="L203">            cacheTime[0] = System.currentTimeMillis();</span>
+<span class="nc" id="L204">            timeoutMap.put(key, cacheTime);</span>
+        }
+<span class="nc" id="L206">        return Optional.ofNullable(value);</span>
+    }
+
+    /**
+     * remove cache by key
+     *
+     * @param key key
+     */
+    public void removeCache(Object key) {
+<span class="nc" id="L215">        timeoutMap.remove(key);</span>
+<span class="nc" id="L216">        Object value = cacheMap.remove(key);</span>
+<span class="nc bnc" id="L217" title="All 2 branches missed.">        if (value instanceof CacheCloseable) {</span>
+<span class="nc" id="L218">            ((CacheCloseable) value).close();</span>
+        }
+<span class="nc" id="L220">    }</span>
+
+    /**
+     * get common cache instance
+     *
+     * @return cache
+     */
+    public static CommonCache getInstance() {
+<span class="fc" id="L228">        return SingleInstance.INSTANCE;</span>
+    }
+
+    /**
+     * static instance
+     */
+    private static class SingleInstance {
+<span class="fc" id="L235">        private static final CommonCache INSTANCE = new CommonCache();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

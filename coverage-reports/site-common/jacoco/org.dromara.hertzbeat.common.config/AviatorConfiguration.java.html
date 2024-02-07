@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AviatorConfiguration.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.config</a> &gt; <span class="el_source">AviatorConfiguration.java</span></div><h1>AviatorConfiguration.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.common.config;
+
+import com.googlecode.aviator.AviatorEvaluator;
+import com.googlecode.aviator.AviatorEvaluatorInstance;
+import com.googlecode.aviator.Feature;
+import com.googlecode.aviator.Options;
+import com.googlecode.aviator.lexer.token.OperatorType;
+import com.googlecode.aviator.runtime.function.AbstractFunction;
+import com.googlecode.aviator.runtime.type.*;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.util.Map;
+import java.util.Objects;
+import java.util.regex.Pattern;
+
+/**
+ * aviator config
+ * @author tomsun28
+ */
+@Configuration
+<span class="fc" id="L41">@Slf4j</span>
+<span class="fc" id="L42">public class AviatorConfiguration {</span>
+
+    private static final int AVIATOR_LRU_CACHE_SIZE = 1024;
+
+    @Bean
+    public void configAviatorEvaluator() {
+<span class="fc" id="L48">        AviatorEvaluatorInstance instance = AviatorEvaluator.getInstance();</span>
+
+        // 配置AviatorEvaluator使用LRU缓存编译后的表达式
+<span class="fc" id="L51">        instance</span>
+<span class="fc" id="L52">                .useLRUExpressionCache(AVIATOR_LRU_CACHE_SIZE)</span>
+<span class="fc" id="L53">                .addFunction(new StrEqualFunction());</span>
+
+        // limit loop 限制循环次数
+<span class="fc" id="L56">        instance.setOption(Options.MAX_LOOP_COUNT, 10);</span>
+        
+        // 启用部分Aviator语法特性集合
+<span class="fc" id="L59">        instance.setOption(Options.FEATURE_SET,</span>
+<span class="fc" id="L60">                Feature.asSet(Feature.If,</span>
+                        Feature.Assignment,
+                        Feature.Let,
+                        Feature.StringInterpolation));
+
+        // 配置自定义aviator函数
+<span class="fc" id="L66">        instance.addOpFunction(OperatorType.BIT_OR, new AbstractFunction() {</span>
+            @Override
+            public AviatorObject call(final Map&lt;String, Object&gt; env, final AviatorObject arg1,
+                                      final AviatorObject arg2) {
+                try {
+<span class="nc" id="L71">                    Object value1 = arg1.getValue(env);</span>
+<span class="nc" id="L72">                    Object value2 = arg2.getValue(env);</span>
+<span class="nc bnc" id="L73" title="All 2 branches missed.">                    Object currentValue = value1 == null ? value2 : value1;</span>
+<span class="nc bnc" id="L74" title="All 2 branches missed.">                    if (arg1.getAviatorType() == AviatorType.String) {</span>
+<span class="nc" id="L75">                        return new AviatorString(String.valueOf(currentValue));</span>
+                    } else {
+<span class="nc" id="L77">                        return AviatorDouble.valueOf(currentValue);</span>
+                    }
+<span class="nc" id="L79">                } catch (Exception e) {</span>
+<span class="nc" id="L80">                    log.error(e.getMessage());</span>
+                }
+<span class="nc" id="L82">                return arg1.bitOr(arg2, env);</span>
+            }
+            @Override
+            public String getName() {
+<span class="nc" id="L86">                return OperatorType.BIT_OR.getToken();</span>
+            }
+        });
+
+<span class="fc" id="L90">        instance.addFunction(new StrContainsFunction());</span>
+<span class="fc" id="L91">        instance.addFunction(new ObjectExistsFunction());</span>
+<span class="fc" id="L92">        instance.addFunction(new StrMatchesFunction());</span>
+<span class="fc" id="L93">    }</span>
+
+    /**
+     * 自定义aviator判断字符串是否相等函数
+     */
+    private static class StrEqualFunction extends AbstractFunction {
+        @Override
+        public AviatorObject call(Map&lt;String, Object&gt; env, AviatorObject arg1, AviatorObject arg2) {
+<span class="pc bpc" id="L101" title="2 of 4 branches missed.">            if (arg1 == null || arg2 == null) {</span>
+<span class="nc" id="L102">                return AviatorBoolean.FALSE;</span>
+            }
+<span class="fc" id="L104">            Object leftTmp = arg1.getValue(env);</span>
+<span class="fc" id="L105">            Object rightTmp = arg2.getValue(env);</span>
+<span class="pc bpc" id="L106" title="2 of 4 branches missed.">            if (leftTmp == null || rightTmp == null) {</span>
+<span class="nc" id="L107">                return AviatorBoolean.FALSE;</span>
+            }
+<span class="fc" id="L109">            String left = String.valueOf(leftTmp);</span>
+<span class="fc" id="L110">            String right = String.valueOf(rightTmp);</span>
+<span class="fc" id="L111">            return AviatorBoolean.valueOf(left.equalsIgnoreCase(right));</span>
+        }
+        @Override
+        public String getName() {
+<span class="fc" id="L115">            return &quot;equals&quot;;</span>
+        }
+    }
+
+    /**
+     * 自定义aviator判断字符串1是否包含字符串2 (case-insensitive)
+     */
+    private static class StrContainsFunction extends AbstractFunction {
+        @Override
+        public AviatorObject call(Map&lt;String, Object&gt; env, AviatorObject arg1, AviatorObject arg2) {
+<span class="pc bpc" id="L125" title="2 of 4 branches missed.">            if (arg1 == null || arg2 == null) {</span>
+<span class="nc" id="L126">                return AviatorBoolean.FALSE;</span>
+            }
+<span class="fc" id="L128">            Object leftTmp = arg1.getValue(env);</span>
+<span class="fc" id="L129">            Object rightTmp = arg2.getValue(env);</span>
+<span class="pc bpc" id="L130" title="2 of 4 branches missed.">            if (leftTmp == null || rightTmp == null) {</span>
+<span class="nc" id="L131">                return AviatorBoolean.FALSE;</span>
+            }
+<span class="fc" id="L133">            String left = String.valueOf(leftTmp);</span>
+<span class="fc" id="L134">            String right = String.valueOf(rightTmp);</span>
+<span class="fc" id="L135">            return AviatorBoolean.valueOf(StringUtils.containsIgnoreCase(left, right));</span>
+        }
+        @Override
+        public String getName() {
+<span class="fc" id="L139">            return &quot;contains&quot;;</span>
+        }
+    }
+
+    /**
+     * 自定义aviator判断环境中此对象是否存在值
+     */
+    private static class ObjectExistsFunction extends AbstractFunction {
+        @Override
+        public AviatorObject call(Map&lt;String, Object&gt; env, AviatorObject arg) {
+<span class="pc bpc" id="L149" title="1 of 2 branches missed.">            if (arg == null) {</span>
+<span class="nc" id="L150">                return AviatorBoolean.FALSE;</span>
+            }
+<span class="fc" id="L152">            Object keyTmp = arg.getValue(env);</span>
+<span class="fc bfc" id="L153" title="All 2 branches covered.">            if (Objects.isNull(keyTmp)) {</span>
+<span class="fc" id="L154">                return AviatorBoolean.FALSE;</span>
+            } else {
+<span class="fc" id="L156">                String key = String.valueOf(keyTmp);</span>
+<span class="fc" id="L157">                return AviatorBoolean.valueOf(StringUtils.isNotEmpty(key));</span>
+            }
+        }
+        @Override
+        public String getName() {
+<span class="fc" id="L162">            return &quot;exists&quot;;</span>
+        }
+    }
+
+    /**
+     * 自定义aviator判断字符串是否匹配regex
+     * - regex需要加上&quot;&quot;或者''
+     */
+    private static class StrMatchesFunction extends AbstractFunction {
+        @Override
+        public AviatorObject call(Map&lt;String, Object&gt; env, AviatorObject arg1, AviatorObject arg2) {
+<span class="pc bpc" id="L173" title="2 of 4 branches missed.">            if (arg1 == null || arg2 == null) {</span>
+<span class="nc" id="L174">                return AviatorBoolean.FALSE;</span>
+            }
+<span class="fc" id="L176">            Object strTmp = arg1.getValue(env);</span>
+<span class="fc" id="L177">            Object regexTmp = arg2.getValue(env);</span>
+<span class="pc bpc" id="L178" title="2 of 4 branches missed.">            if (strTmp == null || regexTmp == null) {</span>
+<span class="nc" id="L179">                return AviatorBoolean.FALSE;</span>
+            }
+<span class="fc" id="L181">            String str = String.valueOf(strTmp);</span>
+<span class="fc" id="L182">            String regex = String.valueOf(regexTmp);</span>
+<span class="fc" id="L183">            boolean isMatch = Pattern.compile(regex).matcher(str).matches();</span>
+<span class="fc" id="L184">            return AviatorBoolean.valueOf(isMatch);</span>
+        }
+        @Override
+        public String getName() {
+<span class="fc" id="L188">            return &quot;matches&quot;;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

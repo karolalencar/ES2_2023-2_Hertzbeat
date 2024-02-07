@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Job.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-common</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.common.entity.job</a> &gt; <span class="el_source">Job.java</span></div><h1>Job.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.common.entity.job;
+
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.common.entity.manager.ParamDefine;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.util.JsonUtil;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * Collect task details
+ * @author tomsun28
+ */
+<span class="nc bnc" id="L38" title="All 92 branches missed.">@Data</span>
+<span class="nc" id="L39">@AllArgsConstructor</span>
+<span class="nc" id="L40">@NoArgsConstructor</span>
+<span class="nc" id="L41">@Builder</span>
+<span class="nc" id="L42">@Slf4j</span>
+public class Job {
+
+    /**
+     * Task Job id
+     */
+<span class="nc" id="L48">    private long id;</span>
+    /**
+     * Tenant id
+     */
+<span class="nc" id="L52">    private long tenantId = 0;</span>
+    /**
+     * Monitoring Task ID
+     */
+<span class="nc" id="L56">    private long monitorId;</span>
+    /**
+     * Large categories of monitoring   
+     * service-application service monitoring db-database monitoring custom-custom monitoring os-operating system monitoring...
+     */
+<span class="nc" id="L61">    private String category;</span>
+    /**
+     * Type of monitoring eg: linux | mysql | jvm
+     */
+<span class="nc" id="L65">    private String app;</span>
+    /**
+     * The internationalized name of the monitoring type   
+     * zh-CN: PING连通性
+     * en-US: PING CONNECT
+     */
+<span class="nc" id="L71">    private Map&lt;String, String&gt; name;</span>
+    /**
+     * The description and help of the monitoring type
+     * zh-CN: PING连通性 - 支持您使用在线配置对端服务的IP或域名地址，监控本机网络与对端网络的PING可连通性。
+     * en-US: PING CONNECT - You can use the IP address or domain address of the peer service to monitor the PING connectivity between the local network and the peer network.
+     */
+<span class="nc" id="L77">    private Map&lt;String, String&gt; help;</span>
+    /**
+     * The monitor help link
+     */
+<span class="nc" id="L81">    private Map&lt;String, String&gt; helpLink;</span>
+    /**
+     * Task dispatch start timestamp
+     * 任务派发开始时间戳
+     */
+<span class="nc" id="L86">    private long timestamp;</span>
+    /**
+     * Task collection time interval (unit: second) eg: 30,60,600
+     * 任务采集时间间隔(单位秒) eg: 30,60,600
+     */
+<span class="nc" id="L91">    private long interval = 600L;</span>
+    /**
+     * Whether it is a recurring periodic task true is yes, false is no
+     * 是否是循环周期性任务 true为是,false为否
+     */
+<span class="nc" id="L96">    private boolean isCyclic = false;</span>
+    /**
+     * monitor input need params
+     */
+<span class="nc" id="L100">    private List&lt;ParamDefine&gt; params;</span>
+    /**
+     * Metrics configuration eg: cpu memory
+     * eg: cpu memory
+     */
+<span class="nc" id="L105">    private List&lt;Metrics&gt; metrics;</span>
+    /**
+     * Monitoring configuration parameter properties and values eg: username password timeout host
+     * 监控配置参数属性及值 eg: username password timeout host
+     */
+<span class="nc" id="L110">    private List&lt;Configmap&gt; configmap;</span>
+
+    /**
+     * the collect data response metrics as env configmap for other collect use. ^o^xxx^o^
+     * 优先级高的采集响应单行指标可以作为后续优先级采集配置的环境变量 ^o^xxx^o^
+     */
+    @JsonIgnore
+    private Map&lt;String, Configmap&gt; envConfigmaps;
+
+    /**
+     * collector use - timestamp when the task was scheduled by the time wheel
+     * 任务被时间轮开始调度的时间戳
+     */
+    @JsonIgnore
+<span class="nc" id="L124">    private transient long dispatchTime;</span>
+    
+    /**
+     * collector usage - metric group task execution priority view
+     * 0 - availability
+     * 1 - cpu | memory
+     * 2 - health
+     * 3 - otherMetrics
+     * ....
+     * 126 - otherMetrics
+     * 127 - lastPriorMetrics
+     */
+    @JsonIgnore
+<span class="nc" id="L137">    private transient LinkedList&lt;Set&lt;Metrics&gt;&gt; priorMetrics;</span>
+
+    /**
+     * collector use - Temporarily store one-time task metrics response data
+     * collector使用 - 临时存储一次性任务响应数据
+     */
+    @JsonIgnore
+<span class="nc" id="L144">    private transient List&lt;CollectRep.MetricsData&gt; responseDataTemp;</span>
+
+    /**
+     * collector use - construct to initialize metrics execution view
+     * collector使用 - 构造初始化指标执行视图
+     */
+    public synchronized void constructPriorMetrics() {
+<span class="nc" id="L151">        Map&lt;Byte, List&lt;Metrics&gt;&gt; map = metrics.stream()</span>
+<span class="nc" id="L152">                .peek(metric -&gt; {</span>
+                    // Determine whether to configure aliasFields If not, configure the default
+                    // 判断是否配置aliasFields 没有则配置默认
+<span class="nc bnc" id="L155" title="All 6 branches missed.">                    if ((metric.getAliasFields() == null || metric.getAliasFields().isEmpty()) &amp;&amp; metric.getFields() != null) {</span>
+<span class="nc" id="L156">                        metric.setAliasFields(metric.getFields().stream().map(Metrics.Field::getField).collect(Collectors.toList()));</span>
+                    }
+                    // Set the default metrics execution priority, if not filled, the default last priority
+                    // 设置默认执行优先级,不填则默认最后优先级
+<span class="nc bnc" id="L160" title="All 2 branches missed.">                    if (metric.getPriority() == null) {</span>
+<span class="nc" id="L161">                        metric.setPriority(Byte.MAX_VALUE);</span>
+                    }
+<span class="nc" id="L163">                })</span>
+<span class="nc" id="L164">                .collect(Collectors.groupingBy(Metrics::getPriority));</span>
+        // Construct a linked list of task execution order of the metrics
+        // 构造采集任务执行顺序链表
+<span class="nc" id="L167">        priorMetrics = new LinkedList&lt;&gt;();</span>
+<span class="nc" id="L168">        map.values().forEach(metric -&gt; {</span>
+<span class="nc" id="L169">            Set&lt;Metrics&gt; metricsSet = Collections.synchronizedSet(new HashSet&lt;&gt;(metric));</span>
+<span class="nc" id="L170">            priorMetrics.add(metricsSet);</span>
+<span class="nc" id="L171">        });</span>
+<span class="nc" id="L172">        priorMetrics.sort(Comparator.comparing(e -&gt; {</span>
+<span class="nc" id="L173">            Optional&lt;Metrics&gt; metric = e.stream().findAny();</span>
+<span class="nc bnc" id="L174" title="All 2 branches missed.">            if (metric.isPresent()) {</span>
+<span class="nc" id="L175">                return metric.get().getPriority();</span>
+            } else {
+<span class="nc" id="L177">                return Byte.MAX_VALUE;</span>
+            }
+        }));
+<span class="nc" id="L180">        envConfigmaps = new HashMap&lt;&gt;(8);</span>
+<span class="nc" id="L181">    }</span>
+
+    /**
+     * collector use - to get the next set of priority metric group tasks
+     * collector使用 - 获取下一组优先级的采集任务
+     *
+     * @param metrics Current Metrics
+     * @param first   Is it the first time to get  
+     * @return Metrics Tasks       
+     * Returning null means: the job has been completed, and the collection of all metrics has ended
+     * 返回null表示：job已完成,所有采集任务结束
+     * Returning the empty set metrics that there are still metrics collection tasks at the current
+     * level that have not been completed,and the next level metrics task collection cannot be performed.
+     * 返回empty的集合表示：当前级别下还有指标采集任务未结束,无法进行下一级别的任务采集
+     * Returns a set of data representation: get the next set of priority index collcet tasks
+     * 返回有数据集合表示：获取到下一组优先级的采集任务
+     */
+    public synchronized Set&lt;Metrics&gt; getNextCollectMetrics(Metrics metrics, boolean first) {
+<span class="nc bnc" id="L199" title="All 4 branches missed.">        if (priorMetrics == null || priorMetrics.isEmpty()) {</span>
+<span class="nc" id="L200">            return null;</span>
+        }
+<span class="nc" id="L202">        Set&lt;Metrics&gt; metricsSet = priorMetrics.peek();</span>
+<span class="nc bnc" id="L203" title="All 2 branches missed.">        if (first) {</span>
+<span class="nc bnc" id="L204" title="All 2 branches missed.">            if (metricsSet.isEmpty()) {</span>
+<span class="nc" id="L205">                log.error(&quot;metrics must has one [availability] metrics at least.&quot;);</span>
+            }
+<span class="nc" id="L207">            return metricsSet;</span>
+        }
+<span class="nc bnc" id="L209" title="All 2 branches missed.">        if (metrics == null) {</span>
+<span class="nc" id="L210">            log.error(&quot;metrics can not null when not first get&quot;);</span>
+<span class="nc" id="L211">            return null;</span>
+        }
+<span class="nc bnc" id="L213" title="All 2 branches missed.">        if (!metricsSet.remove(metrics)) {</span>
+<span class="nc" id="L214">            log.warn(&quot;Job {} appId {} app {} metrics {} remove empty error in priorMetrics.&quot;,</span>
+<span class="nc" id="L215">                    id, monitorId, app, metrics.getName());</span>
+        }
+<span class="nc bnc" id="L217" title="All 2 branches missed.">        if (metricsSet.isEmpty()) {</span>
+<span class="nc" id="L218">            priorMetrics.poll();</span>
+<span class="nc bnc" id="L219" title="All 2 branches missed.">            if (priorMetrics.isEmpty()) {</span>
+<span class="nc" id="L220">                return null;</span>
+            }
+<span class="nc" id="L222">            Set&lt;Metrics&gt; source = priorMetrics.peek();</span>
+<span class="nc" id="L223">            return new HashSet&lt;&gt;(source);</span>
+        } else {
+<span class="nc" id="L225">            return Collections.emptySet();</span>
+        }
+    }
+
+    public void addCollectMetricsData(CollectRep.MetricsData metricsData) {
+<span class="nc bnc" id="L230" title="All 2 branches missed.">        if (responseDataTemp == null) {</span>
+<span class="nc" id="L231">            responseDataTemp = new LinkedList&lt;&gt;();</span>
+        }
+<span class="nc" id="L233">        responseDataTemp.add(metricsData);</span>
+<span class="nc" id="L234">    }</span>
+
+    public Map&lt;String, Configmap&gt; getEnvConfigmaps() {
+<span class="nc" id="L237">        return envConfigmaps;</span>
+    }
+
+    public void addEnvConfigmaps(Map&lt;String, Configmap&gt; envConfigmaps) {
+<span class="nc bnc" id="L241" title="All 2 branches missed.">        if (this.envConfigmaps == null) {</span>
+<span class="nc" id="L242">            this.envConfigmaps = envConfigmaps;</span>
+        } else {
+<span class="nc" id="L244">            this.envConfigmaps.putAll(envConfigmaps);   </span>
+        }
+<span class="nc" id="L246">    }</span>
+
+    @Override
+    public Job clone() {
+        // deep clone   深度克隆
+<span class="nc" id="L251">        return JsonUtil.fromJson(JsonUtil.toJson(this), getClass());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

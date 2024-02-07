@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CollectJobService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.dispatch.entrance.internal</a> &gt; <span class="el_source">CollectJobService.java</span></div><h1>CollectJobService.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.collector.dispatch.entrance.internal;
+
+import org.dromara.hertzbeat.collector.dispatch.DispatchProperties;
+import org.dromara.hertzbeat.collector.dispatch.WorkerPool;
+import org.dromara.hertzbeat.collector.dispatch.entrance.CollectServer;
+import org.dromara.hertzbeat.collector.dispatch.timer.TimerDispatch;
+import org.dromara.hertzbeat.common.constants.CommonConstants;
+import org.dromara.hertzbeat.common.entity.job.Job;
+import org.dromara.hertzbeat.common.entity.message.ClusterMsg;
+import org.dromara.hertzbeat.common.entity.message.CollectRep;
+import org.dromara.hertzbeat.common.util.IpDomainUtil;
+import org.dromara.hertzbeat.common.util.JsonUtil;
+import lombok.extern.slf4j.Slf4j;
+import org.dromara.hertzbeat.common.util.ProtoJsonUtil;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Collection job management provides api interface
+ * 采集job管理提供api接口
+ *
+ * @author tomsun28
+ */
+@Service
+<span class="nc" id="L48">@Slf4j</span>
+public class CollectJobService {
+
+    private static final String COLLECTOR_STR = &quot;-collector&quot;;
+
+    private final TimerDispatch timerDispatch;
+
+    private final WorkerPool workerPool;
+
+    private final String collectorIdentity;
+    
+<span class="nc" id="L59">    private String mode = null;</span>
+
+    private CollectServer collectServer;
+
+<span class="nc" id="L63">    public CollectJobService(TimerDispatch timerDispatch, DispatchProperties properties, WorkerPool workerPool) {</span>
+<span class="nc" id="L64">        this.timerDispatch = timerDispatch;</span>
+<span class="nc" id="L65">        this.workerPool = workerPool;</span>
+<span class="nc bnc" id="L66" title="All 6 branches missed.">        if (properties != null &amp;&amp; properties.getEntrance() != null &amp;&amp; properties.getEntrance().getNetty() != null</span>
+<span class="nc bnc" id="L67" title="All 2 branches missed.">                &amp;&amp; properties.getEntrance().getNetty().isEnabled()) {</span>
+<span class="nc" id="L68">            mode = properties.getEntrance().getNetty().getMode();</span>
+<span class="nc" id="L69">            String collectorName = properties.getEntrance().getNetty().getIdentity();</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">            if (StringUtils.hasText(collectorName)) {</span>
+<span class="nc" id="L71">                collectorIdentity = collectorName;</span>
+            } else {
+<span class="nc" id="L73">                collectorIdentity = IpDomainUtil.getCurrentHostName() + COLLECTOR_STR;</span>
+<span class="nc" id="L74">                log.info(&quot;user not config this collector identity, use [host name - host ip] default: {}.&quot;, collectorIdentity);</span>
+            }
+<span class="nc" id="L76">        } else {</span>
+<span class="nc" id="L77">            collectorIdentity = CommonConstants.MAIN_COLLECTOR_NODE;</span>
+        }
+<span class="nc" id="L79">    }</span>
+
+    /**
+     * Execute a one-time collection task and get the collected data response
+     * 执行一次性采集任务,获取采集数据响应
+     *
+     * @param job Collect task details  采集任务详情
+     * @return Collection results       采集结果
+     */
+    public List&lt;CollectRep.MetricsData&gt; collectSyncJobData(Job job) {
+<span class="nc" id="L89">        final List&lt;CollectRep.MetricsData&gt; metricsData = new LinkedList&lt;&gt;();</span>
+<span class="nc" id="L90">        final CountDownLatch countDownLatch = new CountDownLatch(1);</span>
+<span class="nc" id="L91">        CollectResponseEventListener listener = new CollectResponseEventListener() {</span>
+            @Override
+            public void response(List&lt;CollectRep.MetricsData&gt; responseMetrics) {
+<span class="nc bnc" id="L94" title="All 2 branches missed.">                if (responseMetrics != null) {</span>
+<span class="nc" id="L95">                    metricsData.addAll(responseMetrics);</span>
+                }
+<span class="nc" id="L97">                countDownLatch.countDown();</span>
+<span class="nc" id="L98">            }</span>
+        };
+<span class="nc" id="L100">        timerDispatch.addJob(job, listener);</span>
+        try {
+<span class="nc" id="L102">            countDownLatch.await(120, TimeUnit.SECONDS);</span>
+<span class="nc" id="L103">        } catch (Exception e) {</span>
+<span class="nc" id="L104">            log.info(&quot;The sync task runs for 120 seconds with no response and returns&quot;);</span>
+<span class="nc" id="L105">        }</span>
+<span class="nc" id="L106">        return metricsData;</span>
+    }
+
+    /**
+     * Execute a one-time collection task and send the collected data response
+     *
+     * @param oneTimeJob Collect task details  采集任务详情
+     */
+    public void collectSyncOneTimeJobData(Job oneTimeJob) {
+<span class="nc" id="L115">        workerPool.executeJob(() -&gt; {</span>
+<span class="nc" id="L116">            List&lt;CollectRep.MetricsData&gt; metricsDataList = this.collectSyncJobData(oneTimeJob);</span>
+<span class="nc" id="L117">            List&lt;String&gt; jsons = new ArrayList&lt;&gt;(metricsDataList.size());</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">            for (CollectRep.MetricsData metricsData : metricsDataList) {</span>
+<span class="nc" id="L119">                String json = ProtoJsonUtil.toJsonStr(metricsData);</span>
+<span class="nc bnc" id="L120" title="All 2 branches missed.">                if (json != null) {</span>
+<span class="nc" id="L121">                    jsons.add(json);</span>
+                }
+<span class="nc" id="L123">            }</span>
+<span class="nc" id="L124">            String response = JsonUtil.toJson(jsons);</span>
+<span class="nc" id="L125">            ClusterMsg.Message message = ClusterMsg.Message.newBuilder()</span>
+<span class="nc" id="L126">                    .setMsg(response)</span>
+<span class="nc" id="L127">                    .setDirection(ClusterMsg.Direction.REQUEST)</span>
+<span class="nc" id="L128">                    .setType(ClusterMsg.MessageType.RESPONSE_ONE_TIME_TASK_DATA)</span>
+<span class="nc" id="L129">                    .build();</span>
+<span class="nc" id="L130">            this.collectServer.sendMsg(message);</span>
+<span class="nc" id="L131">        });</span>
+<span class="nc" id="L132">    }</span>
+
+    /**
+     * Issue periodic asynchronous collection tasks
+     * 下发周期性异步采集任务
+     *
+     * @param job Collect task details      采集任务详情
+     */
+    public void addAsyncCollectJob(Job job) {
+<span class="nc" id="L141">        timerDispatch.addJob(job.clone(), null);</span>
+<span class="nc" id="L142">    }</span>
+
+    /**
+     * Cancel periodic asynchronous collection tasks
+     * 取消周期性异步采集任务
+     *
+     * @param jobId Job ID      采集任务ID
+     */
+    public void cancelAsyncCollectJob(Long jobId) {
+<span class="nc bnc" id="L151" title="All 2 branches missed.">        if (jobId != null) {</span>
+<span class="nc" id="L152">            timerDispatch.deleteJob(jobId, true);</span>
+        }
+<span class="nc" id="L154">    }</span>
+
+    /**
+     * send async collect response data
+     *
+     * @param metricsData collect data
+     */
+    public void sendAsyncCollectData(CollectRep.MetricsData metricsData) {
+<span class="nc" id="L162">        String data = ProtoJsonUtil.toJsonStr(metricsData);</span>
+<span class="nc" id="L163">        ClusterMsg.Message message = ClusterMsg.Message.newBuilder()</span>
+<span class="nc" id="L164">                .setIdentity(collectorIdentity)</span>
+<span class="nc" id="L165">                .setMsg(data)</span>
+<span class="nc" id="L166">                .setDirection(ClusterMsg.Direction.REQUEST)</span>
+<span class="nc" id="L167">                .setType(ClusterMsg.MessageType.RESPONSE_CYCLIC_TASK_DATA)</span>
+<span class="nc" id="L168">                .build();</span>
+<span class="nc" id="L169">        this.collectServer.sendMsg(message);</span>
+<span class="nc" id="L170">    }</span>
+
+    public String getCollectorIdentity() {
+<span class="nc" id="L173">        return collectorIdentity;</span>
+    }
+    
+    public String getCollectorMode() {
+<span class="nc" id="L177">        return mode;</span>
+    }
+
+    public void setCollectServer(CollectServer collectServer) {
+<span class="nc" id="L181">        this.collectServer = collectServer;</span>
+<span class="nc" id="L182">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

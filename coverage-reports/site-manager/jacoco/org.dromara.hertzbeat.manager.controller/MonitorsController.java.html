@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MonitorsController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-manager</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.manager.controller</a> &gt; <span class="el_source">MonitorsController.java</span></div><h1>MonitorsController.java</h1><pre class="source lang-java linenums">/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.dromara.hertzbeat.manager.controller;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.dromara.hertzbeat.common.entity.dto.Message;
+import org.dromara.hertzbeat.common.entity.manager.Monitor;
+import org.dromara.hertzbeat.manager.service.MonitorService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import javax.persistence.criteria.CriteriaBuilder;
+import javax.persistence.criteria.JoinType;
+import javax.persistence.criteria.ListJoin;
+import javax.persistence.criteria.Predicate;
+import javax.servlet.http.HttpServletResponse;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
+
+/**
+ * Monitor and manage batch API
+ * 监控管理批量API
+ *
+ * @author tom
+ */
+@Tag(name = &quot;Monitor Manage Batch API | 监控列表API&quot;)
+@RestController
+@RequestMapping(path = &quot;/api/monitors&quot;, produces = {APPLICATION_JSON_VALUE})
+<span class="fc" id="L56">public class MonitorsController {</span>
+
+	private static final byte ALL_MONITOR_STATUS = 9;
+
+	private static final int TAG_LENGTH = 2;
+
+	@Autowired
+	private MonitorService monitorService;
+
+	@GetMapping
+	@Operation(summary = &quot;Obtain a list of monitoring information based on query filter items&quot;,
+			description = &quot;根据查询过滤项获取监控信息列表&quot;)
+	public ResponseEntity&lt;Message&lt;Page&lt;Monitor&gt;&gt;&gt; getMonitors(
+			@Parameter(description = &quot;Monitor ID | 监控任务ID&quot;, example = &quot;6565463543&quot;) @RequestParam(required = false) final List&lt;Long&gt; ids,
+			@Parameter(description = &quot;Monitor Type | 监控类型&quot;, example = &quot;linux&quot;) @RequestParam(required = false) final String app,
+			@Parameter(description = &quot;Monitor Name | 任务名称，模糊查询&quot;, example = &quot;linux-127.0.0.1&quot;) @RequestParam(required = false) final String name,
+			@Parameter(description = &quot;Monitor Host | 监控Host，模糊查询&quot;, example = &quot;127.0.0.1&quot;) @RequestParam(required = false) final String host,
+			@Parameter(description = &quot;Monitor Status | 任务状态 0:未监控,1:可用,2:不可用,9:全部状态&quot;, example = &quot;1&quot;) @RequestParam(required = false) final Byte status,
+			@Parameter(description = &quot;Sort Field | 排序字段&quot;, example = &quot;name&quot;) @RequestParam(defaultValue = &quot;gmtCreate&quot;) final String sort,
+			@Parameter(description = &quot;Sort by | 排序方式，asc:升序，desc:降序&quot;, example = &quot;desc&quot;) @RequestParam(defaultValue = &quot;desc&quot;) final String order,
+			@Parameter(description = &quot;List current page | 列表当前分页&quot;, example = &quot;0&quot;) @RequestParam(defaultValue = &quot;0&quot;) int pageIndex,
+			@Parameter(description = &quot;Number of list pagination | 列表分页数量&quot;, example = &quot;8&quot;) @RequestParam(defaultValue = &quot;8&quot;) int pageSize,
+			@Parameter(description = &quot;Monitor tag | 监控标签&quot;, example = &quot;env:prod&quot;) @RequestParam(required = false) final String tag) {
+<span class="fc" id="L79">		Specification&lt;Monitor&gt; specification = (root, query, criteriaBuilder) -&gt; {</span>
+<span class="nc" id="L80">			List&lt;Predicate&gt; andList = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L81" title="All 4 branches missed.">			if (ids != null &amp;&amp; !ids.isEmpty()) {</span>
+<span class="nc" id="L82">				CriteriaBuilder.In&lt;Long&gt; inPredicate = criteriaBuilder.in(root.get(&quot;id&quot;));</span>
+<span class="nc bnc" id="L83" title="All 2 branches missed.">				for (long id : ids) {</span>
+<span class="nc" id="L84">					inPredicate.value(id);</span>
+<span class="nc" id="L85">				}</span>
+<span class="nc" id="L86">				andList.add(inPredicate);</span>
+			}
+<span class="nc bnc" id="L88" title="All 2 branches missed.">			if (StringUtils.hasText(app)) {</span>
+<span class="nc" id="L89">				Predicate predicateApp = criteriaBuilder.equal(root.get(&quot;app&quot;), app);</span>
+<span class="nc" id="L90">				andList.add(predicateApp);</span>
+			}
+<span class="nc bnc" id="L92" title="All 6 branches missed.">			if (status != null &amp;&amp; status &gt;= 0 &amp;&amp; status &lt; ALL_MONITOR_STATUS) {</span>
+<span class="nc" id="L93">				Predicate predicateStatus = criteriaBuilder.equal(root.get(&quot;status&quot;), status);</span>
+<span class="nc" id="L94">				andList.add(predicateStatus);</span>
+			}
+
+<span class="nc bnc" id="L97" title="All 2 branches missed.">			if (StringUtils.hasText(tag)) {</span>
+<span class="nc" id="L98">				String[] tagArr = tag.split(&quot;:&quot;);</span>
+<span class="nc" id="L99">				String tagName = tagArr[0];</span>
+<span class="nc" id="L100">				ListJoin&lt;Monitor, org.dromara.hertzbeat.common.entity.manager.Tag&gt; tagJoin = root</span>
+<span class="nc" id="L101">						.join(root.getModel()</span>
+<span class="nc" id="L102">								.getList(&quot;tags&quot;, org.dromara.hertzbeat.common.entity.manager.Tag.class), JoinType.LEFT);</span>
+<span class="nc bnc" id="L103" title="All 2 branches missed.">				if (tagArr.length == TAG_LENGTH) {</span>
+<span class="nc" id="L104">					String tagValue = tagArr[1];</span>
+<span class="nc" id="L105">					andList.add(criteriaBuilder.equal(tagJoin.get(&quot;name&quot;), tagName));</span>
+<span class="nc" id="L106">					andList.add(criteriaBuilder.equal(tagJoin.get(&quot;value&quot;), tagValue));</span>
+<span class="nc" id="L107">				} else {</span>
+<span class="nc" id="L108">					andList.add(criteriaBuilder.equal(tagJoin.get(&quot;name&quot;), tag));</span>
+				}
+			}
+<span class="nc" id="L111">			Predicate[] andPredicates = new Predicate[andList.size()];</span>
+<span class="nc" id="L112">			Predicate andPredicate = criteriaBuilder.and(andList.toArray(andPredicates));</span>
+
+<span class="nc" id="L114">			List&lt;Predicate&gt; orList = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">			if (StringUtils.hasText(host)) {</span>
+<span class="nc" id="L116">				Predicate predicateHost = criteriaBuilder.like(root.get(&quot;host&quot;), &quot;%&quot; + host + &quot;%&quot;);</span>
+<span class="nc" id="L117">				orList.add(predicateHost);</span>
+			}
+<span class="nc bnc" id="L119" title="All 2 branches missed.">			if (StringUtils.hasText(name)) {</span>
+<span class="nc" id="L120">				Predicate predicateName = criteriaBuilder.like(root.get(&quot;name&quot;), &quot;%&quot; + name + &quot;%&quot;);</span>
+<span class="nc" id="L121">				orList.add(predicateName);</span>
+			}
+<span class="nc" id="L123">			Predicate[] orPredicates = new Predicate[orList.size()];</span>
+<span class="nc" id="L124">			Predicate orPredicate = criteriaBuilder.or(orList.toArray(orPredicates));</span>
+
+<span class="nc bnc" id="L126" title="All 4 branches missed.">			if (andPredicate.getExpressions().isEmpty() &amp;&amp; orPredicate.getExpressions().isEmpty()) {</span>
+<span class="nc" id="L127">				return query.where().getRestriction();</span>
+<span class="nc bnc" id="L128" title="All 2 branches missed.">			} else if (andPredicate.getExpressions().isEmpty()) {</span>
+<span class="nc" id="L129">				return query.where(orPredicate).getRestriction();</span>
+<span class="nc bnc" id="L130" title="All 2 branches missed.">			} else if (orPredicate.getExpressions().isEmpty()) {</span>
+<span class="nc" id="L131">				return query.where(andPredicate).getRestriction();</span>
+			} else {
+<span class="nc" id="L133">				return query.where(andPredicate, orPredicate).getRestriction();</span>
+			}
+		};
+		// Pagination is a must         分页是必须的
+<span class="fc" id="L137">		Sort sortExp = Sort.by(new Sort.Order(Sort.Direction.fromString(order), sort));</span>
+<span class="fc" id="L138">		PageRequest pageRequest = PageRequest.of(pageIndex, pageSize, sortExp);</span>
+<span class="fc" id="L139">		Page&lt;Monitor&gt; monitorPage = monitorService.getMonitors(specification, pageRequest);</span>
+<span class="fc" id="L140">		Message&lt;Page&lt;Monitor&gt;&gt; message = Message.success(monitorPage);</span>
+<span class="fc" id="L141">		return ResponseEntity.ok(message);</span>
+	}
+
+	@GetMapping(path = &quot;/{app}&quot;)
+	@Operation(summary = &quot;Filter all acquired monitoring information lists of the specified monitoring type according to the query&quot;,
+			description = &quot;根据查询过滤指定监控类型的所有获取监控信息列表&quot;)
+	public ResponseEntity&lt;Message&lt;List&lt;Monitor&gt;&gt;&gt; getAppMonitors(
+			@Parameter(description = &quot;en: Monitoring type,zh: 监控类型&quot;, example = &quot;linux&quot;) @PathVariable(required = false) final String app) {
+<span class="fc" id="L149">		List&lt;Monitor&gt; monitors = monitorService.getAppMonitors(app);</span>
+<span class="fc" id="L150">		Message&lt;List&lt;Monitor&gt;&gt; message = Message.success(monitors);</span>
+<span class="fc" id="L151">		return ResponseEntity.ok(message);</span>
+	}
+
+	@DeleteMapping
+	@Operation(summary = &quot;Delete monitoring items in batches according to the monitoring ID list&quot;,
+			description = &quot;根据监控任务ID列表批量删除监控项&quot;)
+	public ResponseEntity&lt;Message&lt;Void&gt;&gt; deleteMonitors(
+			@Parameter(description = &quot;Monitoring ID List | 监控任务ID列表&quot;, example = &quot;6565463543&quot;) @RequestParam(required = false) List&lt;Long&gt; ids
+	) {
+<span class="pc bpc" id="L160" title="3 of 4 branches missed.">		if (ids != null &amp;&amp; !ids.isEmpty()) {</span>
+<span class="nc" id="L161">			monitorService.deleteMonitors(new HashSet&lt;&gt;(ids));</span>
+		}
+<span class="fc" id="L163">		Message&lt;Void&gt; message = Message.success();</span>
+<span class="fc" id="L164">		return ResponseEntity.ok(message);</span>
+	}
+
+	@DeleteMapping(&quot;manage&quot;)
+	@Operation(summary = &quot;Unmanaged monitoring items in batches according to the monitoring ID list&quot;,
+			description = &quot;根据监控任务ID列表批量取消纳管监控项&quot;)
+	public ResponseEntity&lt;Message&lt;Void&gt;&gt; cancelManageMonitors(
+			@Parameter(description = &quot;Monitoring ID List | 监控任务ID列表&quot;, example = &quot;6565463543&quot;) @RequestParam(required = false) List&lt;Long&gt; ids
+	) {
+<span class="pc bpc" id="L173" title="3 of 4 branches missed.">		if (ids != null &amp;&amp; !ids.isEmpty()) {</span>
+<span class="nc" id="L174">			monitorService.cancelManageMonitors(new HashSet&lt;&gt;(ids));</span>
+		}
+<span class="fc" id="L176">		Message&lt;Void&gt; message = Message.success();</span>
+<span class="fc" id="L177">		return ResponseEntity.ok(message);</span>
+	}
+
+	@GetMapping(&quot;manage&quot;)
+	@Operation(summary = &quot;Start the managed monitoring items in batches according to the monitoring ID list&quot;,
+			description = &quot;根据监控任务ID列表批量启动纳管监控项&quot;)
+	public ResponseEntity&lt;Message&lt;Void&gt;&gt; enableManageMonitors(
+			@Parameter(description = &quot;Monitor ID List | 监控任务ID列表&quot;, example = &quot;6565463543&quot;) @RequestParam(required = false) List&lt;Long&gt; ids
+	) {
+<span class="pc bpc" id="L186" title="3 of 4 branches missed.">		if (ids != null &amp;&amp; !ids.isEmpty()) {</span>
+<span class="nc" id="L187">			monitorService.enableManageMonitors(new HashSet&lt;&gt;(ids));</span>
+		}
+<span class="fc" id="L189">		Message&lt;Void&gt; message = Message.success();</span>
+<span class="fc" id="L190">		return ResponseEntity.ok(message);</span>
+	}
+
+	@GetMapping(&quot;/export&quot;)
+	@Operation(summary = &quot;export monitor config&quot;, description = &quot;导出监控配置&quot;)
+	public void export(
+			@Parameter(description = &quot;Monitor ID List | 监控任务ID列表&quot;, example = &quot;6565463543&quot;) @RequestParam List&lt;Long&gt; ids,
+			@Parameter(description = &quot;Export Type:JSON,EXCEL,YAML&quot;) @RequestParam(defaultValue = &quot;JSON&quot;) String type,
+			HttpServletResponse res) throws Exception {
+<span class="nc" id="L199">		monitorService.export(ids, type, res);</span>
+<span class="nc" id="L200">	}</span>
+
+	@PostMapping(&quot;/import&quot;)
+	@Operation(summary = &quot;import monitor config&quot;, description = &quot;导入监控配置&quot;)
+	public ResponseEntity&lt;Message&lt;Void&gt;&gt; export(MultipartFile file) throws Exception {
+<span class="nc" id="L205">		monitorService.importConfig(file);</span>
+<span class="nc" id="L206">		return ResponseEntity.ok(Message.success(&quot;Import success&quot;));</span>
+	}
+
+
+	@PostMapping(&quot;/copy&quot;)
+	@Operation(summary = &quot;copy monitors by ids&quot;, description = &quot;根据id批量复制monitor&quot;)
+	public ResponseEntity&lt;Message&lt;Void&gt;&gt; duplicateMonitors(
+			@Parameter(description = &quot;Monitor ID List | 监控任务ID列表&quot;, example = &quot;6565463543&quot;) @RequestParam List&lt;Long&gt; ids
+	) throws Exception {
+<span class="nc bnc" id="L215" title="All 4 branches missed.">		if (ids != null &amp;&amp; !ids.isEmpty()) {</span>
+<span class="nc" id="L216">			monitorService.copyMonitors(ids);</span>
+		}
+<span class="nc" id="L218">		return ResponseEntity.ok(Message.success(&quot;copy success&quot;));</span>
+	}
+
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pt"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DataSizeConvert.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">hertzbeat-collector</a> &gt; <a href="index.source.html" class="el_package">org.dromara.hertzbeat.collector.dispatch.unit.impl</a> &gt; <span class="el_source">DataSizeConvert.java</span></div><h1>DataSizeConvert.java</h1><pre class="source lang-java linenums">package org.dromara.hertzbeat.collector.dispatch.unit.impl;
+
+import org.dromara.hertzbeat.collector.dispatch.unit.DataUnit;
+import org.dromara.hertzbeat.collector.dispatch.unit.UnitConvert;
+import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+/**
+ * the convert of data size
+ * 数据空间大小转换
+ * @author ceilzcx
+ *
+ */
+@Component
+<span class="nc" id="L17">public final class DataSizeConvert implements UnitConvert {</span>
+
+    @Override
+    public String convert(String value, String originUnit, String newUnit) {
+<span class="nc bnc" id="L21" title="All 4 branches missed.">        if (value == null || &quot;&quot;.equals(value)) {</span>
+<span class="nc" id="L22">            return null;</span>
+        }
+<span class="nc" id="L24">        BigDecimal size = new BigDecimal(value);</span>
+        // 思路：value通过originUnit转换为字节，在转换为newUnit单位对应的值
+<span class="nc bnc" id="L26" title="All 2 branches missed.">        for (DataUnit dataUnit : DataUnit.values()) {</span>
+<span class="nc bnc" id="L27" title="All 2 branches missed.">            if (dataUnit.getUnit().equals(originUnit.toUpperCase())) {</span>
+<span class="nc" id="L28">                size = size.multiply(new BigDecimal(dataUnit.getScale()));</span>
+            }
+<span class="nc bnc" id="L30" title="All 2 branches missed.">            if (dataUnit.getUnit().equals(newUnit.toUpperCase())) {</span>
+<span class="nc" id="L31">                size = size.divide(new BigDecimal(dataUnit.getScale()), 12, RoundingMode.HALF_UP);</span>
+            }
+        }
+<span class="nc" id="L34">        return size.setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();</span>
+    }
+
+    @Override
+    public boolean checkUnit(String unit) {
+<span class="nc bnc" id="L39" title="All 4 branches missed.">        if (unit == null || &quot;&quot;.equals(unit)) {</span>
+<span class="nc" id="L40">            return false;</span>
+        }
+<span class="nc bnc" id="L42" title="All 2 branches missed.">        for (DataUnit dataUnit : DataUnit.values()) {</span>
+            // 不区分大小写
+<span class="nc bnc" id="L44" title="All 2 branches missed.">            if (dataUnit.getUnit().equals(unit.toUpperCase())) {</span>
+<span class="nc" id="L45">                return true;</span>
+            }
+        }
+<span class="nc" id="L48">        return false;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.7.202105040129</span></div></body></html>
