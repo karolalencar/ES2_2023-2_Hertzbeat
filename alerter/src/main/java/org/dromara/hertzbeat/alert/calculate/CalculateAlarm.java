@@ -251,54 +251,69 @@ public class CalculateAlarm {
         }
     }
 
+    private void handleTriggeredAlert(long currentTimeMilli, long monitorId, Map<String, Object> fieldValueMap, AlertDefine define, String monitorAlertKey, Alert triggeredAlert) {
+        int times = triggeredAlert.getTriggerTimes() + 1;
+        triggeredAlert.setTriggerTimes(times);
+        triggeredAlert.setFirstAlarmTime(currentTimeMilli);
+        triggeredAlert.setLastAlarmTime(currentTimeMilli);
+        int defineTimes = define.getTimes() == null ? 1 : define.getTimes();
+        if (times >= defineTimes) {
+            String notResolvedAlertKey = String.valueOf(monitorId) + define.getId() + fieldValueMap.get("instance");
+            triggeredAlertMap.remove(monitorAlertKey);
+            notRecoveredAlertMap.put(notResolvedAlertKey, triggeredAlert);
+            alarmCommonReduce.reduceAndSendAlarm(triggeredAlert.clone());
+        }
+    }
+
+    private Map<String, String> buildTagsMap(long monitorId, String app, AlertDefine define) {
+        Map<String, String> tags = new HashMap<>(6);
+        tags.put(CommonConstants.TAG_MONITOR_ID, String.valueOf(monitorId));
+        tags.put(CommonConstants.TAG_MONITOR_APP, app);
+        tags.put(CommonConstants.TAG_THRESHOLD_ID, String.valueOf(define.getId()));
+        return tags;
+    }
+
+    private void handleNewAlert(long currentTimeMilli, long monitorId, String app, String metrics, Map<String, Object> fieldValueMap, AlertDefine define, String monitorAlertKey) {
+        fieldValueMap.put("app", app);
+        fieldValueMap.put("metrics", metrics);
+        fieldValueMap.put("metric", define.getField());
+        Map<String, String> tags = buildTagsMap(monitorId, app, define);
+
+        if (!CollectionUtils.isEmpty(define.getTags())) {
+            for (TagItem tagItem : define.getTags()) {
+                fieldValueMap.put(tagItem.getName(), tagItem.getValue());
+                tags.put(tagItem.getName(), tagItem.getValue());
+            }
+        }
+
+        Alert alert = Alert.builder()
+                .tags(tags)
+                .priority(define.getPriority())
+                .status(ALERT_STATUS_CODE_PENDING)
+                .target(app + "." + metrics + "." + define.getField())
+                .triggerTimes(1)
+                .firstAlarmTime(currentTimeMilli)
+                .lastAlarmTime(currentTimeMilli)
+                // Keyword matching and substitution in the template
+                .content(AlertTemplateUtil.render(define.getTemplate(), fieldValueMap))
+                .build();
+        int defineTimes = define.getTimes() == null ? 1 : define.getTimes();
+        if (1 >= defineTimes) {
+            String notResolvedAlertKey = String.valueOf(monitorId) + define.getId() + fieldValueMap.get("instance");
+            notRecoveredAlertMap.put(notResolvedAlertKey, alert);
+            alarmCommonReduce.reduceAndSendAlarm(alert);
+        } else {
+            triggeredAlertMap.put(monitorAlertKey, alert);
+        }
+    }
+
     private void afterThresholdRuleMatch(long currentTimeMilli, long monitorId, String app, String metrics, Map<String, Object> fieldValueMap, AlertDefine define) {
         String monitorAlertKey = String.valueOf(monitorId) + define.getId();
         Alert triggeredAlert = triggeredAlertMap.get(monitorAlertKey);
         if (triggeredAlert != null) {
-            int times = triggeredAlert.getTriggerTimes() + 1;
-            triggeredAlert.setTriggerTimes(times);
-            triggeredAlert.setFirstAlarmTime(currentTimeMilli);
-            triggeredAlert.setLastAlarmTime(currentTimeMilli);
-            int defineTimes = define.getTimes() == null ? 1 : define.getTimes();
-            if (times >= defineTimes) {
-                String notResolvedAlertKey = String.valueOf(monitorId) + define.getId() + fieldValueMap.get("instance");
-                triggeredAlertMap.remove(monitorAlertKey);
-                notRecoveredAlertMap.put(notResolvedAlertKey, triggeredAlert);
-                alarmCommonReduce.reduceAndSendAlarm(triggeredAlert.clone());
-            }
+            handleTriggeredAlert(currentTimeMilli, monitorId, fieldValueMap, define, monitorAlertKey, triggeredAlert);
         } else {
-            fieldValueMap.put("app", app);
-            fieldValueMap.put("metrics", metrics);
-            fieldValueMap.put("metric", define.getField());
-            Map<String, String> tags = new HashMap<>(6);
-            tags.put(CommonConstants.TAG_MONITOR_ID, String.valueOf(monitorId));
-            tags.put(CommonConstants.TAG_MONITOR_APP, app);
-            tags.put(CommonConstants.TAG_THRESHOLD_ID, String.valueOf(define.getId()));
-            if (!CollectionUtils.isEmpty(define.getTags())) {
-                for (TagItem tagItem : define.getTags()) {
-                    fieldValueMap.put(tagItem.getName(), tagItem.getValue());
-                    tags.put(tagItem.getName(), tagItem.getValue());
-                }
-            }
-            Alert alert = Alert.builder()
-                    .tags(tags)
-                    .priority(define.getPriority())
-                    .status(ALERT_STATUS_CODE_PENDING)
-                    .target(app + "." + metrics + "." + define.getField())
-                    .triggerTimes(1)
-                    .firstAlarmTime(currentTimeMilli)
-                    .lastAlarmTime(currentTimeMilli)
-                    // Keyword matching and substitution in the template
-                    .content(AlertTemplateUtil.render(define.getTemplate(), fieldValueMap))
-                    .build();
-            int defineTimes = define.getTimes() == null ? 1 : define.getTimes();
-            if (1 >= defineTimes) {
-                String notResolvedAlertKey = String.valueOf(monitorId) + define.getId() + fieldValueMap.get("instance");
-                notRecoveredAlertMap.put(notResolvedAlertKey, alert);
-                alarmCommonReduce.reduceAndSendAlarm(alert);
-            } else {
-                triggeredAlertMap.put(monitorAlertKey, alert);
-            }
+            handleNewAlert(currentTimeMilli, monitorId, app, metrics, fieldValueMap, define, monitorAlertKey);
         }
     }
 
