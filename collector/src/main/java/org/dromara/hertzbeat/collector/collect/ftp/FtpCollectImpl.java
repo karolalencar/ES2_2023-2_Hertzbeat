@@ -82,10 +82,12 @@ public class FtpCollectImpl extends AbstractCollect {
             log.info("[FTPClient] error: {}", CommonUtil.getMessageFromThrowable(e), e);
             throw new IllegalArgumentException(e.getMessage());
         }
-        return new HashMap<>(8) {{
-            put("isActive", Boolean.toString(isActive));
-            put("responseTime", responseTime);
-        }};
+        
+        Map source = new HashMap<>(8);
+        source.put("isActive", Boolean.toString(isActive));
+        source.put("responseTime", responseTime);
+        
+        return source;
     }
 
     /**
