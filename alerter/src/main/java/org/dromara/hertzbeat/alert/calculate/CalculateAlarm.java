@@ -168,7 +168,7 @@ public class CalculateAlarm {
                             continue;
                         } else if (define.isRecoverNotice()) {
                             String notResolvedAlertKey = String.valueOf(monitorId) + define.getId() + null;
-                            handleRecoveredAlert(currentTimeMilli, monitorId, app, define, expr, notResolvedAlertKey);
+                            handleRecoveredAlert(currentTimeMilli, app, define, expr, notResolvedAlertKey);
                         }
                     } catch (Exception e) {
                         log.warn(e.getMessage(), e);
@@ -221,7 +221,7 @@ public class CalculateAlarm {
                             break;
                         } else if (define.isRecoverNotice()) {
                             String notResolvedAlertKey = String.valueOf(monitorId) + define.getId() + (instanceBuilder.length() == 0 ? null : instanceBuilder.toString());
-                            handleRecoveredAlert(currentTimeMilli, monitorId, app, define, expr, notResolvedAlertKey);
+                            handleRecoveredAlert(currentTimeMilli, app, define, expr, notResolvedAlertKey);
                         }
                     } catch (Exception e) {
                         log.warn(e.getMessage(), e);
@@ -231,7 +231,7 @@ public class CalculateAlarm {
         }
     }
 
-    private void handleRecoveredAlert(long currentTimeMilli, long monitorId, String app, AlertDefine define, String expr, String notResolvedAlertKey) {
+    private void handleRecoveredAlert(long currentTimeMilli, String app, AlertDefine define, String expr, String notResolvedAlertKey) {
         Alert notResolvedAlert = notRecoveredAlertMap.remove(notResolvedAlertKey);
         if (notResolvedAlert != null) {
             // Sending an alarm Restore
