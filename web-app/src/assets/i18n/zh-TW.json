@@ -519,6 +519,7 @@
   "settings.system-config.locale.zh_CN": "簡體中文(zh_CN)",
   "settings.system-config.locale.zh_TW": "繁體中文(zh_TW)",
   "settings.system-config.locale.en_US": "英語(en_US)",
+  "settings.system-config.locale.pt_BR": "巴西葡萄牙語(pt_BR)",
   "settings.system-config.timezone": "系統時區",
   "settings.system-config.ok": "確認更新",
   "settings.object-store": "文件服務配置",
