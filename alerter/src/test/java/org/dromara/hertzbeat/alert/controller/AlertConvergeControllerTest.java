@@ -20,7 +20,7 @@ import org.springframework.http.ResponseEntity;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @ExtendWith(MockitoExtension.class)
-public class AlertConvergeControllerTest {
+class AlertConvergeControllerTest {
 
     @Mock
     private AlertConvergeService alertConvergeService;
